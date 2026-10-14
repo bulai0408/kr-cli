@@ -223,6 +223,10 @@ impl LegacyLock {
     }
 }
 
+/// Limit: the owner line names one process. With two simulator lanes kr points it at
+/// the newest running child; if kr is killed while both run, only that child's group
+/// keeps the lock from looking stale.
+///
 /// Rewrites the owner line of every machine lock this process holds so it names `pid`
 /// (the process group doing the heavy work). If kr is killed while that group still
 /// runs, old scripts see a live owner and wait, as kr's own slots do (orphan rule).

@@ -332,3 +332,31 @@ fn a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky() {
     assert_eq!(end["fields"]["load"]["start"]["load"]["one"], 50.0);
     assert!(end["fields"]["high_load"].is_string());
 }
+
+#[test]
+fn a_long_enumeration_output_is_read_whole_not_just_its_tail() {
+    // Krill's enumeration of six test targets is about 90 KB, more than the in-memory tail.
+    let recs: Vec<Recording> = recordings("gate-default")
+        .into_iter()
+        .map(|mut r| {
+            if r.args.iter().any(|a| a == "-enumerate-tests") {
+                // Thousands of entries make the JSON itself larger than the in-memory tail.
+                let many: Vec<String> = (0..3000)
+                    .map(|i| {
+                        format!("{{ \"identifier\" : \"KrSampleTests/Filler/test{i:05}()\" }}")
+                    })
+                    .collect();
+                r.stdout = r.stdout.replacen(
+                    "\"testPlan\"",
+                    &format!("\"padding\" : [{}], \"testPlan\"", many.join(",")),
+                    1,
+                );
+                assert!(r.stdout.len() > 70_000);
+            }
+            r
+        })
+        .collect();
+    let s = Sample::new();
+    let (code, out) = s.kr(&recs, &["gate"]);
+    assert_eq!(code, Some(0), "{out}");
+}

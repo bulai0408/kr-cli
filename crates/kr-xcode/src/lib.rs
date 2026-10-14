@@ -191,18 +191,25 @@ pub struct XcTestRun {
 }
 
 impl XcTestRun {
-    /// The one `.xctestrun` in a products dir.
-    pub fn find(products: &Path) -> Result<PathBuf> {
+    /// The `.xctestrun` that `build-for-testing` wrote for `scheme`
+    /// (`<scheme>_<platform…>.xctestrun`); several schemes may share a products dir.
+    pub fn find(products: &Path, scheme: &str) -> Result<PathBuf> {
+        let prefix = format!("{scheme}_");
         let mut found: Vec<PathBuf> = std::fs::read_dir(products)
             .with_context(|| format!("no build products in {}", products.display()))?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "xctestrun"))
+            .filter(|p| {
+                p.extension().is_some_and(|x| x == "xctestrun")
+                    && p.file_name()
+                        .and_then(|n| n.to_str())
+                        .is_some_and(|n| n.starts_with(&prefix))
+            })
             .collect();
         found.sort();
         found.pop().with_context(|| {
             format!(
-                "no .xctestrun in {}; build-for-testing did not finish",
+                "no {scheme}_*.xctestrun in {}; build-for-testing of {scheme} did not finish",
                 products.display()
             )
         })

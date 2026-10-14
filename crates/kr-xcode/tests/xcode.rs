@@ -166,3 +166,19 @@ fn bundle_identifier_comes_from_the_built_info_plist() {
     .unwrap();
     assert_eq!(id, "dev.kr.sample.e2e");
 }
+
+#[test]
+fn the_xctestrun_of_a_scheme_is_picked_when_several_share_a_products_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in [
+        "KrillPlayerControls_iphonesimulator27.1-arm64-x86_64.xctestrun",
+        "Krill_iphonesimulator27.1-arm64-x86_64.xctestrun",
+    ] {
+        std::fs::write(dir.path().join(name), "").unwrap();
+    }
+    let found = XcTestRun::find(dir.path(), "KrillPlayerControls").unwrap();
+    assert!(found.ends_with("KrillPlayerControls_iphonesimulator27.1-arm64-x86_64.xctestrun"));
+    let found = XcTestRun::find(dir.path(), "Krill").unwrap();
+    assert!(found.ends_with("Krill_iphonesimulator27.1-arm64-x86_64.xctestrun"));
+    assert!(XcTestRun::find(dir.path(), "Other").is_err());
+}

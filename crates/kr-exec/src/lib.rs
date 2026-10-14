@@ -141,7 +141,12 @@ pub trait Runner: Send + Sync {
     fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
         let out = self.run(cmd)?;
         write_log(log, &[out.stdout.as_bytes(), out.stderr.as_bytes()])?;
-        Ok(out)
+        // Same shape as a real logged run: only the tail of the combined output.
+        Ok(Output {
+            stdout: tail(log)?,
+            stderr: String::new(),
+            ..out
+        })
     }
 }
 

@@ -1,3 +1,5 @@
 /target
 .DS_Store
 *.xcresult
+*.pending-snap
+__pycache__/
