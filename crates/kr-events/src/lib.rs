@@ -40,6 +40,23 @@ impl FromStr for RunId {
     }
 }
 
+/// What happened. New kinds are added as later commands start writing events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EventKind {
+    /// A task joined the queue of a resource.
+    QueueStart,
+    /// A task got a slot. Fields include `waited_ms`.
+    SlotAcquired,
+    /// A task gave a slot back. Fields include `held_ms`.
+    SlotReleased,
+    /// A nested `kr lock` claimed a held slot it could not prove it owns.
+    ReentryDenied,
+    /// A kind written by a newer kr.
+    #[serde(other)]
+    Other,
+}
+
 /// One line of the event log. Timestamps are always UTC.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Event {
@@ -47,7 +64,7 @@ pub struct Event {
     pub run_id: RunId,
     pub project: Option<String>,
     #[serde(rename = "type")]
-    pub kind: String,
+    pub kind: EventKind,
     pub fields: serde_json::Value,
 }
 
@@ -55,7 +72,7 @@ impl Event {
     pub fn now(
         run_id: RunId,
         project: Option<&str>,
-        kind: &str,
+        kind: EventKind,
         fields: serde_json::Value,
     ) -> Self {
         Self::at(Timestamp::now(), run_id, project, kind, fields)
@@ -65,14 +82,14 @@ impl Event {
         ts: Timestamp,
         run_id: RunId,
         project: Option<&str>,
-        kind: &str,
+        kind: EventKind,
         fields: serde_json::Value,
     ) -> Self {
         Self {
             ts,
             run_id,
             project: project.map(str::to_owned),
-            kind: kind.to_owned(),
+            kind,
             fields,
         }
     }
@@ -112,5 +129,35 @@ impl EventLog {
             .with_context(|| format!("failed to write {}", path.display()))?;
         // The lock is released when `file` is closed.
         Ok(())
+    }
+
+    /// Events at or after `since`, oldest file first. Lines that do not parse are skipped.
+    pub fn read_since(&self, since: Timestamp) -> Result<Vec<Event>> {
+        let first_day = since.to_zoned(jiff::tz::TimeZone::UTC).date().to_string();
+        let Ok(entries) = std::fs::read_dir(&self.dir) else {
+            return Ok(Vec::new());
+        };
+        let mut files: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| {
+                p.extension().is_some_and(|x| x == "ndjson")
+                    && p.file_stem()
+                        .and_then(|s| s.to_str())
+                        .is_some_and(|day| day >= first_day.as_str())
+            })
+            .collect();
+        files.sort();
+        let mut events = Vec::new();
+        for path in files {
+            let text = std::fs::read_to_string(&path)
+                .with_context(|| format!("failed to read {}", path.display()))?;
+            events.extend(
+                text.lines()
+                    .filter_map(|l| serde_json::from_str::<Event>(l).ok())
+                    .filter(|e| e.ts >= since),
+            );
+        }
+        Ok(events)
     }
 }
