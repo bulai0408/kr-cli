@@ -6,6 +6,11 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
 {
   "config": {
     "machine": {
+      "legacy": {
+        "machine_lock": null,
+        "poll": null,
+        "queue": null
+      },
       "load": {
         "check": true,
         "max_wait": "20m"

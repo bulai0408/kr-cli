@@ -1,0 +1,41 @@
+# kr configuration of the sample project used by kr's own tests.
+[project]
+name = "KrSample"
+xcodeproj = "KrSample.xcodeproj"
+generate = "xcodegen generate --quiet"
+scheme = "KrSample"
+configuration = "Debug"
+build_settings = { KR_SAMPLE_BUNDLE_ID = "dev.kr.sample.e2e" }
+xcode = "27.1"
+platforms = ["iOS"]
+
+[simulators]
+runtime = "iOS 18.6"
+
+[simulators.devices.default]
+device_type = "iPhone 16 Pro"
+count = 2
+
+[suites.unit]
+type = "test"
+scheme = "KrSample"
+only = ["KrSampleTests"]
+
+[scenarios.launch]
+only = ["KrSampleUITests/LaunchUITests"]
+
+[scenarios.settings]
+only = ["KrSampleUITests/SettingsUITests/testLaunchesTwice"]
+
+[gates.default]
+suites = ["unit"]
+scenarios = ["*"]
+
+[gates.smoke]
+scenarios = ["launch"]
+
+[isolation]
+bundle_ids = ["dev.kr.sample.e2e"]
+
+[isolation.entitlements]
+"com.apple.developer.icloud-container-environment" = ["Development"]

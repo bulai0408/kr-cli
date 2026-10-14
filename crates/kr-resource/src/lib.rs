@@ -17,6 +17,8 @@
 //! held ("orphan") while any process of that group is alive, so killing kr never lets
 //! two heavy jobs run at once.
 
+pub mod legacy;
+
 use std::fmt;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Seek, Write};

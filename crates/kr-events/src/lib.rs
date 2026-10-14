@@ -56,6 +56,11 @@ pub enum EventKind {
     LoadWait,
     /// The load check passed. Fields: `waited_ms`, `checks`, `timed_out`.
     LoadOk,
+    /// The old machine-wide lock was taken (ADR 0009). Fields: `waited_ms`, owner it
+    /// waited for.
+    MachineLock,
+    /// A step of a command finished. Fields: command, step, ok, `duration_ms`.
+    StepEnd,
     /// A pool simulator was leased and booted. Fields: device, udid, `boot_ms`.
     SimLeased,
     /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.

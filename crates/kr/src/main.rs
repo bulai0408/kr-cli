@@ -34,6 +34,9 @@ enum Command {
     Queue(commands::queue::QueueArgs),
     /// Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities.
     Doctor,
+    /// Pre-check before the simulator queue: generate, compile with the app's settings,
+    /// confirm test filters, check data isolation. Holds only a `build` slot.
+    Check(commands::check::CheckArgs),
     /// The project's simulator pool: status, sync, lease.
     Pool(commands::pool::PoolArgs),
 }
@@ -54,6 +57,7 @@ fn main() -> ExitCode {
         Command::Queue(args) => commands::queue::run(&ctx, args),
         Command::Doctor => commands::doctor::run(&ctx),
         Command::Pool(args) => commands::pool::run(&ctx, args),
+        Command::Check(args) => commands::check::run(&ctx, args),
     };
     match result {
         Ok(code) => code,

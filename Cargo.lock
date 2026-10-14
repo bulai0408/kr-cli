@@ -599,8 +599,10 @@ dependencies = [
  "kr-machine",
  "kr-resource",
  "kr-sim",
+ "kr-xcode",
  "libc",
  "miette",
+ "plist",
  "serde",
  "serde_json",
  "signal-hook",
@@ -639,8 +641,10 @@ name = "kr-exec"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "libc",
  "serde",
  "serde_json",
+ "signal-hook",
  "tempfile",
 ]
 
@@ -683,6 +687,17 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "kr-xcode"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kr-exec",
+ "plist",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

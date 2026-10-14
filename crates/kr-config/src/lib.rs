@@ -25,6 +25,7 @@ const RESERVED_ENV: &[&str] = &[
     "KR_CONFIG",
     "KR_HELD",
     "KR_REPLAY",
+    "KR_RECORD",
     "KR_APPLICATIONS",
 ];
 
@@ -34,7 +35,7 @@ mod span;
 pub use project::*;
 
 /// Keys that only the machine file may set.
-const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load"];
+const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load", "legacy"];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -55,6 +56,21 @@ pub struct MachineConfig {
     pub machines: BTreeMap<String, MachineOverride>,
     /// Load check before heavy work.
     pub load: LoadCheck,
+    /// Bridge to the old machine-wide lock (ADR 0009). Off unless set.
+    pub legacy: Legacy,
+}
+
+/// The old `mkdir` lock other projects and scripts still use. When both paths are set,
+/// kr also holds this lock while it holds a `build` or `sim` slot.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Legacy {
+    /// e.g. "/tmp/native-build.lock"
+    pub machine_lock: Option<PathBuf>,
+    /// e.g. "/tmp/native-build.queue"
+    pub queue: Option<PathBuf>,
+    /// Retry interval while waiting. Default "30s", as in the old protocol.
+    pub poll: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,6 +189,15 @@ impl Sources {
         };
         Ok(Config { machine, project })
     }
+}
+
+/// Line and column (1-based) where `path` (and array element `index`) is written in
+/// a TOML file, for pointing users at the item to fix.
+pub fn locate(file: &Path, path: &[&str], index: Option<usize>) -> Option<(usize, usize)> {
+    let text = std::fs::read_to_string(file).ok()?;
+    let doc = toml::de::DeTable::parse(&text).ok()?;
+    let span = span::find(&doc, path, index)?;
+    Some(line_column(&text, span.start))
 }
 
 fn load_project(path: &Path, text: &str) -> Result<ProjectConfig, ConfigError> {

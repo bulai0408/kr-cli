@@ -16,3 +16,15 @@
 
 ## 参考
 cargo-nextest archive / retries / flaky-result、Bazel 测试缓存（只缓存通过）、Tuist selective testing 的哈希输入、Apple `xcodebuild` 文档（apple-parallel-dev.md）。
+
+## 补充（2026-10-14）：预检用符号核对，运行时用真实枚举
+
+在样例工程（`tests/sample`，Xcode 27.1）上实测：
+- `test-without-building -enumerate-tests` 配 `generic/platform=iOS Simulator` 不列测试，只报「Tests must be run on a concrete device」。
+- 配具体模拟器能列出（JSON，enabled/disabled 分开），但 xcodebuild 会自己把模拟器开机再关机，约 44 秒。
+- 过滤写错（例如 `-only-testing:KrSampleUITests/NoSuchTests`）时 xcodebuild 不报错，直接忽略。
+
+所以：
+- `kr check` 不占模拟器（spec §5），用构建好的测试 bundle 的符号（`nm -U | swift-demangle`，XCTest 和 Swift Testing 都可见）逐条核对 `only` / `skip`，不命中就指到 `.kr.toml` 的行列。
+- `kr run` 在已租到、已开机的模拟器上做真实枚举，以它为准；与符号核对不一致时记事件并提示，不判失败。
+- 无论哪种方式，都由 kr 逐条核对过滤是否命中，不依赖 xcodebuild 报错。
