@@ -28,7 +28,7 @@ kr 是 owner 个人的开发流程执行层，把 owner 的最佳实践变成可
 ### 2. 机器档案与 `kr doctor`（ADR 0003）
 - 检测：芯片、核数、内存、磁盘余量、1/5/15 分钟负载、内存压力、已装 Xcode 与当前选择、模拟器运行时、模拟器池是否齐全。
 - 检查项目配置要求的 Xcode 版本和运行时是否存在（避免 Xcode 26/27 混用导致的假红，pitfalls E2/E3）。
-- 输出建议的资源容量。重活开始前自动做负载检查：超过阈值就等待并在事件里记录。
+- 输出建议的资源容量。负载默认不阻塞：只在内存压力 critical 时等待；每项采样负载，高负载期间的失败整项重跑一次（ADR 0003 补充）。
 
 ### 3. 模拟器池
 - 每个项目一组 `<项目>-Verify-<N>`，按配置的设备型号和运行时创建；kr 只创建、启动、关闭、抹除池里的设备。
@@ -44,8 +44,8 @@ kr 是 owner 个人的开发流程执行层，把 owner 的最佳实践变成可
 ### 5. `kr check`（预检，ADR 0005）
 不占模拟器，只占 `build` 槽位：
 - 运行项目的生成命令；
-- 用 App 自身的编译设置真编译：包模块 `swift build --target`，App 用 `build-for-testing -destination generic/platform=…`；
-- 确认请求的测试过滤能匹配到测试；
+- 用 App 自身的编译设置真编译：包 scheme 和 App 都用 `build-for-testing -destination generic/platform=…`（不用 `swift build`，ADR 0005 补充）；
+- 用测试 bundle 的符号静态核对过滤能匹配到测试（运行时 `kr run` 再做真实枚举，ADR 0005 补充）；
 - 数据隔离静态检查：测试用的 bundle 必须是配置里声明的合成标识，权限只能指向允许的环境（例如 CloudKit Development）。
 失败就返回非零，agent 不应进入运行队列。
 
