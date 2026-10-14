@@ -59,6 +59,24 @@ kr lock build -- xcodebuild build-for-testing …
 - 机器级：`~/.config/kr/config.toml`（可选。不写时由 `kr doctor` 检测的机器能力推算）。
 - 项目级：仓库根目录 `.kr.toml`（Xcode 版本、平台、测试套件、UI 场景）。
 
+## 接入一个项目
+
+1. 安装：`cargo install --git https://github.com/bulai0408/kr-cli kr`（或在本仓库 `cargo install --path crates/kr`）。
+2. 在项目仓库根目录写 `.kr.toml`。从 [examples/krill.kr.toml](examples/krill.kr.toml) 改起，最少要有：
+   - `[project]`：`name`（模拟器池名 `<name>-Verify-<N>`）、`xcodeproj` 或 `workspace`、`scheme`、`configuration`、要求的 `xcode` 版本；工程靠生成的写 `generate`。
+   - `[simulators]`：运行时与设备类型。设备类型名照 `xcrun simctl list devicetypes` 写。
+   - `[scenarios.<名字>]`：`only = ["UITests目标/类"]`，iPad 场景加 `device = "iPad"`。
+   - `[suites.<名字>]`：`build` / `test` / `command` 三种，对应原来脚本里的每一步。
+   - `[gates.default]`、`[gates.smoke]`：门禁由哪些套件和场景组成。
+   - `[isolation]`：测试用 App 的合成 bundle id 和允许的权限环境。
+   写错时 `kr config` 会指到具体行列并说明怎么改。
+3. `kr doctor`：确认 Xcode、运行时、池设备都齐；缺池设备就 `kr pool sync`（只新建，不删不改已有设备）。
+4. `kr check`：不占模拟器，确认能编过、过滤都能匹配到测试、隔离设置正确。
+5. `kr gate smoke`，再 `kr gate`。逐项和原来的脚本对照一次（测试数、结果）。
+6. 在项目 AGENTS.md 里把「怎么跑测试、怎么排队」改成「用 kr」，旧脚本保留到所有人都改用 kr。
+
+机器级设置（可选）在 `~/.config/kr/config.toml`：资源容量覆盖 `[resources]`、按机器覆盖 `[machines.<LocalHostName>.resources]`、负载策略 `[load]`、旧全机锁桥接 `[legacy]`（ADR 0009）。
+
 ## 状态
 
 第一阶段开发中。路线见 [docs/spec.md](docs/spec.md)，每个设计决定的理由见 [docs/adr/](docs/adr/)，参考过的开源项目与调研见 [docs/research/](docs/research/)。术语见 [CONTEXT.md](CONTEXT.md)。

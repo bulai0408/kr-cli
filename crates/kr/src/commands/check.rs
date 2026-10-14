@@ -595,7 +595,7 @@ pub fn is_fresh(job: &BuildJob, root: &Path, hash: Option<&str>) -> bool {
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         .and_then(|v| v["hash"].as_str().map(str::to_owned));
     stored.as_deref() == Some(hash)
-        && (job.action == "build" || XcTestRun::find(&job.products(root)).is_ok())
+        && (job.action == "build" || XcTestRun::find(&job.products(root), &job.scheme).is_ok())
 }
 
 /// The jobs that need building; records a cache hit (once) for the others.
@@ -647,7 +647,7 @@ fn check_filters(
     project_file: Option<&Path>,
 ) -> Result<Vec<String>> {
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products)?)?;
+    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
     let mut symbols = TestSymbols::default();
     let mut problems = Vec::new();
     let wanted: std::collections::BTreeSet<&str> = job
@@ -707,7 +707,7 @@ fn check_isolation(
 ) -> Result<Vec<String>> {
     let iso = &project.isolation;
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products)?)?;
+    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
     let mut apps: Vec<&Path> = run
         .targets
         .iter()

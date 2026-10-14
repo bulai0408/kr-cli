@@ -628,7 +628,7 @@ fn run_item_once(
     // the repo lives.
     let cwd = s.root.join(&job.dir);
     let products = Path::new(check::DERIVED_DATA).join("Build/Products");
-    let xctestrun = XcTestRun::find(&cwd.join(&products))?;
+    let xctestrun = XcTestRun::find(&cwd.join(&products), &job.scheme)?;
     let xctestrun = products.join(xctestrun.file_name().unwrap_or_default());
     let destination = match device {
         Some((_, udid)) => format!("id={udid}"),
