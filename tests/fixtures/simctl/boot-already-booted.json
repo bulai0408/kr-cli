@@ -1,0 +1,11 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "boot",
+    "2A3B86EB-E206-4C43-9C35-0F8124258FB6"
+  ],
+  "status": 149,
+  "stdout": "",
+  "stderr": "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\nUnable to boot device in current state: Booted\n"
+}

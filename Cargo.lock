@@ -598,6 +598,7 @@ dependencies = [
  "kr-exec",
  "kr-machine",
  "kr-resource",
+ "kr-sim",
  "libc",
  "miette",
  "serde",
@@ -667,6 +668,21 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "kr-sim"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "jiff",
+ "kr-config",
+ "kr-exec",
+ "kr-machine",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.1.8+spec-1.1.0",
 ]
 
 [[package]]

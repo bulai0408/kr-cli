@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod ctx;
 mod output;
+mod slots;
 
 /// Kami's Apple development workflow tool: resource queues, simulator pool,
 /// pre-checks, build-once test runs and gates.
@@ -33,6 +34,8 @@ enum Command {
     Queue(commands::queue::QueueArgs),
     /// Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities.
     Doctor,
+    /// The project's simulator pool: status, sync, lease.
+    Pool(commands::pool::PoolArgs),
 }
 
 pub use ctx::{Ctx, Loaded};
@@ -50,6 +53,7 @@ fn main() -> ExitCode {
         Command::Lock(args) => commands::lock::run(&ctx, args),
         Command::Queue(args) => commands::queue::run(&ctx, args),
         Command::Doctor => commands::doctor::run(&ctx),
+        Command::Pool(args) => commands::pool::run(&ctx, args),
     };
     match result {
         Ok(code) => code,

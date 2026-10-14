@@ -1,0 +1,13 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "create",
+    "KrTest-Verify-2",
+    "iPhone 16 Pro",
+    "com.apple.CoreSimulator.SimRuntime.iOS-18-6"
+  ],
+  "status": 0,
+  "stdout": "06218A3A-4613-4B7B-A604-37110721D3E0\n",
+  "stderr": ""
+}

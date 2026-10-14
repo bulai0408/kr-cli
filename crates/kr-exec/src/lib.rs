@@ -137,6 +137,7 @@ impl Recording {
 pub struct ReplayRunner {
     pending: Mutex<VecDeque<Recording>>,
     used: Mutex<Vec<Recording>>,
+    calls: Mutex<Vec<String>>,
 }
 
 impl ReplayRunner {
@@ -144,7 +145,13 @@ impl ReplayRunner {
         Self {
             pending: Mutex::new(recordings.into()),
             used: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
         }
+    }
+
+    /// The command lines answered so far, in call order.
+    pub fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
     }
 
     /// Loads one recording per JSON file, in the given order.
@@ -174,6 +181,7 @@ impl Runner for ReplayRunner {
         if let Some(i) = pending.iter().position(|r| r.matches(cmd)) {
             let rec = pending.remove(i).unwrap();
             let out = rec.output();
+            self.calls.lock().unwrap().push(cmd.to_string());
             self.used.lock().unwrap().push(rec);
             return Ok(out);
         }

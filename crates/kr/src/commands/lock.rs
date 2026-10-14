@@ -2,17 +2,16 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use jiff::Timestamp;
 use kr_events::{Event, EventKind, RunId};
-use kr_resource::{Holder, Resource, Slot};
+use kr_resource::{Resource, Slot};
 use serde_json::json;
 
-use super::{human_duration, queue, resource_parser};
-use crate::Ctx;
+use super::resource_parser;
+use crate::{Ctx, slots};
 
 #[derive(Debug, Args)]
 pub struct LockArgs {
@@ -31,8 +30,6 @@ pub struct LockArgs {
 
 /// Slots held by ancestors, passed to children as `KR_HELD=build:1,sim:2`.
 const HELD_VAR: &str = "KR_HELD";
-const POLL: Duration = Duration::from_millis(500);
-const LOAD_POLL: Duration = Duration::from_secs(15);
 
 pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
@@ -51,7 +48,7 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
                 .is_some_and(|h| kr_resource::is_ancestor(h.pid));
         if owned {
             tracing::info!("{res} slot {index} is held by an ancestor; running without queueing");
-            return run_command(&args.command, None, &held).map(exit_code);
+            return run_command(&args.command, None, &held, &[]).map(exit_code);
         }
         log.append(&Event::now(
             run_id,
@@ -62,156 +59,21 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     }
 
     let runner = ctx.runner()?;
-    let capacity = loaded.capacity(res, runner.as_ref())?;
-    let holder = Holder {
-        project: project.map(str::to_owned),
-        task: task.clone(),
-        pid: std::process::id(),
-        child_pid: None,
-        started: Timestamp::now(),
-    };
-    log.append(&Event::now(
-        run_id,
-        project,
-        EventKind::QueueStart,
-        json!({ "resource": res, "task": task, "capacity": capacity }),
-    ))?;
-    let queued = Instant::now();
-    let ticket = pool.enqueue(res, &holder)?;
-    let mut announced = false;
-    let mut slot = loop {
-        if let Some(slot) = ticket.try_acquire(capacity)? {
-            break slot;
-        }
-        if !announced {
-            announced = true;
-            announce_wait(ctx, &loaded, res, capacity)?;
-        }
-        std::thread::sleep(POLL);
-    };
-    drop(ticket);
-    let waited = queued.elapsed();
-    log.append(&Event::now(
-        run_id,
-        project,
-        EventKind::SlotAcquired,
-        json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": waited.as_millis() as u64 }),
-    ))?;
+    let mut taken = slots::take(ctx, &loaded, runner.as_ref(), run_id, res, &task)?;
 
-    if matches!(res, Resource::Build | Resource::Sim) && loaded.config.machine.load.check {
-        wait_for_load(ctx, &loaded, runner.as_ref(), run_id, res)?;
-    }
-
-    let started = Instant::now();
     let mut child_held: Vec<(Resource, u32)> =
         held.into_iter().filter(|(r, _)| *r != res).collect();
-    child_held.push((res, slot.index()));
-    let result = run_command(&args.command, Some(&mut slot), &child_held);
-    let exit = result.as_ref().ok().copied();
-    log.append(&Event::now(
-        run_id,
-        project,
-        EventKind::SlotReleased,
-        json!({
-            "resource": res,
-            "slot": slot.index(),
-            "task": task,
-            "held_ms": started.elapsed().as_millis() as u64,
-            "exit_code": exit,
-        }),
-    ))?;
-    drop(slot);
+    child_held.push((res, taken.slot.index()));
+    let result = run_command(&args.command, Some(&mut taken.slot), &child_held, &[]);
+    slots::give_back(&loaded, run_id, taken, result.as_ref().ok().copied())?;
     result.map(exit_code)
-}
-
-/// Waits (holding the slot) while the machine is overloaded, and records it.
-fn wait_for_load(
-    ctx: &Ctx,
-    loaded: &crate::Loaded,
-    runner: &dyn kr_exec::Runner,
-    run_id: RunId,
-    res: Resource,
-) -> Result<()> {
-    let log = loaded.events();
-    let project = loaded.project();
-    let max_wait = kr_config::parse_timeout(&loaded.config.machine.load.max_wait)
-        .unwrap_or(kr_config::DEFAULT_TIMEOUT);
-    let mut first = true;
-    let wait = kr_machine::wait_for_load(runner, LOAD_POLL, max_wait, |hw| {
-        if !first {
-            return;
-        }
-        first = false;
-        let reason = hw.overloaded().unwrap_or_default();
-        let _ = log.append(&Event::now(
-            run_id,
-            project,
-            EventKind::LoadWait,
-            json!({ "resource": res, "load": hw.load, "pressure": hw.pressure, "reason": reason }),
-        ));
-        if ctx.json {
-            eprintln!("{}", json!({ "load_wait": res, "reason": reason }));
-        } else {
-            eprintln!("waiting before {res} work: {reason}");
-        }
-    })?;
-    if wait.checks > 1 {
-        log.append(&Event::now(
-            run_id,
-            project,
-            EventKind::LoadOk,
-            json!({ "resource": res, "waited_ms": wait.waited.as_millis() as u64, "checks": wait.checks, "timed_out": wait.timed_out }),
-        ))?;
-        if wait.timed_out {
-            eprintln!(
-                "load still high after {}; going ahead",
-                human_duration(wait.waited)
-            );
-        }
-    }
-    Ok(())
 }
 
 fn exit_code(code: i32) -> ExitCode {
     ExitCode::from(u8::try_from(code).unwrap_or(1))
 }
 
-fn announce_wait(ctx: &Ctx, loaded: &crate::Loaded, res: Resource, capacity: u32) -> Result<()> {
-    let pool = loaded.pool();
-    let status = pool.status(res, capacity)?;
-    let me = std::process::id();
-    let position = status
-        .waiters
-        .iter()
-        .position(|w| w.holder.pid == me)
-        .unwrap_or(0);
-    let eta = queue::estimates(
-        &status,
-        queue::avg_hold(&loaded.events(), res),
-        Timestamp::now(),
-    )
-    .get(position)
-    .copied()
-    .flatten();
-    if ctx.json {
-        eprintln!(
-            "{}",
-            json!({ "waiting": res, "ahead": position, "holders": status.holders.len(), "eta_seconds": eta.map(|d| d.as_secs()) })
-        );
-    } else {
-        let eta = eta.map_or_else(
-            || "unknown".to_owned(),
-            |d| format!("~{}", human_duration(d)),
-        );
-        eprintln!(
-            "waiting for {res}: {}/{capacity} busy, {position} ahead, eta {eta} (see `kr queue {res}`)",
-            status.holders.len()
-        );
-    }
-    Ok(())
-}
-
-fn parse_held(value: &str) -> Vec<(Resource, u32)> {
+pub(crate) fn parse_held(value: &str) -> Vec<(Resource, u32)> {
     value
         .split(',')
         .filter_map(|item| {
@@ -231,10 +93,11 @@ fn format_held(held: &[(Resource, u32)]) -> String {
 /// Runs the command in its own process group and returns its exit code
 /// (128 + signal number if it was killed). SIGINT, SIGTERM and SIGHUP sent to kr
 /// are forwarded to the whole group.
-fn run_command(
+pub(crate) fn run_command(
     command: &[String],
     slot: Option<&mut Slot>,
     held: &[(Resource, u32)],
+    extra_env: &[(&str, &str)],
 ) -> Result<i32> {
     let (program, args) = command.split_first().context("missing command")?;
     let pending = Arc::new(AtomicUsize::new(0));
@@ -248,6 +111,7 @@ fn run_command(
     let mut child = std::process::Command::new(program)
         .args(args)
         .env(HELD_VAR, format_held(held))
+        .envs(extra_env.iter().copied())
         .process_group(0)
         .spawn()
         .with_context(|| format!("failed to start `{}`", command.join(" ")))?;

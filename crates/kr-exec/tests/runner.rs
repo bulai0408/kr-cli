@@ -126,3 +126,14 @@ fn sanitizer_also_cleans_json_escaped_paths() {
         r#"{"dataPath" : "~\/Library"}"#
     );
 }
+
+#[test]
+fn replay_remembers_the_commands_it_answered_in_order() {
+    let runner = ReplayRunner::new(vec![
+        recording("a", &["1"], 0, ""),
+        recording("b", &[], 0, ""),
+    ]);
+    runner.run(&Command::new("b")).unwrap();
+    runner.run(&Command::new("a").arg("1")).unwrap();
+    assert_eq!(runner.calls(), ["b", "a 1"]);
+}

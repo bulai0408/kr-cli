@@ -1,8 +1,13 @@
-//! Tests that spawn processes. Kept apart from pool.rs: a process forked by one test
-//! thread briefly holds copies of another thread's slot files until it execs.
+//! Tests that spawn processes. Kept apart from pool.rs, and run one at a time: a
+//! process forked by one test thread briefly holds copies of another thread's lock
+//! files (with their locks) until it execs.
 
 use jiff::Timestamp;
+use std::sync::Mutex;
+
 use kr_resource::{Holder, Pool, Resource};
+
+static SERIAL: Mutex<()> = Mutex::new(());
 
 fn holder(task: &str) -> Holder {
     Holder {
@@ -29,6 +34,7 @@ fn leave_orphan(dir: &std::path::Path, pgid: u32) {
 
 #[test]
 fn a_slot_whose_command_group_still_runs_stays_held() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     use std::os::unix::process::CommandExt;
     let dir = tempfile::tempdir().unwrap();
     let pool = Pool::new(dir.path());
@@ -60,6 +66,7 @@ fn a_slot_whose_command_group_still_runs_stays_held() {
 
 #[test]
 fn a_slot_left_by_a_dead_holder_with_no_command_is_free() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     let pool = Pool::new(dir.path());
     let mut gone = std::process::Command::new("true").spawn().unwrap();
@@ -76,6 +83,7 @@ fn a_slot_left_by_a_dead_holder_with_no_command_is_free() {
 
 #[test]
 fn the_current_process_parent_is_an_ancestor_and_a_child_is_not() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let parent = std::os::unix::process::parent_id();
     assert!(kr_resource::is_ancestor(parent));
     assert!(kr_resource::is_ancestor(std::process::id()));

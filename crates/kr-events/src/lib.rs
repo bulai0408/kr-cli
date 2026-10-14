@@ -56,6 +56,10 @@ pub enum EventKind {
     LoadWait,
     /// The load check passed. Fields: `waited_ms`, `checks`, `timed_out`.
     LoadOk,
+    /// A pool simulator was leased and booted. Fields: device, udid, `boot_ms`.
+    SimLeased,
+    /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.
+    SimReleased,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

@@ -1,0 +1,49 @@
+---
+source: crates/kr/tests/pool.rs
+assertion_line: 86
+expression: json
+---
+{
+  "devices": [
+    {
+      "device_type": "iPhone 16 Pro",
+      "issue": null,
+      "kind": "default",
+      "leased_by": null,
+      "name": "Krill-Verify-1",
+      "runtime": "iOS 18.6",
+      "state": "Shutdown",
+      "udid": "6BFDF46B-1778-4C7E-B901-4E825CB78C4D"
+    },
+    {
+      "device_type": "iPhone 16 Pro",
+      "issue": null,
+      "kind": "default",
+      "leased_by": null,
+      "name": "Krill-Verify-2",
+      "runtime": "iOS 18.6",
+      "state": "Shutdown",
+      "udid": "DF280713-8C80-4056-8737-4E3B90B6B933"
+    },
+    {
+      "device_type": "iPhone 16 Pro",
+      "issue": null,
+      "kind": "default",
+      "leased_by": null,
+      "name": "Krill-Verify-3",
+      "runtime": "iOS 18.6",
+      "state": "missing",
+      "udid": null
+    },
+    {
+      "device_type": "iPad Pro 13-inch (M4) (16GB)",
+      "issue": null,
+      "kind": "iPad",
+      "leased_by": null,
+      "name": "Krill-Verify-iPad-1",
+      "runtime": "iOS 18.6",
+      "state": "Shutdown",
+      "udid": "5673C3CE-3081-49C9-8405-1FA321F3607E"
+    }
+  ]
+}
