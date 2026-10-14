@@ -1,0 +1,29 @@
+{
+  "errors" : [
+
+  ],
+  "values" : [
+    {
+      "disabledTests" : [
+        {
+          "identifier" : "KrSampleUITests/SettingsUITests/testLaunchesTwice()"
+        }
+      ],
+      "enabledTests" : [
+        {
+          "identifier" : "KrSampleTests/GreetingTests/greetsByName()"
+        },
+        {
+          "identifier" : "KrSampleTests/GreetingTests/greetsEmptyName()"
+        },
+        {
+          "identifier" : "KrSampleUITests/LaunchUITests/testFlakyOnce()"
+        },
+        {
+          "identifier" : "KrSampleUITests/LaunchUITests/testShowsGreeting()"
+        }
+      ],
+      "testPlan" : "KrSample"
+    }
+  ]
+}
