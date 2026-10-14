@@ -666,13 +666,16 @@ fn run_item_once(
         ])
         .args(filters.iter().cloned())
         .command();
+    let enum_log = logs.join("enumerate.log");
     let enum_out = s.runner.run_logged(
         &with_xcode(enum_cmd, s.developer_dir)
             .current_dir(&cwd)
             .timeout(item.timeout),
-        &logs.join("enumerate.log"),
+        &enum_log,
     )?;
-    let enumeration = json_tail(&enum_out.stdout)
+    // The whole log: the JSON of a big project is larger than the in-memory tail.
+    let enum_text = std::fs::read_to_string(&enum_log).unwrap_or_default();
+    let enumeration = json_tail(&enum_text)
         .and_then(|j| Enumeration::parse(j).ok())
         .unwrap_or_default();
     for f in &item.only {
