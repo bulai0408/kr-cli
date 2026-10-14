@@ -16,6 +16,7 @@ kr-events.workspace = true
 kr-exec.workspace = true
 kr-machine.workspace = true
 kr-resource.workspace = true
+kr-sim.workspace = true
 jiff.workspace = true
 libc.workspace = true
 miette.workspace = true
@@ -26,6 +27,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
+kr-exec.workspace = true
 assert_cmd.workspace = true
 insta.workspace = true
 tempfile.workspace = true

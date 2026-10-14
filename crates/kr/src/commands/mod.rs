@@ -1,6 +1,7 @@
 pub mod config;
 pub mod doctor;
 pub mod lock;
+pub mod pool;
 pub mod queue;
 
 use clap::builder::TypedValueParser;

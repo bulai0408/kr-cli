@@ -1,0 +1,7 @@
+---
+source: crates/kr/tests/pool.rs
+assertion_line: 99
+expression: "String::from_utf8_lossy(&out.stdout)"
+---
+pool Krill: 1 created, 3 already there
+  created Krill-Verify-3

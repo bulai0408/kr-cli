@@ -1,0 +1,13 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "create",
+    "KrTest-Verify-9",
+    "iPhone 3G",
+    "com.apple.CoreSimulator.SimRuntime.iOS-18-6"
+  ],
+  "status": 146,
+  "stdout": "",
+  "stderr": "Invalid device type: iPhone 3G\n"
+}

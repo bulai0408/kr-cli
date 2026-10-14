@@ -25,7 +25,9 @@ impl Ctx {
     /// (colon-separated files; for kr's own tests).
     pub fn runner(&self) -> Result<Box<dyn Runner>> {
         match self.env_var("KR_REPLAY") {
-            Some(list) => Ok(Box::new(ReplayRunner::from_files(list.split(':'))?)),
+            Some(list) => Ok(Box::new(ReplayRunner::from_files(
+                list.split(':').filter(|p| !p.is_empty()),
+            )?)),
             None => Ok(Box::new(RealRunner)),
         }
     }
@@ -72,6 +74,27 @@ impl Loaded {
 
     pub fn events(&self) -> kr_events::EventLog {
         kr_events::EventLog::new(self.state_dir.join("events"))
+    }
+
+    /// The Xcode to run tools with: the project's required one, else `$DEVELOPER_DIR`,
+    /// else whatever `xcode-select` chose (`None`).
+    pub fn developer_dir(&self, ctx: &Ctx) -> Result<Option<PathBuf>> {
+        if let Some(required) = self
+            .config
+            .project
+            .as_ref()
+            .and_then(|p| p.project.xcode.as_deref())
+        {
+            let xcodes = kr_machine::find_xcodes(&ctx.applications_dir());
+            let xcode = kr_machine::find_xcode(&xcodes, required).with_context(|| {
+                format!("Xcode {required} (required by .kr.toml) is not installed; run `kr doctor`")
+            })?;
+            return Ok(Some(xcode.developer_dir()));
+        }
+        Ok(ctx
+            .env_var("DEVELOPER_DIR")
+            .filter(|d| !d.is_empty())
+            .map(PathBuf::from))
     }
 
     pub fn project(&self) -> Option<&str> {
