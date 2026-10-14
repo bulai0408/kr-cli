@@ -1,0 +1,11 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "shutdown",
+    "31038384-DFE3-45BC-8984-78A3857E5A5F"
+  ],
+  "status": 149,
+  "stdout": "",
+  "stderr": "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\nUnable to shutdown device in current state: Shutdown\n"
+}

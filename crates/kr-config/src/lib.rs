@@ -38,14 +38,14 @@ pub use project::*;
 const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load", "legacy"];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct Config {
     pub machine: MachineConfig,
     pub project: Option<ProjectConfig>,
 }
 
 /// Machine-level settings: `~/.config/kr/config.toml`, `KR_*` variables, overrides.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MachineConfig {
     /// Where kr keeps events and other state. Default: `~/.local/state/kr`.
@@ -73,11 +73,15 @@ pub struct Legacy {
     pub poll: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoadCheck {
     /// Wait for the load to drop before `build` and `sim` work.
     pub check: bool,
+    /// Heavy work waits while the 1-minute load is above `per_core` × logical cores.
+    /// Default 2.5: below that, loaded Macs did not show load-related false failures
+    /// (pitfalls E1 saw them from 30 up on 8 cores).
+    pub per_core: f64,
     /// Give up waiting after this long and go ahead, e.g. "20m".
     pub max_wait: String,
 }
@@ -86,6 +90,7 @@ impl Default for LoadCheck {
     fn default() -> Self {
         Self {
             check: true,
+            per_core: 2.5,
             max_wait: "20m".to_owned(),
         }
     }

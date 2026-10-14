@@ -192,3 +192,51 @@ fn a_lock_held_by_an_ancestor_counts_as_held() {
         "the ancestor's lock stays"
     );
 }
+
+#[test]
+fn threads_of_one_process_acquiring_together_share_the_lock() {
+    let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let lock = bridge(dir.path()).with_max_wait(Duration::from_secs(2));
+    let start = std::time::Instant::now();
+    let (a, b) = std::thread::scope(|s| {
+        let a = s.spawn(|| lock.acquire("lane-a", |_| {}).unwrap());
+        let b = s.spawn(|| lock.acquire("lane-b", |_| {}).unwrap());
+        (a.join().unwrap(), b.join().unwrap())
+    });
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(
+        a.is_owned() != b.is_owned(),
+        "exactly one of them took it: {a:?} {b:?}"
+    );
+    drop(a);
+    assert!(dir.path().join("native-build.lock").exists());
+    drop(b);
+    assert!(!dir.path().join("native-build.lock").exists());
+}
+
+#[test]
+fn rewriting_the_owner_pid_never_leaves_a_partial_file() {
+    let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let guard = bridge(dir.path()).acquire("kr", |_| {}).unwrap();
+    let owner = dir.path().join("native-build.lock/owner");
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for pid in 0..2000 {
+                kr_resource::legacy::set_owner_pid(1000 + pid);
+            }
+            stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        while !stop.load(std::sync::atomic::Ordering::SeqCst) {
+            let text = std::fs::read_to_string(&owner).unwrap_or_default();
+            assert_eq!(text.split_whitespace().count(), 4, "{text:?}");
+        }
+    });
+    drop(guard);
+}

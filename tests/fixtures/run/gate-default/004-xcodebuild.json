@@ -1,0 +1,22 @@
+{
+  "program": "xcodebuild",
+  "args": [
+    "build-for-testing",
+    "-quiet",
+    "-skipMacroValidation",
+    "-project",
+    "KrSample.xcodeproj",
+    "-scheme",
+    "KrSample",
+    "-configuration",
+    "Debug",
+    "-destination",
+    "generic/platform=iOS Simulator",
+    "-derivedDataPath",
+    "build/kr/DerivedData",
+    "KR_SAMPLE_BUNDLE_ID=dev.kr.sample.e2e"
+  ],
+  "status": 0,
+  "stdout": "",
+  "stderr": ""
+}

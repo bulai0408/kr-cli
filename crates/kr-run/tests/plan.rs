@@ -4,15 +4,12 @@ use kr_run::{input_hash, longest_first};
 
 #[test]
 fn work_is_ordered_longest_first_with_unknown_durations_first() {
-    let order = longest_first(
-        vec!["a", "b", "c", "d"],
-        |name| match *name {
-            "a" => Some(Duration::from_secs(10)),
-            "b" => Some(Duration::from_secs(90)),
-            "c" => None,
-            _ => Some(Duration::from_secs(30)),
-        },
-    );
+    let order = longest_first(vec!["a", "b", "c", "d"], |name| match *name {
+        "a" => Some(Duration::from_secs(10)),
+        "b" => Some(Duration::from_secs(90)),
+        "c" => None,
+        _ => Some(Duration::from_secs(30)),
+    });
     assert_eq!(order, ["c", "b", "d", "a"]);
 }
 
@@ -25,12 +22,18 @@ fn the_input_hash_changes_with_file_contents_and_the_command_but_not_mtime() {
 
     let h1 = input_hash(dir.path(), &files, &["xcodebuild", "build-for-testing"]).unwrap();
     std::fs::write(dir.path().join("A.swift"), "let a = 1").unwrap();
-    assert_eq!(input_hash(dir.path(), &files, &["xcodebuild", "build-for-testing"]).unwrap(), h1);
+    assert_eq!(
+        input_hash(dir.path(), &files, &["xcodebuild", "build-for-testing"]).unwrap(),
+        h1
+    );
 
     std::fs::write(dir.path().join("A.swift"), "let a = 2").unwrap();
     let h2 = input_hash(dir.path(), &files, &["xcodebuild", "build-for-testing"]).unwrap();
     assert_ne!(h1, h2);
-    assert_ne!(input_hash(dir.path(), &files, &["xcodebuild", "build"]).unwrap(), h2);
+    assert_ne!(
+        input_hash(dir.path(), &files, &["xcodebuild", "build"]).unwrap(),
+        h2
+    );
 }
 
 #[test]

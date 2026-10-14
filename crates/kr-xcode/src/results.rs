@@ -43,8 +43,10 @@ impl Enumeration {
             ..Self::default()
         };
         for v in root.values {
-            out.enabled.extend(v.enabled_tests.into_iter().map(|i| i.identifier));
-            out.disabled.extend(v.disabled_tests.into_iter().map(|i| i.identifier));
+            out.enabled
+                .extend(v.enabled_tests.into_iter().map(|i| i.identifier));
+            out.disabled
+                .extend(v.disabled_tests.into_iter().map(|i| i.identifier));
         }
         Ok(out)
     }

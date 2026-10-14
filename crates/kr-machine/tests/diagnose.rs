@@ -53,7 +53,7 @@ fn codes(problems: &[kr_machine::Problem]) -> Vec<String> {
 
 #[test]
 fn the_krill_pool_on_this_imac_has_no_problems() {
-    let problems = diagnose(&profile(), Some(&project(KRILL)), Some(&devices()));
+    let problems = diagnose(&profile(), Some(&project(KRILL)), Some(&devices()), 1.25);
     assert!(problems.is_empty(), "{problems:#?}");
 }
 
@@ -63,6 +63,7 @@ fn a_required_xcode_that_is_not_installed_is_an_error_with_the_installed_list() 
         &profile(),
         Some(&project(&KRILL.replace("27.1", "28"))),
         Some(&devices()),
+        1.25,
     );
     assert_eq!(codes(&problems), ["xcode_missing"]);
     let p = &problems[0];
@@ -78,7 +79,7 @@ fn a_required_xcode_that_is_not_installed_is_an_error_with_the_installed_list() 
 #[test]
 fn a_missing_runtime_is_an_error_with_install_instructions() {
     let text = KRILL.replace("runtime = \"iOS 18.6\"", "runtime = \"iOS 17.5\"");
-    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()));
+    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()), 1.25);
     assert_eq!(codes(&problems), ["runtime_missing", "runtime_missing"]);
     assert!(
         problems[0]
@@ -92,14 +93,14 @@ fn a_missing_runtime_is_an_error_with_install_instructions() {
 #[test]
 fn a_device_type_the_runtime_does_not_support_is_an_error() {
     let text = KRILL.replace("iPhone 16 Pro", "iPhone 3G");
-    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()));
+    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()), 1.25);
     assert_eq!(codes(&problems), ["device_type_unsupported"]);
 }
 
 #[test]
 fn missing_pool_devices_are_listed() {
     let text = KRILL.replace("count = 2", "count = 4");
-    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()));
+    let problems = diagnose(&profile(), Some(&project(&text)), Some(&devices()), 1.25);
     assert_eq!(codes(&problems), ["pool_incomplete"]);
     assert!(
         problems[0].message.contains("Krill-Verify-3")
@@ -112,15 +113,18 @@ fn missing_pool_devices_are_listed() {
 fn low_disk_is_a_warning_then_an_error() {
     let mut p = profile();
     p.disk_free_bytes = 15 << 30;
-    assert_eq!(codes(&diagnose(&p, None, None)), ["disk_low"]);
-    assert_eq!(diagnose(&p, None, None)[0].severity, Severity::Warning);
+    assert_eq!(codes(&diagnose(&p, None, None, 1.25)), ["disk_low"]);
+    assert_eq!(
+        diagnose(&p, None, None, 1.25)[0].severity,
+        Severity::Warning
+    );
     p.disk_free_bytes = 5 << 30;
-    assert_eq!(diagnose(&p, None, None)[0].severity, Severity::Error);
+    assert_eq!(diagnose(&p, None, None, 1.25)[0].severity, Severity::Error);
 }
 
 #[test]
 fn high_load_now_is_a_warning() {
     let mut p = profile();
     p.hardware.load.one = 40.0;
-    assert_eq!(codes(&diagnose(&p, None, None)), ["load_high"]);
+    assert_eq!(codes(&diagnose(&p, None, None, 1.25)), ["load_high"]);
 }

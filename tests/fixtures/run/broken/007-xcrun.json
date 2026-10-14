@@ -1,0 +1,12 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "bootstatus",
+    "31038384-DFE3-45BC-8984-78A3857E5A5F",
+    "-b"
+  ],
+  "status": 0,
+  "stdout": "Monitoring boot status for KrSample-Verify-1 (31038384-DFE3-45BC-8984-78A3857E5A5F).\nBooting device...\n[2026-10-14 07:22:32 +0000] Status=0, isTerminal=NO, Elapsed=00:00.\n\tBooting\n\n[2026-10-14 07:22:36 +0000] Status=4, isTerminal=NO, Elapsed=00:03.\n\tWaiting on System App\n\n[2026-10-14 07:22:37 +0000] Status=4, isTerminal=NO, Elapsed=00:04.\n\tWaiting on System App\n\n[2026-10-14 07:22:37 +0000] Status=4, isTerminal=NO, Elapsed=00:04.\n\tWaiting on System App\n\n[2026-10-14 07:22:38 +0000] Status=4, isTerminal=NO, Elapsed=00:05.\n\tWaiting on System App\n\n[2026-10-14 07:22:39 +0000] Status=4, isTerminal=NO, Elapsed=00:06.\n\tWaiting on System App\n\n[2026-10-14 07:22:42 +0000] Status=4294967295, isTerminal=YES, Elapsed=00:09.\n\tFinished\n\n",
+  "stderr": ""
+}

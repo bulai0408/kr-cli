@@ -74,14 +74,16 @@ pub fn take(
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
     let heavy = matches!(res, Resource::Build | Resource::Sim);
+    // Wait for the load before taking the machine-wide lock, so a busy machine does not
+    // also block other projects' queue.
+    if heavy && loaded.config.machine.load.check {
+        wait_for_load(ctx, loaded, runner, run_id, res)?;
+    }
     let legacy = if heavy {
         machine_lock(ctx, loaded, run_id, task)?
     } else {
         None
     };
-    if heavy && loaded.config.machine.load.check {
-        wait_for_load(ctx, loaded, runner, run_id, res)?;
-    }
     Ok(Taken {
         slot,
         task: task.to_owned(),
@@ -179,12 +181,13 @@ fn wait_for_load(
     let max_wait = kr_config::parse_timeout(&loaded.config.machine.load.max_wait)
         .unwrap_or(kr_config::DEFAULT_TIMEOUT);
     let mut first = true;
-    let wait = kr_machine::wait_for_load(runner, LOAD_POLL, max_wait, |hw| {
+    let per_core = loaded.config.machine.load.per_core;
+    let wait = kr_machine::wait_for_load(runner, per_core, LOAD_POLL, max_wait, |hw| {
         if !first {
             return;
         }
         first = false;
-        let reason = hw.overloaded().unwrap_or_default();
+        let reason = hw.overloaded(per_core).unwrap_or_default();
         let _ = log.append(&Event::now(
             run_id,
             project,
@@ -247,4 +250,19 @@ fn announce_wait(ctx: &Ctx, loaded: &Loaded, res: Resource, capacity: u32) -> Re
         );
     }
     Ok(())
+}
+
+/// Keeps the old machine lock's owner pointing at a running child (ADR 0009): the
+/// newest one still running, else kr itself.
+pub fn watch_children() {
+    let active = std::sync::Mutex::new(Vec::<u32>::new());
+    kr_exec::set_spawn_observer(move |event| {
+        let mut active = active.lock().unwrap_or_else(|e| e.into_inner());
+        match event {
+            kr_exec::Spawn::Started(pid) => active.push(pid),
+            kr_exec::Spawn::Finished(pid) => active.retain(|p| *p != pid),
+        }
+        let owner = active.last().copied().unwrap_or_else(std::process::id);
+        kr_resource::legacy::set_owner_pid(owner);
+    });
 }

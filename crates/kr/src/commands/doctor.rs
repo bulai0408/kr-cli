@@ -29,7 +29,8 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
         }
         None => None,
     };
-    let problems = diagnose(&profile, project, devices.as_ref());
+    let per_core = loaded.config.machine.load.per_core;
+    let problems = diagnose(&profile, project, devices.as_ref(), per_core);
     let capacity: Vec<(String, Value)> = Resource::ALL
         .iter()
         .map(|&res| {
@@ -57,7 +58,7 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
                 "memory_bytes": profile.hardware.memory_bytes,
                 "disk_free_bytes": profile.disk_free_bytes,
                 "load": profile.hardware.load,
-                "load_threshold": profile.hardware.load_threshold(),
+                "load_threshold": profile.hardware.load_threshold(per_core),
                 "memory_pressure": profile.hardware.pressure,
                 "swap_used_bytes": profile.hardware.swap_used_bytes,
             },
@@ -143,7 +144,7 @@ fn print_human(
         hw.load.one,
         hw.load.five,
         hw.load.fifteen,
-        hw.load_threshold(),
+        hw.load_threshold(loaded.config.machine.load.per_core),
         json!(hw.pressure).as_str().unwrap_or("?"),
         hw.swap_used_bytes as f64 / GB
     );

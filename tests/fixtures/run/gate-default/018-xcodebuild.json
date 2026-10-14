@@ -1,0 +1,25 @@
+{
+  "program": "xcodebuild",
+  "args": [
+    "test-without-building",
+    "-quiet",
+    "-skipMacroValidation",
+    "-destination",
+    "id=31038384-DFE3-45BC-8984-78A3857E5A5F",
+    "-xctestrun",
+    "build/kr/DerivedData/Build/Products/KrSample_iphonesimulator27.1-arm64-x86_64.xctestrun",
+    "-collect-test-diagnostics",
+    "never",
+    "-parallel-testing-enabled",
+    "NO",
+    "-enumerate-tests",
+    "-test-enumeration-style",
+    "flat",
+    "-test-enumeration-format",
+    "json",
+    "-only-testing:KrSampleUITests/LaunchUITests"
+  ],
+  "status": 0,
+  "stdout": "2026-10-14 15:22:06.761 xcodebuild[92474:24755057] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-14 15:22:08.570 xcodebuild[92474:24755057] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-14 15:22:08.570 xcodebuild[92474:24755057] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n{\n  \"errors\" : [\n\n  ],\n  \"values\" : [\n    {\n      \"disabledTests\" : [\n        {\n          \"identifier\" : \"KrSampleUITests/SettingsUITests/testFailsOnRequest()\"\n        },\n        {\n          \"identifier\" : \"KrSampleUITests/SettingsUITests/testLaunchesTwice()\"\n        }\n      ],\n      \"enabledTests\" : [\n        {\n          \"identifier\" : \"KrSampleUITests/LaunchUITests/testFlakyOnce()\"\n        },\n        {\n          \"identifier\" : \"KrSampleUITests/LaunchUITests/testShowsGreeting()\"\n        }\n      ],\n      \"testPlan\" : \"KrSample\"\n    }\n  ]\n}\n",
+  "stderr": ""
+}

@@ -4,7 +4,9 @@
 
 mod results;
 
-pub use results::{Enumeration, TestCase, TestOutcome, only_testing_id, parse_test_results, results_command};
+pub use results::{
+    Enumeration, TestCase, TestOutcome, only_testing_id, parse_test_results, results_command,
+};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

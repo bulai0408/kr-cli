@@ -59,8 +59,19 @@ pub enum EventKind {
     /// The old machine-wide lock was taken (ADR 0009). Fields: `waited_ms`, owner it
     /// waited for.
     MachineLock,
+    /// A build was skipped: its inputs match its last successful build. Fields: job, hash.
+    BuildCacheHit,
     /// A step of a command finished. Fields: command, step, ok, `duration_ms`.
     StepEnd,
+    /// A scenario or suite started. Fields: item, kind, device.
+    ItemStart,
+    /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
+    /// tests (counts per outcome), flaky.
+    ItemEnd,
+    /// A failed test was run again on its own. Fields: item, test, passed.
+    Rerun,
+    /// A filter passed the static check but selected nothing on the device.
+    FilterMismatch,
     /// A pool simulator was leased and booted. Fields: device, udid, `boot_ms`.
     SimLeased,
     /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.

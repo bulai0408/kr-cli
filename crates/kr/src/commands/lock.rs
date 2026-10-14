@@ -115,6 +115,7 @@ pub(crate) fn run_command(
         .process_group(0)
         .spawn()
         .with_context(|| format!("failed to start `{}`", command.join(" ")))?;
+    kr_exec::notify_spawn(kr_exec::Spawn::Started(child.id()));
     // Record the command's process group right away, so the slot counts as held
     // ("orphan") if kr dies. The signal handlers above keep SIGINT/TERM/HUP from
     // killing kr in between; only a SIGKILL during the microseconds between spawn and
@@ -125,6 +126,7 @@ pub(crate) fn run_command(
     let pgid = libc::pid_t::try_from(child.id())?;
     loop {
         if let Some(status) = child.try_wait()? {
+            kr_exec::notify_spawn(kr_exec::Spawn::Finished(child.id()));
             return Ok(status
                 .code()
                 .unwrap_or_else(|| 128 + status.signal().unwrap_or(0)));

@@ -110,18 +110,18 @@ impl Hardware {
         self.memory_bytes >> 30
     }
 
-    /// Above this 1-minute load, heavy work waits: 1.25 × logical cores.
-    pub fn load_threshold(&self) -> f64 {
-        self.cores as f64 * 1.25
+    /// Above this 1-minute load, heavy work waits: `per_core` × logical cores.
+    pub fn load_threshold(&self, per_core: f64) -> f64 {
+        self.cores as f64 * per_core
     }
 
     /// Why heavy work should wait now, if it should.
-    pub fn overloaded(&self) -> Option<String> {
-        if self.load.one > self.load_threshold() {
+    pub fn overloaded(&self, per_core: f64) -> Option<String> {
+        if self.load.one > self.load_threshold(per_core) {
             return Some(format!(
-                "1-minute load {:.2} is above {:.0} (1.25 × {} cores)",
+                "1-minute load {:.2} is above {:.0} ({per_core} × {} cores)",
                 self.load.one,
-                self.load_threshold(),
+                self.load_threshold(per_core),
                 self.cores
             ));
         }
@@ -195,6 +195,7 @@ pub struct LoadWait {
 /// `on_busy` is called with each reading that is too high.
 pub fn wait_for_load(
     runner: &dyn Runner,
+    per_core: f64,
     poll: Duration,
     limit: Duration,
     mut on_busy: impl FnMut(&Hardware),
@@ -204,7 +205,7 @@ pub fn wait_for_load(
     loop {
         let hw = read_hardware(runner)?;
         checks += 1;
-        if hw.overloaded().is_none() {
+        if hw.overloaded(per_core).is_none() {
             return Ok(LoadWait {
                 checks,
                 waited: start.elapsed(),

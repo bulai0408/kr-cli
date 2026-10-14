@@ -151,7 +151,10 @@ pub fn judge(enumeration: &Enumeration, first: &Attempt, reruns: &[Option<Attemp
                     Some(c) if matches!(c.outcome, TestOutcome::Passed | TestOutcome::Other) => {
                         (Final::Flaky, t.failure.clone())
                     }
-                    Some(c) => (Final::Failed, c.failure.clone().or_else(|| t.failure.clone())),
+                    Some(c) => (
+                        Final::Failed,
+                        c.failure.clone().or_else(|| t.failure.clone()),
+                    ),
                     None => (Final::Failed, t.failure.clone()),
                 }
             }
