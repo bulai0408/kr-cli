@@ -46,7 +46,11 @@ impl Drop for Cleanup {
         if let Ok(devices) = simctl.devices() {
             for d in devices.devices.values().flatten() {
                 if d.name.starts_with("KrIntegration-Verify-") {
-                    let _ = RealRunner.run(&Command::new("xcrun").args(["simctl", "delete", d.udid.as_str()]));
+                    let _ = RealRunner.run(&Command::new("xcrun").args([
+                        "simctl",
+                        "delete",
+                        d.udid.as_str(),
+                    ]));
                 }
             }
         }
@@ -65,12 +69,34 @@ fn real_pool_sync_lease_and_release() {
 
     let report = sync(&simctl, &project).unwrap();
     assert_eq!(report.created, ["KrIntegration-Verify-1"], "{report:?}");
-    assert_eq!(sync(&simctl, &project).unwrap().existing, ["KrIntegration-Verify-1"]);
+    assert_eq!(
+        sync(&simctl, &project).unwrap().existing,
+        ["KrIntegration-Verify-1"]
+    );
 
-    let devices = plan(&project, &simctl.runtimes().unwrap(), &simctl.devices().unwrap()).unwrap();
+    let devices = plan(
+        &project,
+        &simctl.runtimes().unwrap(),
+        &simctl.devices().unwrap(),
+    )
+    .unwrap();
     let dir = tempfile::tempdir().unwrap();
-    let holder = LeaseHolder { project: None, task: "integration".into(), pid: std::process::id(), started: jiff::Timestamp::now() };
-    let lease = kr_sim::lease(&simctl, &DeviceLocks::new(dir.path()), &devices, "default", &holder, Duration::from_secs(1), Some(Duration::ZERO)).unwrap();
+    let holder = LeaseHolder {
+        project: None,
+        task: "integration".into(),
+        pid: std::process::id(),
+        started: jiff::Timestamp::now(),
+    };
+    let lease = kr_sim::lease(
+        &simctl,
+        &DeviceLocks::new(dir.path()),
+        &devices,
+        "default",
+        &holder,
+        Duration::from_secs(1),
+        Some(Duration::ZERO),
+    )
+    .unwrap();
     let udid = lease.udid().to_owned();
     assert_eq!(state_of(&simctl, &udid), "Booted");
 
