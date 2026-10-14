@@ -1,0 +1,18 @@
+---
+source: crates/kr/tests/doctor.rs
+assertion_line: 69
+expression: text
+---
+doctor: OK with 1 warning(s)
+  warning pool_incomplete: simulator pool is missing Krill-Verify-3
+    fix: run `kr pool sync` to create them
+
+machine   iMac · Apple M3 · 8 cores (4 performance) · 24 GB · 242 GB free
+load      3.08 / 3.41 / 3.62 (heavy work waits above 10) · memory pressure normal · swap 1.6 GB used
+xcode     27.1 (27A9269) <apps>/Xcode.app · 26.6 (17F113) <apps>/Xcode_26.6.app
+          kr uses DEVELOPER_DIR=<apps>/Xcode.app/Contents/Developer
+runtimes  iOS 18.6, iOS 26.5, iOS 27.0, iOS 27.1, tvOS 26.5, tvOS 27.0
+capacity  build 1  suggested: clamp(min(P/6, M/16), 1, 4) with P=4, M=24 → min(0, 1) → 1
+          sim   2  suggested: clamp(min(P/2, (M-8)/4), 1, 6) with P=4, M=24 → min(2, 4) → 2
+          light 1  suggested: clamp(P/4, 1, 4) with P=4 → 1 → 1
+pool      Krill: default: iPhone 16 Pro × 3 on iOS 18.6 · iPad: iPad Pro 13-inch (M4) (16GB) × 1 on iOS 18.6

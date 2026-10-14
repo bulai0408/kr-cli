@@ -111,3 +111,18 @@ fn sanitizer_removes_the_user_name_from_other_paths_under_users() {
     let rec = recording("ls", &[], 0, "/Users/alice/x");
     assert_eq!(sanitizer.sanitize(rec).stdout, "/Users/<user>/x");
 }
+
+#[test]
+fn sanitizer_also_cleans_json_escaped_paths() {
+    let sanitizer = Sanitizer::new("/Users/alice", "alice");
+    let rec = recording(
+        "xcrun",
+        &[],
+        0,
+        r#"{"dataPath" : "\/Users\/alice\/Library"}"#,
+    );
+    assert_eq!(
+        sanitizer.sanitize(rec).stdout,
+        r#"{"dataPath" : "~\/Library"}"#
+    );
+}

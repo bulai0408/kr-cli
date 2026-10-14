@@ -32,6 +32,7 @@ pub struct LockArgs {
 /// Slots held by ancestors, passed to children as `KR_HELD=build:1,sim:2`.
 const HELD_VAR: &str = "KR_HELD";
 const POLL: Duration = Duration::from_millis(500);
+const LOAD_POLL: Duration = Duration::from_secs(15);
 
 pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
@@ -60,7 +61,8 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
         ))?;
     }
 
-    let capacity = loaded.capacity(res);
+    let runner = ctx.runner()?;
+    let capacity = loaded.capacity(res, runner.as_ref())?;
     let holder = Holder {
         project: project.map(str::to_owned),
         task: task.clone(),
@@ -96,6 +98,10 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": waited.as_millis() as u64 }),
     ))?;
 
+    if matches!(res, Resource::Build | Resource::Sim) && loaded.config.machine.load.check {
+        wait_for_load(ctx, &loaded, runner.as_ref(), run_id, res)?;
+    }
+
     let started = Instant::now();
     let mut child_held: Vec<(Resource, u32)> =
         held.into_iter().filter(|(r, _)| *r != res).collect();
@@ -116,6 +122,54 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     ))?;
     drop(slot);
     result.map(exit_code)
+}
+
+/// Waits (holding the slot) while the machine is overloaded, and records it.
+fn wait_for_load(
+    ctx: &Ctx,
+    loaded: &crate::Loaded,
+    runner: &dyn kr_exec::Runner,
+    run_id: RunId,
+    res: Resource,
+) -> Result<()> {
+    let log = loaded.events();
+    let project = loaded.project();
+    let max_wait = kr_config::parse_timeout(&loaded.config.machine.load.max_wait)
+        .unwrap_or(kr_config::DEFAULT_TIMEOUT);
+    let mut first = true;
+    let wait = kr_machine::wait_for_load(runner, LOAD_POLL, max_wait, |hw| {
+        if !first {
+            return;
+        }
+        first = false;
+        let reason = hw.overloaded().unwrap_or_default();
+        let _ = log.append(&Event::now(
+            run_id,
+            project,
+            EventKind::LoadWait,
+            json!({ "resource": res, "load": hw.load, "pressure": hw.pressure, "reason": reason }),
+        ));
+        if ctx.json {
+            eprintln!("{}", json!({ "load_wait": res, "reason": reason }));
+        } else {
+            eprintln!("waiting before {res} work: {reason}");
+        }
+    })?;
+    if wait.checks > 1 {
+        log.append(&Event::now(
+            run_id,
+            project,
+            EventKind::LoadOk,
+            json!({ "resource": res, "waited_ms": wait.waited.as_millis() as u64, "checks": wait.checks, "timed_out": wait.timed_out }),
+        ))?;
+        if wait.timed_out {
+            eprintln!(
+                "load still high after {}; going ahead",
+                human_duration(wait.waited)
+            );
+        }
+    }
+    Ok(())
 }
 
 fn exit_code(code: i32) -> ExitCode {

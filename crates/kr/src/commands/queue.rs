@@ -31,9 +31,10 @@ pub fn run(ctx: &Ctx, args: QueueArgs) -> Result<ExitCode> {
         args.resources
     };
     let now = Timestamp::now();
+    let runner = ctx.runner()?;
     let mut views = Vec::new();
     for res in resources {
-        let status = pool.status(res, loaded.capacity(res))?;
+        let status = pool.status(res, loaded.capacity(res, runner.as_ref())?)?;
         views.push(view(&status, avg_hold(&log, res), now));
     }
 

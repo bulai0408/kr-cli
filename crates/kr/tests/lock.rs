@@ -25,6 +25,8 @@ impl Machine {
             .env("HOME", self.dir.path())
             .env("PATH", std::env::var("PATH").unwrap())
             .env("KR_STATE_DIR", self.dir.path().join("state"))
+            // A busy machine must not slow these tests down; the load check has its own tests.
+            .env("KR_LOAD__CHECK", "false")
             .env("NO_COLOR", "1")
             .current_dir(self.dir.path().join("work"));
         cmd
@@ -60,7 +62,15 @@ impl Machine {
     }
 
     fn queue_json(&self) -> serde_json::Value {
-        let out = self.kr().args(["queue", "--json"]).output().unwrap();
+        let out = self
+            .kr()
+            .args(["queue", "--json"])
+            // Fixed capacities: unset ones would be suggested from this machine's hardware.
+            .env("KR_RESOURCES__BUILD", "1")
+            .env("KR_RESOURCES__SIM", "1")
+            .env("KR_RESOURCES__LIGHT", "1")
+            .output()
+            .unwrap();
         assert!(
             out.status.success(),
             "{}",

@@ -52,6 +52,10 @@ pub enum EventKind {
     SlotReleased,
     /// A nested `kr lock` claimed a held slot it could not prove it owns.
     ReentryDenied,
+    /// Heavy work is waiting because the machine is too busy. Fields: load, reason.
+    LoadWait,
+    /// The load check passed. Fields: `waited_ms`, `checks`, `timed_out`.
+    LoadOk,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

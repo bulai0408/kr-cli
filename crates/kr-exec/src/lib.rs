@@ -237,12 +237,16 @@ impl Sanitizer {
         for secret in &self.secrets {
             text = text.replace(secret.as_str(), "<redacted>");
         }
+        // Paths appear plain and, in JSON from tools like simctl, with escaped slashes.
         if !self.home.is_empty() {
             text = text.replace(self.home.as_str(), "~");
+            text = text.replace(&self.home.replace('/', "\\/"), "~");
         }
         if !self.user.is_empty() {
             // Only as a path segment: a short user name may also be part of normal words.
-            text = text.replace(&format!("/Users/{}/", self.user), "/Users/<user>/");
+            let user = &self.user;
+            text = text.replace(&format!("/Users/{user}/"), "/Users/<user>/");
+            text = text.replace(&format!("\\/Users\\/{user}\\/"), "\\/Users\\/<user>\\/");
         }
         text
     }
