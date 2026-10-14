@@ -67,6 +67,7 @@ kr 是 owner 个人的开发流程执行层，把 owner 的最佳实践变成可
 - Krill 仓库加入 `.kr.toml`，`e2e.sh` / `test.sh` 不再需要（kr 不可用时可临时回退旧脚本）。
 
 ## 第二阶段（P1）
+- **判断骨架（第一张票，ADR 0011）**：判断点结构与专门退出码、`kr decide` 交回决定并记录、事后对账事件、`kr skill`（随版本发布，可按项目和个人追加）。以下各项都建在它上面。
 - **选测**：从 `swift package describe --type json` 和工程配置生成模块依赖图；改动文件 → 模块 → 反向闭包 → 场景（场景在配置里声明覆盖的模块）；`--explain` 说明原因；`kr hash` 调试。
 - **合并辅助**：`git merge-tree` 预测分支冲突；xcstrings 按键三方合并的 merge driver（合并后用 `xcstringstool` 校验）；为每个 worktree 开启 rerere；合并后秒级快检（JSON 解析、场景清单一致、迁移顺序、改动模块增量编译）；合并后凭证扫描。
 - **远程机器**：SSH 资源提供方，远程运行同一个 kr，git 拉取已推送分支，结果回传。
