@@ -1,0 +1,52 @@
+# Sample Apple project for kr's own tests: recorded xcodebuild outputs and opt-in
+# integration runs. `xcodegen generate` creates KrSample.xcodeproj (not committed).
+name: KrSample
+options:
+  bundleIdPrefix: dev.kr
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    # Overridden by kr runs, like Krill's KRILL_ACCEPTANCE_BUNDLE_ID.
+    KR_SAMPLE_BUNDLE_ID: dev.kr.sample
+targets:
+  KrSample:
+    type: application
+    platform: iOS
+    sources: [App]
+    info:
+      path: App/Info.plist
+      properties:
+        UILaunchScreen: {}
+    entitlements:
+      path: App/KrSample.entitlements
+      properties:
+        com.apple.developer.icloud-container-environment: Development
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(KR_SAMPLE_BUNDLE_ID)
+  KrSampleTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: KrSample
+  KrSampleUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: KrSample
+schemes:
+  KrSample:
+    build:
+      targets:
+        KrSample: all
+    test:
+      targets:
+        - KrSampleTests
+        - KrSampleUITests

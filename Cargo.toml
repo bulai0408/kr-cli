@@ -16,6 +16,7 @@ kr-exec = { path = "crates/kr-exec" }
 kr-machine = { path = "crates/kr-machine" }
 kr-resource = { path = "crates/kr-resource" }
 kr-sim = { path = "crates/kr-sim" }
+kr-xcode = { path = "crates/kr-xcode" }
 
 anyhow = "1"
 clap = { version = "4.6", features = ["derive", "env"] }

@@ -5,8 +5,15 @@
 
 use std::collections::VecDeque;
 use std::fmt;
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -18,6 +25,8 @@ pub struct Command {
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(String, String)>,
+    /// Hard limit for [`Runner::run_logged`]: the process group is terminated after it.
+    pub timeout: Option<Duration>,
 }
 
 impl Command {
@@ -27,6 +36,7 @@ impl Command {
             args: Vec::new(),
             cwd: None,
             env: Vec::new(),
+            timeout: None,
         }
     }
 
@@ -53,6 +63,11 @@ impl Command {
         self.env.push((key.into(), value.into()));
         self
     }
+
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
 }
 
 impl fmt::Display for Command {
@@ -70,8 +85,11 @@ impl fmt::Display for Command {
 pub struct Output {
     /// Exit code; `None` when the process was killed by a signal.
     pub status: Option<i32>,
+    /// For [`Runner::run_logged`] on a real process: the tail of the combined log.
     pub stdout: String,
     pub stderr: String,
+    /// The command ran past its timeout and was killed.
+    pub timed_out: bool,
 }
 
 impl Output {
@@ -80,9 +98,48 @@ impl Output {
     }
 }
 
+/// How much of a logged run's output is kept in memory.
+pub const TAIL_BYTES: u64 = 64 * 1024;
+/// After a timeout: time between SIGTERM and SIGKILL.
+pub const KILL_GRACE: Duration = Duration::from_secs(5);
+
 /// Runs external commands. Every call to an external tool goes through this trait.
 pub trait Runner: Send + Sync {
     fn run(&self, cmd: &Command) -> Result<Output>;
+
+    /// Runs a long command (e.g. xcodebuild) with stdout and stderr streamed into
+    /// `log`, honouring `cmd.timeout`. Only a tail of the output is kept in memory.
+    fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
+        let out = self.run(cmd)?;
+        write_log(log, &[out.stdout.as_bytes(), out.stderr.as_bytes()])?;
+        Ok(out)
+    }
+}
+
+fn write_log(log: &Path, parts: &[&[u8]]) -> Result<()> {
+    if let Some(dir) = log.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut file =
+        File::create(log).with_context(|| format!("failed to create {}", log.display()))?;
+    for part in parts {
+        file.write_all(part)?;
+    }
+    Ok(())
+}
+
+fn tail(log: &Path) -> Result<String> {
+    let mut file = File::open(log)?;
+    let len = file.metadata()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(TAIL_BYTES)))?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf)?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+fn kill_group(pgid: libc::pid_t, signal: libc::c_int) {
+    // SAFETY: plain kill(2) on a process group we started.
+    unsafe { libc::kill(-pgid, signal) };
 }
 
 /// Runs commands for real and captures their output.
@@ -103,7 +160,91 @@ impl Runner for RealRunner {
             status: out.status.code(),
             stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            timed_out: false,
         })
+    }
+
+    /// The command leads its own process group, so a timeout or a forwarded signal
+    /// reaches everything it started. SIGINT, SIGTERM and SIGHUP sent to kr meanwhile
+    /// are passed on, and the call returns an error once the command has stopped.
+    fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
+        if let Some(dir) = log.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file =
+            File::create(log).with_context(|| format!("failed to create {}", log.display()))?;
+        let mut command = std::process::Command::new(&cmd.program);
+        command
+            .args(&cmd.args)
+            .envs(cmd.env.iter().cloned())
+            .stdin(Stdio::null())
+            .stdout(file.try_clone()?)
+            .stderr(file)
+            .process_group(0);
+        if let Some(dir) = &cmd.cwd {
+            command.current_dir(dir);
+        }
+        let pending = Arc::new(AtomicUsize::new(0));
+        let mut hooks = Vec::new();
+        for signal in [
+            signal_hook::consts::SIGINT,
+            signal_hook::consts::SIGTERM,
+            signal_hook::consts::SIGHUP,
+        ] {
+            hooks.push(signal_hook::flag::register_usize(
+                signal,
+                Arc::clone(&pending),
+                signal as usize,
+            )?);
+        }
+        let result = (|| {
+            let mut child = command
+                .spawn()
+                .with_context(|| format!("failed to start `{cmd}`"))?;
+            let pgid = libc::pid_t::try_from(child.id())?;
+            let deadline = cmd.timeout.map(|t| Instant::now() + t);
+            let mut terminated_at: Option<Instant> = None;
+            let mut interrupted = None;
+            let status = loop {
+                if let Some(status) = child.try_wait()? {
+                    break status;
+                }
+                let signal = pending.swap(0, Ordering::SeqCst);
+                if signal != 0 {
+                    interrupted = Some(signal);
+                    kill_group(pgid, signal as libc::c_int);
+                }
+                match terminated_at {
+                    None if deadline.is_some_and(|d| Instant::now() >= d) => {
+                        kill_group(pgid, libc::SIGTERM);
+                        terminated_at = Some(Instant::now());
+                    }
+                    Some(at) if at.elapsed() >= KILL_GRACE => kill_group(pgid, libc::SIGKILL),
+                    _ => {}
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            };
+            // Whatever the command left behind in its group goes too.
+            if terminated_at.is_some() || interrupted.is_some() {
+                kill_group(pgid, libc::SIGKILL);
+            }
+            if let Some(signal) = interrupted {
+                bail!(
+                    "`{cmd}` was interrupted (signal {signal}); its log is {}",
+                    log.display()
+                );
+            }
+            Ok(Output {
+                status: status.code().or_else(|| status.signal().map(|s| 128 + s)),
+                stdout: tail(log)?,
+                stderr: String::new(),
+                timed_out: terminated_at.is_some(),
+            })
+        })();
+        for hook in hooks {
+            signal_hook::low_level::unregister(hook);
+        }
+        result
     }
 }
 
@@ -116,6 +257,8 @@ pub struct Recording {
     pub stdout: String,
     #[serde(default)]
     pub stderr: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub timed_out: bool,
 }
 
 impl Recording {
@@ -128,6 +271,7 @@ impl Recording {
             status: self.status,
             stdout: self.stdout.clone(),
             stderr: self.stderr.clone(),
+            timed_out: self.timed_out,
         }
     }
 }
@@ -237,6 +381,7 @@ impl Sanitizer {
             status: rec.status,
             stdout: self.clean(&rec.stdout),
             stderr: self.clean(&rec.stderr),
+            timed_out: rec.timed_out,
         }
     }
 
@@ -257,5 +402,61 @@ impl Sanitizer {
             text = text.replace(&format!("\\/Users\\/{user}\\/"), "\\/Users\\/<user>\\/");
         }
         text
+    }
+}
+
+/// Runs commands with another runner and saves every call as a sanitized recording:
+/// `<dir>/001-xcodebuild.json`, `<dir>/002-xcrun.json`, … For capturing fixtures.
+pub struct RecordingRunner<R> {
+    inner: R,
+    dir: PathBuf,
+    sanitizer: Sanitizer,
+    count: AtomicUsize,
+}
+
+impl<R: Runner> RecordingRunner<R> {
+    pub fn new(inner: R, dir: impl Into<PathBuf>, sanitizer: Sanitizer) -> Self {
+        Self {
+            inner,
+            dir: dir.into(),
+            sanitizer,
+            count: AtomicUsize::new(0),
+        }
+    }
+
+    fn save(&self, cmd: &Command, out: &Output, combined: Option<String>) -> Result<()> {
+        let n = self.count.fetch_add(1, Ordering::SeqCst) + 1;
+        let name = Path::new(&cmd.program)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("cmd");
+        let rec = self.sanitizer.sanitize(Recording {
+            program: cmd.program.clone(),
+            args: cmd.args.clone(),
+            status: out.status,
+            stdout: combined.unwrap_or_else(|| out.stdout.clone()),
+            stderr: out.stderr.clone(),
+            timed_out: out.timed_out,
+        });
+        std::fs::create_dir_all(&self.dir)?;
+        let path = self.dir.join(format!("{n:03}-{name}.json"));
+        std::fs::write(&path, serde_json::to_string_pretty(&rec)? + "\n")?;
+        Ok(())
+    }
+}
+
+impl<R: Runner> Runner for RecordingRunner<R> {
+    fn run(&self, cmd: &Command) -> Result<Output> {
+        let out = self.inner.run(cmd)?;
+        self.save(cmd, &out, None)?;
+        Ok(out)
+    }
+
+    fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
+        let out = self.inner.run_logged(cmd, log)?;
+        // The whole log, not just the tail, so a replay reproduces it.
+        let full = std::fs::read_to_string(log).unwrap_or_default();
+        self.save(cmd, &out, Some(full))?;
+        Ok(out)
     }
 }

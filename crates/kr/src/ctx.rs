@@ -24,6 +24,16 @@ impl Ctx {
     /// Runs external commands for real, or replays recordings listed in `KR_REPLAY`
     /// (colon-separated files; for kr's own tests).
     pub fn runner(&self) -> Result<Box<dyn Runner>> {
+        // KR_RECORD=<dir>: run for real and save every call as a fixture (developers only).
+        if let Some(dir) = self.env_var("KR_RECORD") {
+            let sanitizer = kr_exec::Sanitizer::new(
+                self.env_var("HOME").unwrap_or(""),
+                self.env_var("USER").unwrap_or(""),
+            );
+            return Ok(Box::new(kr_exec::RecordingRunner::new(
+                RealRunner, dir, sanitizer,
+            )));
+        }
         match self.env_var("KR_REPLAY") {
             Some(list) => Ok(Box::new(ReplayRunner::from_files(
                 list.split(':').filter(|p| !p.is_empty()),
@@ -42,18 +52,26 @@ impl Ctx {
 
     /// Loads the configuration and resolves the state directory.
     pub fn load(&self) -> Result<Loaded> {
-        let config = kr_config::Sources::discover(&self.cwd, self.env.clone()).load()?;
+        let sources = kr_config::Sources::discover(&self.cwd, self.env.clone());
+        let config = sources.load()?;
+        let project_file = sources.project.filter(|_| config.project.is_some());
         let state_dir = config
             .machine
             .state_dir(&self.env)
             .context("cannot find a state directory: set HOME or KR_STATE_DIR")?;
-        Ok(Loaded { config, state_dir })
+        Ok(Loaded {
+            config,
+            state_dir,
+            project_file,
+        })
     }
 }
 
 pub struct Loaded {
     pub config: kr_config::Config,
     pub state_dir: PathBuf,
+    /// The `.kr.toml` the project came from; its directory is the repo root.
+    pub project_file: Option<PathBuf>,
 }
 
 /// A resource capacity and where it came from.
@@ -68,6 +86,25 @@ pub struct Capacity {
 }
 
 impl Loaded {
+    /// The project and its repo root, or an error saying how to get one.
+    pub fn require_project(&self) -> Result<(&kr_config::ProjectConfig, PathBuf)> {
+        let project = self.config.project.as_ref().context(
+            "no .kr.toml found from here up to the repo root; add one (see examples/krill.kr.toml)",
+        )?;
+        let root = self
+            .project_file
+            .as_deref()
+            .and_then(|f| f.parent())
+            .context("cannot find the repo root")?
+            .to_owned();
+        Ok((project, root))
+    }
+
+    /// Where a run keeps its logs: `<state>/runs/<run id>`.
+    pub fn run_dir(&self, run_id: kr_events::RunId) -> PathBuf {
+        self.state_dir.join("runs").join(run_id.to_string())
+    }
+
     pub fn pool(&self) -> kr_resource::Pool {
         kr_resource::Pool::new(self.state_dir.join("resources"))
     }

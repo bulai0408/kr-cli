@@ -46,6 +46,7 @@ fn main() -> Result<()> {
         status: out.status,
         stdout: out.stdout,
         stderr: out.stderr,
+        timed_out: out.timed_out,
     };
     let home = std::env::var("HOME").unwrap_or_default();
     let user = std::env::var("USER").unwrap_or_default();

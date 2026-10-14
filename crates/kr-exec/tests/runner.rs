@@ -7,6 +7,7 @@ fn recording(program: &str, args: &[&str], status: i32, stdout: &str) -> Recordi
         status: Some(status),
         stdout: stdout.into(),
         stderr: String::new(),
+        timed_out: false,
     }
 }
 

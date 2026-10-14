@@ -7,6 +7,7 @@ use anyhow::Result;
 use jiff::Timestamp;
 use kr_events::{Event, EventKind, RunId};
 use kr_exec::Runner;
+use kr_resource::legacy::{LegacyGuard, LegacyLock};
 use kr_resource::{Holder, Resource, Slot};
 use serde_json::json;
 
@@ -21,6 +22,8 @@ pub struct Taken {
     pub slot: Slot,
     pub task: String,
     pub started: Instant,
+    /// The old machine-wide lock, held with heavy slots when the bridge is on.
+    pub legacy: Option<LegacyGuard>,
 }
 
 /// Queues for a slot of `res`, then (for `build` and `sim`) waits for the load to be
@@ -70,13 +73,20 @@ pub fn take(
         EventKind::SlotAcquired,
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
-    if matches!(res, Resource::Build | Resource::Sim) && loaded.config.machine.load.check {
+    let heavy = matches!(res, Resource::Build | Resource::Sim);
+    let legacy = if heavy {
+        machine_lock(ctx, loaded, run_id, task)?
+    } else {
+        None
+    };
+    if heavy && loaded.config.machine.load.check {
         wait_for_load(ctx, loaded, runner, run_id, res)?;
     }
     Ok(Taken {
         slot,
         task: task.to_owned(),
         started: Instant::now(),
+        legacy,
     })
 }
 
@@ -99,8 +109,61 @@ pub fn give_back(
             "exit_code": exit_code,
         }),
     ))?;
+    drop(taken.legacy);
     drop(taken.slot);
     Ok(())
+}
+
+/// Takes the old machine-wide lock too, if the bridge is configured (ADR 0009).
+fn machine_lock(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    run_id: RunId,
+    task: &str,
+) -> Result<Option<LegacyGuard>> {
+    let legacy = &loaded.config.machine.legacy;
+    let (Some(lock), Some(queue)) = (&legacy.machine_lock, &legacy.queue) else {
+        return Ok(None);
+    };
+    let poll = legacy
+        .poll
+        .as_deref()
+        .and_then(kr_config::parse_timeout)
+        .unwrap_or(kr_resource::legacy::DEFAULT_POLL);
+    let bridge = LegacyLock::new(lock, queue).with_poll(poll);
+    let start = Instant::now();
+    let mut waited_for = None;
+    let guard = bridge.acquire(&format!("kr-{task}"), |owner| {
+        let who = owner.map_or_else(
+            || "unknown".to_owned(),
+            |o| format!("{} (pid {}, since {})", o.task, o.pid, o.started),
+        );
+        waited_for = Some(who.clone());
+        if ctx.json {
+            eprintln!(
+                "{}",
+                json!({ "waiting": "machine_lock", "lock": lock, "holder": who })
+            );
+        } else {
+            eprintln!(
+                "waiting for the machine lock {}: held by {who}",
+                lock.display()
+            );
+        }
+    })?;
+    loaded.events().append(&Event::now(
+        run_id,
+        loaded.project(),
+        EventKind::MachineLock,
+        json!({
+            "lock": lock,
+            "waited_ms": start.elapsed().as_millis() as u64,
+            "waited_for": waited_for,
+            "held_by_ancestor": guard.is_ancestors(),
+            "shared_in_process": !guard.is_owned() && !guard.is_ancestors(),
+        }),
+    ))?;
+    Ok(Some(guard))
 }
 
 /// Waits (holding the slot) while the machine is overloaded, and records it.

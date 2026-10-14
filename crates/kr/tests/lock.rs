@@ -388,3 +388,122 @@ fn queue_json_lists_holders_and_waiters_with_estimates() {
         assert_eq!(finish(c, Duration::from_secs(10)), 0);
     }
 }
+
+/// `kr lock` with the old machine-lock bridge pointed at this test's temp dir.
+fn bridged(m: &Machine, res: &str, script: &str) -> Child {
+    m.kr()
+        .args(["lock", res, "--", "sh", "-c", script])
+        .env(format!("KR_RESOURCES__{}", res.to_uppercase()), "1")
+        .env(
+            "KR_LEGACY__MACHINE_LOCK",
+            m.dir.path().join("native-build.lock"),
+        )
+        .env("KR_LEGACY__QUEUE", m.dir.path().join("native-build.queue"))
+        .env("KR_LEGACY__POLL", "1s")
+        .env("LOG", m.log())
+        .env("KR", env!("CARGO_BIN_EXE_kr"))
+        .env("LOCK", m.dir.path().join("native-build.lock"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+#[test]
+fn with_the_bridge_on_an_old_script_cannot_take_the_machine_lock_while_kr_builds() {
+    let m = Machine::new();
+    let kr = bridged(
+        &m,
+        "build",
+        "mkdir \"$LOCK\" 2>/dev/null && echo took >> \"$LOG\" || echo blocked >> \"$LOG\"",
+    );
+    assert_eq!(finish(kr, Duration::from_secs(10)), 0);
+    assert_eq!(m.lines(), ["blocked"]);
+    assert!(
+        !m.dir.path().join("native-build.lock").exists(),
+        "released afterwards"
+    );
+}
+
+#[test]
+fn with_the_bridge_on_kr_waits_for_an_old_script() {
+    let m = Machine::new();
+    let lock = m.dir.path().join("native-build.lock");
+    let mut script = Command::new("sleep").arg("30").spawn().unwrap();
+    std::fs::create_dir(&lock).unwrap();
+    std::fs::write(
+        lock.join("owner"),
+        format!("krill-e2e-smoke s {} 2026-10-14T00:00:00Z\n", script.id()),
+    )
+    .unwrap();
+
+    let mut kr = bridged(&m, "sim", "echo ran >> \"$LOG\"");
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(
+        kr.try_wait().unwrap().is_none(),
+        "kr must wait for the old script"
+    );
+    assert!(m.lines().is_empty());
+
+    std::fs::remove_file(lock.join("owner")).unwrap();
+    std::fs::remove_dir(&lock).unwrap();
+    assert_eq!(finish(kr, Duration::from_secs(10)), 0);
+    assert_eq!(m.lines(), ["ran"]);
+    assert!(m.events().iter().any(|e| {
+        e["type"] == "machine_lock"
+            && e["fields"]["waited_for"]
+                .as_str()
+                .unwrap()
+                .contains("krill-e2e-smoke")
+    }));
+    script.kill().unwrap();
+    script.wait().unwrap();
+}
+
+#[test]
+fn with_the_bridge_on_a_killed_kr_leaves_a_stale_lock_the_next_kr_takes_over() {
+    let m = Machine::new();
+    let holder = bridged(&m, "build", "echo started >> \"$LOG\"; sleep 30");
+    m.wait_for_line("started");
+    let pgid = m.queue_json()["resources"][0]["holders"][0]["child_pid"]
+        .as_i64()
+        .unwrap();
+    kill9(holder);
+    kill_group(pgid);
+    assert!(
+        m.dir.path().join("native-build.lock/owner").exists(),
+        "kill -9 cannot clean up"
+    );
+
+    assert_eq!(
+        finish(
+            bridged(&m, "build", "echo next >> \"$LOG\""),
+            Duration::from_secs(10)
+        ),
+        0
+    );
+    assert!(m.lines().contains(&"next".to_owned()));
+}
+
+#[test]
+fn with_the_bridge_on_nested_kr_under_a_holder_does_not_wait_for_itself() {
+    let m = Machine::new();
+    let kr = bridged(
+        &m,
+        "build",
+        "\"$KR\" lock sim -- sh -c 'echo inner >> \"$LOG\"'",
+    );
+    assert_eq!(finish(kr, Duration::from_secs(10)), 0);
+    assert_eq!(m.lines(), ["inner"]);
+    let by_ancestor: Vec<bool> = m
+        .events()
+        .iter()
+        .filter(|e| e["type"] == "machine_lock")
+        .map(|e| e["fields"]["held_by_ancestor"].as_bool().unwrap())
+        .collect();
+    assert_eq!(by_ancestor.len(), 2);
+    assert!(
+        by_ancestor.contains(&true),
+        "the nested kr relies on its parent's lock"
+    );
+}
