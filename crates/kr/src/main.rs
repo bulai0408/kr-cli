@@ -51,7 +51,7 @@ impl Ctx {
     /// Loads the configuration and resolves the state directory.
     pub fn load(&self) -> anyhow::Result<Loaded> {
         let config = kr_config::Sources::discover(&self.cwd, self.env.clone()).load()?;
-        let state_dir = config.state_dir(&self.env).ok_or_else(|| {
+        let state_dir = config.machine.state_dir(&self.env).ok_or_else(|| {
             anyhow::anyhow!("cannot find a state directory: set HOME or KR_STATE_DIR")
         })?;
         Ok(Loaded { config, state_dir })
@@ -73,12 +73,15 @@ impl Loaded {
     }
 
     pub fn project(&self) -> Option<&str> {
-        self.config.project.as_ref().map(|p| p.name.as_str())
+        self.config
+            .project
+            .as_ref()
+            .map(|p| p.project.name.as_str())
     }
 
     /// Slots of `res`. Until the machine profile lands (#4), unset capacities are 1.
     pub fn capacity(&self, res: kr_resource::Resource) -> u32 {
-        let r = &self.config.resources;
+        let r = &self.config.machine.resources;
         let configured = match res {
             kr_resource::Resource::Build => r.build,
             kr_resource::Resource::Sim => r.sim,

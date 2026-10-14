@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 124
+expression: "error_for(r#\"device = \"iPad\"\"#, r#\"device = \"iPhone SE\"\"#)"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:22:10: no simulator kind `iPhone SE`
+    ╭─[<tmp>/.kr.toml:22:10]
+ 21 │ only = ["DemoUITests/LayoutUITests"]
+ 22 │ device = "iPhone SE"
+    ·          ─────┬─────
+    ·               ╰── no simulator kind `iPhone SE`
+ 23 │ timeout = "15m"
+    ╰────
+  help: add [simulators.devices.iPhone SE] with a device_type, or use one of: default, iPad

@@ -11,7 +11,7 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
     let config = sources.load()?;
     let machine = sources.machine.filter(|p| p.is_file());
     let project = sources.project;
-    let state_dir = config.state_dir(&ctx.env);
+    let state_dir = config.machine.state_dir(&ctx.env);
 
     if ctx.json {
         let out = json!({
@@ -28,8 +28,31 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
         println!("machine config: {}", show(&machine));
         println!("project config: {}", show(&project));
         println!("state dir:      {}", show(&state_dir));
-        println!();
-        print!("{}", toml::to_string(&config)?);
+        let r = &config.machine.resources;
+        let cap = |v: Option<u32>| v.map_or_else(|| "auto".to_owned(), |n| n.to_string());
+        println!(
+            "resources:      build {}, sim {}, light {}",
+            cap(r.build),
+            cap(r.sim),
+            cap(r.light)
+        );
+        if let Some(p) = &config.project {
+            let names = |m: Vec<&String>| {
+                if m.is_empty() {
+                    "(none)".to_owned()
+                } else {
+                    m.into_iter().cloned().collect::<Vec<_>>().join(", ")
+                }
+            };
+            println!(
+                "project:        {} (Xcode {})",
+                p.project.name,
+                p.project.xcode.as_deref().unwrap_or("any")
+            );
+            println!("suites:         {}", names(p.suites.keys().collect()));
+            println!("scenarios:      {}", p.scenarios.len());
+            println!("gates:          {}", names(p.gates.keys().collect()));
+        }
     }
     Ok(ExitCode::SUCCESS)
 }

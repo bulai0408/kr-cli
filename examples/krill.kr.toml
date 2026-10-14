@@ -1,0 +1,255 @@
+# kr 项目配置示例：Krill（依据 Krill v0/integration 的 scripts/test.sh、scripts/e2e.sh、
+# scripts/e2e-modes.sh、scripts/e2e-impact.json 与 project.yml 整理）。
+# 需要真实服务与凭证的场景（webdav-real、smb-real）第一阶段仍用 scripts/e2e.sh。
+
+[project]
+name = "Krill"
+xcodeproj = "Krill.xcodeproj"
+generate = "xcodegen generate --quiet"
+scheme = "KrillPlayerControls"
+configuration = "DebugUIAcceptance"
+build_settings = { KRILL_ACCEPTANCE_BUNDLE_ID = "com.kami.krill.e2e148" }
+xcode = "27.1"
+platforms = ["iOS", "tvOS", "macOS"]
+
+[simulators]
+runtime = "iOS 18.6"
+
+[simulators.devices.default]  # Krill-Verify-1, Krill-Verify-2
+device_type = "iPhone 16 Pro"
+count = 2
+
+[simulators.devices.iPad]  # Krill-Verify-iPad-1
+device_type = "iPad Pro 13-inch (M4) (16GB)"
+count = 1
+
+# scripts/test.sh, step by step.
+[suites.source-checks]
+type = "command"
+run = "python3 scripts/tests/test_source_localizations.py && python3 scripts/tests/test_ats_policy.py && python3 scripts/tests/test_player_public_api.py"
+
+[suites.kit-build]
+type = "build"
+dir = "KrillKit"
+scheme = "KrillKit-Package"
+
+[suites.kit-tests]
+type = "test"
+dir = "KrillKit"
+scheme = "KrillKit-Package"
+
+[suites.app-tests]
+type = "test"
+scheme = "Krill"
+
+[suites.backend]
+type = "command"
+dir = "backend"
+run = "npm ci --silent && npm run --silent typecheck && npm test --silent"
+
+[scenarios.smoke]
+only = [
+    "KrillUITests/MVPPolishUITests/testDiscoverAndTitleDetailRemainAvailableWithoutUserState",
+    "KrillUITests/SourceViewTests/testLibrariesCollectionsAndExistingDetailNeedNoLocalServerIndex",
+    "KrillUITests/SearchUITests/testTMDBAliasStillShowsOwnershipAndOpensTheSameDetailPage",
+    "KrillUITests/SearchUITests/testCJKOriginalNameLocalPriorityOwnedBadgeAndDetailNavigation",
+    "KrillUITests/ModulesUITests/testOfficialDirectLinkActuallyPlaysWithReturnedHeaders",
+    "KrillUITests/SettingsAboutUITests/testMetadataPreferencesAndAppearanceKeepSelectionsAcrossNavigation",
+    "KrillUITests/SettingsAboutUITests/testClearingImageCacheAndRebuildRequireExplicitConfirmation",
+    "KrillUITests/ModulesUITests/testSingleModuleRequiresConfirmationBeforeInstallation",
+    "KrillUITests/SourceViewTests/testSwitchingFromMenuAndSourcesTabRemembersHome",
+    "KrillUITests/ViewingEnvironmentUITests/testSwitchFiltersHomeAndSources",
+]
+
+[scenarios.shelf-share]
+only = [
+    "UserStateTests/ShelfShareFileTests",
+    "UserStateTests/ShelfSharePersistenceTests",
+    "SourcesTests/SourceShareAccountTests",
+    "ModulesTests/ModuleShareTests",
+    "KrillTests/ShelfShareFlowTests",
+    "KrillUITests/ShelfShareUITests",
+]
+
+[scenarios.shelf-share-ipad]
+only = ["KrillUITests/ShelfShareIPadUITests"]
+device = "iPad"
+
+[scenarios.ratings]
+only = [
+    "ModulesTests",
+    "KrillTests/TitleRatingsTests",
+    "KrillUITests/RatingsUITests",
+]
+
+[scenarios.module-watchlist]
+only = [
+    "UserStateTests",
+    "ModulesTests",
+    "KrillTests/ModuleWatchlistRefreshTests",
+    "KrillTests/ModulePlaybackTests",
+    "KrillTests/PlaybackWriteOrderingTests",
+    "KrillTests/PlaybackObservationTests",
+    "KrillUITests/ModuleWatchlistUITests",
+]
+
+[scenarios.favorites]
+only = ["KrillUITests/FavoriteUITests"]
+
+[scenarios.subtitles]
+only = [
+    "ModulesTests",
+    "KrillTests/ModulePlaybackTests",
+    "KrillTests/PlaybackWriteOrderingTests",
+    "KrillTests/PlaybackObservationTests",
+    "KrillTests/MediaMarkerPlaybackTests",
+    "KrillTests/PlaybackAirPlayTests",
+    "KrillTests/PlaybackViewingStatsTests",
+    "KrillUITests/SubtitlesUITests",
+]
+
+[scenarios.storage-usage]
+only = [
+    "KrillUITests/StorageUsageUITests",
+    "KrillUITests/SettingsAboutUITests/testClearingImageCacheAndRebuildRequireExplicitConfirmation",
+]
+
+[scenarios.official-tmdb]
+only = [
+    "KrillUITests/OfficialTMDBUITests",
+    "KrillUITests/SearchUITests",
+]
+
+[scenarios.library-groups]
+only = ["KrillUITests/LibraryGroupsUITests"]
+
+[scenarios.my-stats]
+only = ["KrillUITests/ViewingStatsUITests"]
+
+[scenarios.player-controls]
+only = [
+    "KrillUITests/PlayerControlsUITests",
+    "KrillTests/MediaMarkerPlaybackTests",
+    "KrillTests/ModulePlaybackTests",
+    "KrillTests/PlaybackWriteOrderingTests",
+    "KrillTests/PlaybackObservationTests",
+]
+
+[scenarios.trakt]
+only = ["KrillUITests/TraktUITests"]
+
+[scenarios.viewing-environment]
+only = ["KrillUITests/ViewingEnvironmentUITests"]
+
+[scenarios.media-markers]
+only = ["KrillUITests/MediaMarkersUITests"]
+
+[scenarios.airing-calendar]
+only = ["KrillUITests/AiringCalendarUITests"]
+
+[scenarios.shelf-edit]
+only = ["KrillUITests/ShelfEditingUITests"]
+
+[scenarios.detail-search]
+only = ["KrillUITests/DetailSearchUITests"]
+
+[scenarios.modules]
+only = ["KrillUITests/ModulesUITests"]
+
+[scenarios.manual-screenshots]
+only = ["KrillUITests/ManualScreenshotTests"]
+
+[scenarios.mvp-polish]
+only = ["KrillUITests/MVPPolishUITests"]
+
+[scenarios.ipad-layout]
+only = [
+    "KrillUITests/IPadLayoutUITests",
+    "KrillUITests/SourceViewTests/testUnresolvedServerItemShowsFailureAndRetry",
+    "KrillUITests/SourceViewTests/testLibrariesCollectionsAndExistingDetailNeedNoLocalServerIndex",
+]
+device = "iPad"
+
+[scenarios.analytics]
+only = ["KrillUITests/AnalyticsUITests"]
+
+[scenarios.settings-about]
+only = ["KrillUITests/SettingsAboutUITests"]
+
+[scenarios.legal-privacy]
+only = ["KrillUITests/LegalPrivacyUITests"]
+
+[scenarios.search]
+only = ["KrillUITests/SearchUITests"]
+
+[scenarios.source-management]
+only = [
+    "KrillUITests/SourceManagementUITests",
+    "KrillUITests/SourceViewTests/testSwitchingFromMenuAndSourcesTabRemembersHome",
+]
+
+[scenarios.source-view]
+only = ["KrillUITests/SourceViewTests"]
+
+[scenarios.fnos-form]
+only = ["KrillUITests/FNOSFormTests"]
+
+[scenarios.webdav-form]
+only = ["KrillUITests/WebDAVUITests"]
+skip = ["KrillUITests/WebDAVUITests/testRealRcloneScanPlaybackAndSeek"]
+
+[scenarios.smb-form]
+only = ["KrillUITests/SMBUITests"]
+skip = ["KrillUITests/SMBUITests/testRealSMBScanPlaybackAndSeek"]
+
+[scenarios.match-correction]
+only = ["KrillUITests/MatchCorrectionUITests"]
+
+[scenarios.icloud-sync]
+only = ["KrillUITests/ICloudSyncUITests"]
+
+[gates.default]
+suites = ["source-checks", "kit-build", "kit-tests", "app-tests", "backend"]
+# The synthetic scenarios of scripts/e2e-impact.json.
+scenarios = [
+    "ratings",
+    "module-watchlist",
+    "official-tmdb",
+    "library-groups",
+    "my-stats",
+    "player-controls",
+    "storage-usage",
+    "favorites",
+    "subtitles",
+    "trakt",
+    "viewing-environment",
+    "media-markers",
+    "airing-calendar",
+    "shelf-edit",
+    "shelf-share",
+    "shelf-share-ipad",
+    "detail-search",
+    "modules",
+    "mvp-polish",
+    "ipad-layout",
+    "analytics",
+    "settings-about",
+    "legal-privacy",
+    "search",
+    "source-management",
+    "source-view",
+    "fnos-form",
+    "webdav-form",
+    "smb-form",
+    "match-correction",
+    "icloud-sync",
+]
+
+[gates.smoke]
+scenarios = ["smoke"]
+
+[isolation]
+bundle_ids = ["com.kami.krill.e2e148"]
+
+[isolation.entitlements]
+"com.apple.developer.icloud-container-environment" = ["Development"]

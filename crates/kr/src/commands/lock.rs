@@ -197,6 +197,10 @@ fn run_command(
         .process_group(0)
         .spawn()
         .with_context(|| format!("failed to start `{}`", command.join(" ")))?;
+    // Record the command's process group right away, so the slot counts as held
+    // ("orphan") if kr dies. The signal handlers above keep SIGINT/TERM/HUP from
+    // killing kr in between; only a SIGKILL during the microseconds between spawn and
+    // this write leaves the command unrecorded.
     if let Some(slot) = slot {
         slot.set_child_pid(child.id())?;
     }

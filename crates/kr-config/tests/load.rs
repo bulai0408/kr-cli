@@ -18,7 +18,7 @@ fn render(err: &ConfigError) -> String {
 }
 
 #[test]
-fn later_layers_override_earlier_ones() {
+fn later_machine_layers_override_earlier_ones() {
     let dir = tempfile::tempdir().unwrap();
     let machine = write(
         &dir.path().join("config.toml"),
@@ -26,7 +26,7 @@ fn later_layers_override_earlier_ones() {
     );
     let project = write(
         &dir.path().join("repo/.kr.toml"),
-        "[project]\nname = \"krill\"\n\n[resources]\nsim = 3\n",
+        "[project]\nname = \"krill\"\n",
     );
 
     let config: Config = Sources {
@@ -38,10 +38,47 @@ fn later_layers_override_earlier_ones() {
     .load()
     .unwrap();
 
-    assert_eq!(config.project.unwrap().name, "krill");
-    assert_eq!(config.resources.build, Some(5));
-    assert_eq!(config.resources.sim, Some(3));
-    assert_eq!(config.resources.light, Some(4));
+    assert_eq!(config.project.unwrap().project.name, "krill");
+    let r = &config.machine.resources;
+    assert_eq!((r.build, r.sim, r.light), (Some(5), Some(2), Some(4)));
+}
+
+#[test]
+fn per_machine_resources_override_general_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let machine = write(
+        &dir.path().join("config.toml"),
+        "[resources]\nbuild = 1\nsim = 2\n\n[machines.Kamis-iMac.resources]\nsim = 3\n",
+    );
+    let config = Sources {
+        machine: Some(machine),
+        ..Sources::default()
+    }
+    .load()
+    .unwrap();
+
+    let here = config.machine.resources_for(Some("Kamis-iMac"));
+    assert_eq!((here.build, here.sim), (Some(1), Some(3)));
+    let elsewhere = config.machine.resources_for(Some("Other-Mac"));
+    assert_eq!((elsewhere.build, elsewhere.sim), (Some(1), Some(2)));
+}
+
+#[test]
+fn machine_settings_in_the_project_file_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = write(
+        &dir.path().join(".kr.toml"),
+        "[project]\nname = \"krill\"\n\n[resources]\nsim = 3\n",
+    );
+
+    let err = Sources {
+        project: Some(project),
+        ..Sources::default()
+    }
+    .load()
+    .unwrap_err();
+
+    insta::assert_snapshot!(render(&err).replace(dir.path().to_str().unwrap(), "<tmp>"));
 }
 
 #[test]
@@ -102,7 +139,7 @@ fn machine_file_defaults_to_xdg_config_home_then_home() {
 
 #[test]
 fn state_dir_defaults_to_xdg_state_home_then_home() {
-    let config = Config::default();
+    let config = kr_config::MachineConfig::default();
     assert_eq!(
         config.state_dir(&[("HOME".into(), "/h".into())]),
         Some(PathBuf::from("/h/.local/state/kr"))
