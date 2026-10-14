@@ -1,0 +1,13 @@
+---
+source: crates/kr/tests/cli.rs
+assertion_line: 80
+expression: sb.clean(&out.stdout)
+---
+machine config: (none)
+project config: <home>/repo/.kr.toml
+state dir:      <home>/.local/state/kr
+
+[resources]
+
+[project]
+name = "krill"

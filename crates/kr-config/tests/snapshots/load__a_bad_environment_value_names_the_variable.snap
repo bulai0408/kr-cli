@@ -1,0 +1,8 @@
+---
+source: crates/kr-config/tests/load.rs
+expression: render(&err)
+---
+kr::config::value
+
+  × invalid value for `resources.sim` from environment variable KR_RESOURCES__SIM: invalid type: found string "two", expected u32
+  help: fix or unset environment variable KR_RESOURCES__SIM
