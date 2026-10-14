@@ -1,0 +1,23 @@
+---
+source: crates/kr/tests/cli.rs
+assertion_line: 69
+expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string().as_bytes())).unwrap()"
+---
+{
+  "config": {
+    "project": {
+      "name": "krill"
+    },
+    "resources": {
+      "build": 1,
+      "light": null,
+      "sim": 3
+    },
+    "state_dir": null
+  },
+  "sources": {
+    "machine": "<home>/.config/kr/config.toml",
+    "project": "<home>/repo/.kr.toml"
+  },
+  "state_dir": "<home>/.local/state/kr"
+}

@@ -1,0 +1,14 @@
+---
+source: crates/kr-config/tests/load.rs
+expression: "render(&err).replace(dir.path().to_str().unwrap(), \"<tmp>\")"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:2:8: string values must be quoted, expected literal string
+   ╭─[<tmp>/.kr.toml:2:8]
+ 1 │ [project]
+ 2 │ name = krill
+   ·        ──┬──
+   ·          ╰── string values must be quoted, expected literal string
+   ╰────
+  help: fix the marked item in <tmp>/.kr.toml

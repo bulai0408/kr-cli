@@ -1,0 +1,15 @@
+---
+source: crates/kr/tests/cli.rs
+assertion_line: 104
+expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string().as_bytes())).unwrap()"
+---
+{
+  "error": {
+    "code": "kr::config::file",
+    "column": 8,
+    "file": "<home>/repo/.kr.toml",
+    "help": "fix the marked item in <home>/repo/.kr.toml",
+    "line": 2,
+    "message": "<home>/repo/.kr.toml:2:8: string values must be quoted, expected literal string"
+  }
+}

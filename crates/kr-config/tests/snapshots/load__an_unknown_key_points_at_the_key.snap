@@ -1,0 +1,14 @@
+---
+source: crates/kr-config/tests/load.rs
+expression: "render(&err).replace(dir.path().to_str().unwrap(), \"<tmp>\")"
+---
+kr::config::file
+
+  × <tmp>/config.toml:3:1: unknown field `simulators`, expected one of `build`, `sim`, `light`
+   ╭─[<tmp>/config.toml:3:1]
+ 2 │ build = 1
+ 3 │ simulators = 2
+   · ─────┬────
+   ·      ╰── unknown field `simulators`, expected one of `build`, `sim`, `light`
+   ╰────
+  help: fix the marked item in <tmp>/config.toml
