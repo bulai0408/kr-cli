@@ -1,0 +1,9 @@
+{
+  "program": "xcode-select",
+  "args": [
+    "-p"
+  ],
+  "status": 0,
+  "stdout": "/Applications/Xcode.app/Contents/Developer\n",
+  "stderr": ""
+}

@@ -13,3 +13,9 @@ cargo run -p kr-exec --example record -- tests/fixtures/simctl/list-devices.json
 ```
 
 提交前看一遍新文件，确认没有个人信息。
+
+## 现有素材
+
+- `sysctl/m3-imac.json`、`scutil/`、`df/`、`xcode-select/`、`simctl/`：2026-10-14 在 owner 的 iMac（Apple M3，8 核 4P，24 GB，Xcode 27.1 + 26.6）上录制。
+- `xcode/apps/*.app/Contents/version.plist`：从本机两个 Xcode 复制，供检测已装 Xcode 的测试用。
+- 高配机（M4 Max）和 Intel 机的档案没有真机可录，在 `crates/kr-machine/tests/profile.rs` 里按同一格式构造。

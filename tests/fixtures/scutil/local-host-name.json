@@ -1,0 +1,10 @@
+{
+  "program": "scutil",
+  "args": [
+    "--get",
+    "LocalHostName"
+  ],
+  "status": 0,
+  "stdout": "iMac\n",
+  "stderr": ""
+}

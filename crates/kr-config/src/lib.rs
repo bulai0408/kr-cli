@@ -20,7 +20,13 @@ use serde::{Deserialize, Serialize};
 pub const PROJECT_FILE: &str = ".kr.toml";
 
 /// `KR_*` variables that are not configuration keys.
-const RESERVED_ENV: &[&str] = &["KR_LOG", "KR_CONFIG", "KR_HELD"];
+const RESERVED_ENV: &[&str] = &[
+    "KR_LOG",
+    "KR_CONFIG",
+    "KR_HELD",
+    "KR_REPLAY",
+    "KR_APPLICATIONS",
+];
 
 mod project;
 mod span;
@@ -28,7 +34,7 @@ mod span;
 pub use project::*;
 
 /// Keys that only the machine file may set.
-const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines"];
+const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load"];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
@@ -47,6 +53,26 @@ pub struct MachineConfig {
     pub resources: Resources,
     /// Per-machine settings, keyed by LocalHostName (`scutil --get LocalHostName`).
     pub machines: BTreeMap<String, MachineOverride>,
+    /// Load check before heavy work.
+    pub load: LoadCheck,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct LoadCheck {
+    /// Wait for the load to drop before `build` and `sim` work.
+    pub check: bool,
+    /// Give up waiting after this long and go ahead, e.g. "20m".
+    pub max_wait: String,
+}
+
+impl Default for LoadCheck {
+    fn default() -> Self {
+        Self {
+            check: true,
+            max_wait: "20m".to_owned(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,0 +1,10 @@
+{
+  "program": "df",
+  "args": [
+    "-kP",
+    "/"
+  ],
+  "status": 0,
+  "stdout": "Filesystem     1024-blocks      Used Available Capacity  Mounted on\n/dev/disk3s1s1   971319460  13757388 253397396     6%    /\n",
+  "stderr": ""
+}

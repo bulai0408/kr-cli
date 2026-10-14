@@ -1,0 +1,20 @@
+---
+source: crates/kr/tests/doctor.rs
+assertion_line: 94
+expression: "json[\"capacity\"]"
+---
+{
+  "build": {
+    "source": "config: [resources]",
+    "value": 1
+  },
+  "light": {
+    "formula": "clamp(P/4, 1, 4) with P=4 → 1 → 1",
+    "source": "suggested",
+    "value": 1
+  },
+  "sim": {
+    "source": "config: [machines.iMac]",
+    "value": 3
+  }
+}
