@@ -55,7 +55,6 @@ impl Sample {
             .env("KR_REPLAY", files.join(":"))
             .env("KR_APPLICATIONS", root().join("tests/fixtures/xcode/apps"))
             .env("KR_RESOURCES__BUILD", "1")
-            .env("KR_LOAD__CHECK", "false")
             .current_dir(self.home.path().join("repo"))
             .arg("check")
             .args(args)

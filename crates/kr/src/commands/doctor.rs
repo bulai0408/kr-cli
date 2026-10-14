@@ -140,11 +140,16 @@ fn print_human(
         profile.disk_free_bytes as f64 / GB
     );
     println!(
-        "load      {:.2} / {:.2} / {:.2} (heavy work waits above {:.0}) · memory pressure {} · swap {:.1} GB used",
+        "load      {:.2} / {:.2} / {:.2} (high above {:.0}{}) · memory pressure {} · swap {:.1} GB used",
         hw.load.one,
         hw.load.five,
         hw.load.fifteen,
         hw.load_threshold(loaded.config.machine.load.per_core),
+        if loaded.config.machine.load.block {
+            "; heavy work waits"
+        } else {
+            "; only marks failures"
+        },
         json!(hw.pressure).as_str().unwrap_or("?"),
         hw.swap_used_bytes as f64 / GB
     );

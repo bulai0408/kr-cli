@@ -25,8 +25,6 @@ impl Machine {
             .env("HOME", self.dir.path())
             .env("PATH", std::env::var("PATH").unwrap())
             .env("KR_STATE_DIR", self.dir.path().join("state"))
-            // A busy machine must not slow these tests down; the load check has its own tests.
-            .env("KR_LOAD__CHECK", "false")
             .env("NO_COLOR", "1")
             .current_dir(self.dir.path().join("work"));
         cmd

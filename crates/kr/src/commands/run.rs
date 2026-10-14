@@ -83,6 +83,10 @@ struct ItemResult {
     notes: Vec<String>,
     xcresult: Option<PathBuf>,
     log: Option<PathBuf>,
+    /// Load and memory pressure when the item started and ended.
+    load: Option<serde_json::Value>,
+    /// Set when the load was high (above `[load] per_core` × cores) during the item.
+    high_load: Option<String>,
 }
 
 impl ItemResult {
@@ -99,6 +103,8 @@ impl ItemResult {
             notes: Vec::new(),
             xcresult: None,
             log: None,
+            load: None,
+            high_load: None,
         }
     }
 }
@@ -309,7 +315,44 @@ fn work_items(
     Ok(items)
 }
 
+/// A command suite, with the same high-load treatment as test items.
 fn run_command_suite(
+    s: &Shared<'_>,
+    name: &str,
+    run: &str,
+    dir: Option<&Path>,
+    timeout: Option<&str>,
+) -> Result<ItemResult> {
+    let per_core = s.loaded.config.machine.load.per_core;
+    let sample = || kr_machine::read_hardware(s.runner).ok();
+    let before = sample();
+    let mut r = run_command_suite_once(s, name, run, dir, timeout)?;
+    let after = sample();
+    r.high_load = [&before, &after]
+        .into_iter()
+        .flatten()
+        .find_map(|hw| hw.overloaded(per_core));
+    if let (false, Some(reason)) = (r.passed, r.high_load.clone()) {
+        let again = run_command_suite_once(s, name, run, dir, timeout)?;
+        if again.passed {
+            r = ItemResult {
+                flaky: vec![format!(
+                    "{name} (failed during high load ({reason}); passed when run again)"
+                )],
+                high_load: Some(reason),
+                ..again
+            };
+        } else {
+            r.notes.push(format!(
+                "failed during high load ({reason}); failed again when run again"
+            ));
+        }
+    }
+    item_event(s, &r)?;
+    Ok(r)
+}
+
+fn run_command_suite_once(
     s: &Shared<'_>,
     name: &str,
     run: &str,
@@ -334,7 +377,6 @@ fn run_command_suite(
             kr_xcode::error_summary(&format!("{}{}", out.stdout, out.stderr))
         };
     }
-    item_event(s, &r)?;
     Ok(r)
 }
 
@@ -509,6 +551,8 @@ fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
             "device": r.device,
             "tests": r.tests,
             "flaky": r.flaky,
+            "load": r.load,
+            "high_load": r.high_load,
         }),
     ))
 }
@@ -517,8 +561,9 @@ fn results_dir(item: &str) -> PathBuf {
     Path::new(RESULTS).join(item)
 }
 
-/// Runs one item on a device (or this Mac): enumerate, run, read results, rerun
-/// failures one by one, judge.
+/// Runs one item, sampling the machine load before and after. A failure during high
+/// load (`[load] per_core`) is marked as such and the whole item runs once more; if it
+/// passes then, the item counts as flaky (ADR 0003).
 fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Result<ItemResult> {
     let started = Instant::now();
     s.loaded.events().append(&Event::now(
@@ -527,6 +572,55 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
         EventKind::ItemStart,
         json!({ "item": item.name, "kind": item.kind, "device": device.map(|d| d.0) }),
     ))?;
+    let per_core = s.loaded.config.machine.load.per_core;
+    let sample = || kr_machine::read_hardware(s.runner).ok();
+    let before = sample();
+    let mut r = run_item_once(s, item, device, "")?;
+    let after = sample();
+    let high = [&before, &after]
+        .into_iter()
+        .flatten()
+        .find_map(|hw| hw.overloaded(per_core));
+    let state = |hw: &Option<kr_machine::Hardware>| {
+        hw.as_ref()
+            .map(|h| json!({ "load": h.load, "pressure": h.pressure }))
+    };
+    r.load = Some(json!({ "start": state(&before), "end": state(&after) }));
+    if let (false, Some(reason)) = (r.passed, &high) {
+        let note = format!("failed during high load ({reason})");
+        s.loaded.events().append(&Event::now(
+            s.run_id,
+            s.loaded.project(),
+            EventKind::Rerun,
+            json!({ "item": item.name, "whole_item": true, "reason": note }),
+        ))?;
+        let mut again = run_item_once(s, item, device, "again")?;
+        if again.passed {
+            again.flaky.push(format!(
+                "{} (whole item: {note}; passed when run again)",
+                item.name
+            ));
+            again.load = r.load.take();
+            r = again;
+        } else {
+            r.notes.push(format!("{note}; failed again when run again"));
+        }
+    }
+    r.high_load = high;
+    r.duration_ms = started.elapsed().as_millis() as u64;
+    item_event(s, &r)?;
+    Ok(r)
+}
+
+/// One pass of an item on a device (or this Mac): enumerate, run, read results, rerun
+/// failed tests one by one, judge. `round` names a repeat ("again").
+fn run_item_once(
+    s: &Shared<'_>,
+    item: &WorkItem,
+    device: Option<(&str, &str)>,
+    round: &str,
+) -> Result<ItemResult> {
+    let started = Instant::now();
     let mut r = ItemResult::new(&item.name, item.kind);
     r.device = device.map(|d| d.0.to_owned());
     let job = &s.jobs[item.job];
@@ -540,10 +634,15 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
         Some((_, udid)) => format!("id={udid}"),
         None => "platform=macOS".to_owned(),
     };
-    let dir = results_dir(&item.name);
+    let name = if round.is_empty() {
+        item.name.clone()
+    } else {
+        format!("{}-{round}", item.name)
+    };
+    let dir = results_dir(&name);
     let _ = std::fs::remove_dir_all(cwd.join(&dir));
     std::fs::create_dir_all(cwd.join(&dir))?;
-    let logs = s.loaded.run_dir(s.run_id).join(&item.name);
+    let logs = s.loaded.run_dir(s.run_id).join(&name);
     let filters: Vec<String> = item
         .only
         .iter()
@@ -676,7 +775,6 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     );
     r.log = Some(logs);
     r.duration_ms = started.elapsed().as_millis() as u64;
-    item_event(s, &r)?;
     Ok(r)
 }
 
@@ -764,6 +862,9 @@ fn report(
         };
         if r.passed {
             println!("PASS: {} ({detail})", r.name);
+            if let Some(h) = &r.high_load {
+                println!("  high load: {h}");
+            }
             for f in &r.flaky {
                 println!("  flaky: {f}");
             }

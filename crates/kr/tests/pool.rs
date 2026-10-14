@@ -72,7 +72,6 @@ impl Repo {
             .env("KR_REPLAY", replay)
             .env("KR_APPLICATIONS", fixture("xcode/apps"))
             .env("KR_RESOURCES__SIM", "1")
-            .env("KR_LOAD__CHECK", "false")
             .current_dir(self.home.path().join("repo"));
         cmd
     }

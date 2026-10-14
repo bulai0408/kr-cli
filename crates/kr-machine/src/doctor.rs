@@ -65,7 +65,7 @@ pub fn diagnose(
             Severity::Warning,
             "load_high",
             reason,
-            "heavy work will wait for the load to drop; check `top -o cpu` for processes that do not belong to a build".to_owned(),
+            "test failures now are marked as high-load failures and run again; check `top -o cpu` for processes that do not belong to a build".to_owned(),
         ));
     }
     let Some(project) = project else {

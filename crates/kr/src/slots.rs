@@ -74,9 +74,9 @@ pub fn take(
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
     let heavy = matches!(res, Resource::Build | Resource::Sim);
-    // Wait for the load before taking the machine-wide lock, so a busy machine does not
-    // also block other projects' queue.
-    if heavy && loaded.config.machine.load.check {
+    // Wait (for critical memory pressure, or high load if `[load] block`) before taking
+    // the machine-wide lock, so a busy machine does not also block other projects' queue.
+    if heavy {
         wait_for_load(ctx, loaded, runner, run_id, res)?;
     }
     let legacy = if heavy {
@@ -181,25 +181,35 @@ fn wait_for_load(
     let max_wait = kr_config::parse_timeout(&loaded.config.machine.load.max_wait)
         .unwrap_or(kr_config::DEFAULT_TIMEOUT);
     let mut first = true;
-    let per_core = loaded.config.machine.load.per_core;
-    let wait = kr_machine::wait_for_load(runner, per_core, LOAD_POLL, max_wait, |hw| {
-        if !first {
-            return;
-        }
-        first = false;
-        let reason = hw.overloaded(per_core).unwrap_or_default();
-        let _ = log.append(&Event::now(
+    let policy = &loaded.config.machine.load;
+    let per_core = policy.per_core;
+    let wait =
+        kr_machine::wait_for_load(runner, policy.block, per_core, LOAD_POLL, max_wait, |hw| {
+            if !first {
+                return;
+            }
+            first = false;
+            let reason = hw.must_wait(policy.block, per_core).unwrap_or_default();
+            let _ = log.append(&Event::now(
             run_id,
             project,
             EventKind::LoadWait,
             json!({ "resource": res, "load": hw.load, "pressure": hw.pressure, "reason": reason }),
         ));
-        if ctx.json {
-            eprintln!("{}", json!({ "load_wait": res, "reason": reason }));
-        } else {
-            eprintln!("waiting before {res} work: {reason}");
+            if ctx.json {
+                eprintln!("{}", json!({ "load_wait": res, "reason": reason }));
+            } else {
+                eprintln!("waiting before {res} work: {reason}");
+            }
+        });
+    // Not knowing the load is no reason to hold work back.
+    let wait = match wait {
+        Ok(wait) => wait,
+        Err(e) => {
+            tracing::warn!("cannot read the machine load ({e:#}); going ahead");
+            return Ok(());
         }
-    })?;
+    };
     if wait.checks > 1 {
         log.append(&Event::now(
             run_id,

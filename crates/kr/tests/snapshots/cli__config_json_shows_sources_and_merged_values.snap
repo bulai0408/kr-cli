@@ -12,9 +12,9 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "queue": null
       },
       "load": {
-        "check": true,
+        "block": false,
         "max_wait": "20m",
-        "per_core": 2.5
+        "per_core": 4.0
       },
       "machines": {},
       "resources": {

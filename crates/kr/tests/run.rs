@@ -74,12 +74,16 @@ impl Sample {
             .env("KR_APPLICATIONS", root().join("tests/fixtures/xcode/apps"))
             .env("KR_RESOURCES__BUILD", "1")
             .env("KR_RESOURCES__SIM", "1")
-            .env("KR_LOAD__CHECK", "false")
             .current_dir(self.home.path().join("repo"))
             .args(args)
             .output()
             .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        let text = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .filter(|l| l.starts_with("error"))
+                .collect::<Vec<_>>()
+                .join("\n");
         (out.status.code(), text)
     }
 
@@ -257,4 +261,74 @@ fn an_unknown_gate_lists_the_gates() {
     let s = Sample::new();
     let (code, _) = s.kr(&[], &["gate", "nightly"]);
     assert_eq!(code, Some(1));
+}
+
+/// The recorded sysctl answer with a 1-minute load of `load`.
+fn sysctl_with_load(load: f64) -> Recording {
+    let mut r =
+        kr_exec::read_recording(&root().join("tests/fixtures/sysctl/m3-imac.json")).unwrap();
+    let start = r.stdout.find("vm.loadavg:").unwrap();
+    let end = start + r.stdout[start..].find('\n').unwrap();
+    r.stdout.replace_range(
+        start..end,
+        &format!("vm.loadavg: {{ {load:.2} {load:.2} {load:.2} }}"),
+    );
+    r
+}
+
+#[test]
+fn a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky() {
+    let gate = recordings("gate-default");
+    let mut recs: Vec<Recording> = gate
+        .iter()
+        .filter(|r| {
+            r.program == "git"
+                || r.program == "sh"
+                || r.args.first().is_some_and(|a| a == "build-for-testing")
+        })
+        .cloned()
+        .collect();
+    // Load 50 on 8 cores is above 4 × 8: high for the whole run.
+    recs.extend((0..4).map(|_| sysctl_with_load(50.0)));
+    // First round: the recorded failing run of `broken`, including its test rerun.
+    recs.extend(recordings("broken").into_iter().skip(1));
+    // Second round: the recorded passing run of `broken` from the gate, in broken-again.
+    recs.extend(
+        gate.iter()
+            .filter(|r| {
+                r.args
+                    .iter()
+                    .any(|a| a.contains("testFailsOnRequest") || a.contains("results/broken/"))
+            })
+            .map(|r| {
+                let mut r = r.clone();
+                for a in &mut r.args {
+                    *a = a.replace("results/broken/", "results/broken-again/");
+                }
+                r
+            }),
+    );
+    let s = Sample::new();
+    let (code, out) = s.kr(&recs, &["run", "broken"]);
+    assert_eq!(code, Some(0), "{out}");
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(
+        lines[0].starts_with("PASS: broken (1 tests, KrSample-Verify-1, "),
+        "{out}"
+    );
+    assert!(
+        lines[1].starts_with("  high load: 1-minute load 50.00"),
+        "{out}"
+    );
+    assert_eq!(
+        lines[2],
+        "  flaky: broken (whole item: failed during high load (1-minute load 50.00 is above 32 (4 × 8 cores)); passed when run again)"
+    );
+    let end = s
+        .events()
+        .into_iter()
+        .find(|e| e["type"] == "item_end")
+        .unwrap();
+    assert_eq!(end["fields"]["load"]["start"]["load"]["one"], 50.0);
+    assert!(end["fields"]["high_load"].is_string());
 }

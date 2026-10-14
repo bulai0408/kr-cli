@@ -76,11 +76,12 @@ pub struct Legacy {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoadCheck {
-    /// Wait for the load to drop before `build` and `sim` work.
-    pub check: bool,
-    /// Heavy work waits while the 1-minute load is above `per_core` × logical cores.
-    /// Default 2.5: below that, loaded Macs did not show load-related false failures
-    /// (pitfalls E1 saw them from 30 up on 8 cores).
+    /// Also wait while the 1-minute load is above `per_core` × cores. Off by default:
+    /// macOS load counts processes waiting for I/O, so it does not say how much CPU
+    /// is left (ADR 0003). kr always waits while memory pressure is critical.
+    pub block: bool,
+    /// "High load" is a 1-minute load above `per_core` × logical cores. Failures then
+    /// are marked as high-load failures and the item is run once more.
     pub per_core: f64,
     /// Give up waiting after this long and go ahead, e.g. "20m".
     pub max_wait: String,
@@ -89,8 +90,8 @@ pub struct LoadCheck {
 impl Default for LoadCheck {
     fn default() -> Self {
         Self {
-            check: true,
-            per_core: 2.5,
+            block: false,
+            per_core: 4.0,
             max_wait: "20m".to_owned(),
         }
     }

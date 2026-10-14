@@ -8,7 +8,7 @@ doctor: OK with 1 warning(s)
     fix: run `kr pool sync` to create them
 
 machine   iMac · Apple M3 · 8 cores (4 performance) · 24 GB · 242 GB free
-load      3.08 / 3.41 / 3.62 (heavy work waits above 20) · memory pressure normal · swap 1.6 GB used
+load      3.08 / 3.41 / 3.62 (high above 32; only marks failures) · memory pressure normal · swap 1.6 GB used
 xcode     27.1 (27A9269) <apps>/Xcode.app · 26.6 (17F113) <apps>/Xcode_26.6.app
           kr uses DEVELOPER_DIR=<apps>/Xcode.app/Contents/Developer
 runtimes  iOS 18.6, iOS 26.5, iOS 27.0, iOS 27.1, tvOS 26.5, tvOS 27.0
