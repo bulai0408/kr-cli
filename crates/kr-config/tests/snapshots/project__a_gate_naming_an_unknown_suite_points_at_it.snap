@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 119
+expression: "error_for(r#\"suites = [\"backend\"]\"#, r#\"suites = [\"backnd\"]\"#)"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:31:11: no suite `backnd`
+    ╭─[<tmp>/.kr.toml:31:11]
+ 30 │ [gates.default]
+ 31 │ suites = ["backnd"]
+    ·           ────┬───
+    ·               ╰── no suite `backnd`
+ 32 │ scenarios = ["*"]
+    ╰────
+  help: known suites: backend

@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 144
+expression: "error_for(r#\"type = \"command\"\"#, r#\"type = \"script\"\"#)"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:26:8: unknown variant `script`, expected one of `build`, `test`, `command`
+    ╭─[<tmp>/.kr.toml:26:8]
+ 25 │ [suites.backend]
+ 26 │ type = "script"
+    ·        ────┬───
+    ·            ╰── unknown variant `script`, expected one of `build`, `test`, `command`
+ 27 │ dir = "backend"
+    ╰────
+  help: fix the marked item in <tmp>/.kr.toml

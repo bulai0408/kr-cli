@@ -1,0 +1,15 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 114
+expression: "error_for(r#\"scenarios = [\"login\"]\"#, r#\"scenarios = [\"login\", \"logn\"]\"#)"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:35:23: no scenario `logn`
+    ╭─[<tmp>/.kr.toml:35:23]
+ 34 │ [gates.smoke]
+ 35 │ scenarios = ["login", "logn"]
+    ·                       ───┬──
+    ·                          ╰── no scenario `logn`
+    ╰────
+  help: known scenarios: layout, login (or "*" for all)

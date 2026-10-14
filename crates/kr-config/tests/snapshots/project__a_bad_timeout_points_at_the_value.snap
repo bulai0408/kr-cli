@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 129
+expression: "error_for(r#\"timeout = \"15m\"\"#, r#\"timeout = \"15 minutes\"\"#)"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:23:11: `15 minutes` is not a duration
+    ╭─[<tmp>/.kr.toml:23:11]
+ 22 │ device = "iPad"
+ 23 │ timeout = "15 minutes"
+    ·           ──────┬─────
+    ·                 ╰── `15 minutes` is not a duration
+ 24 │ 
+    ╰────
+  help: write it like "90s", "15m" or "1h30m"

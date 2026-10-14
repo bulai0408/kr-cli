@@ -1,11 +1,14 @@
-//! Layered configuration (ADR 0001).
+//! Configuration (ADR 0001).
 //!
-//! Layers, later wins: machine `~/.config/kr/config.toml` → project `.kr.toml` →
-//! `KR_*` environment variables → command-line overrides.
+//! Machine settings come in layers, later wins: `~/.config/kr/config.toml` →
+//! `KR_*` environment variables → command-line overrides (figment).
+//! Project settings come from `.kr.toml` at the repo root. The two files have
+//! separate keys: capacities belong to the machine, not to a repo.
 //!
-//! Each TOML file is first parsed on its own with `toml`, so errors point at a file,
-//! line and column. figment then merges the layers.
+//! Each TOML file is parsed on its own with `toml`, so errors point at a file,
+//! line and column.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use figment::value::{Dict, Map, Value};
@@ -19,15 +22,37 @@ pub const PROJECT_FILE: &str = ".kr.toml";
 /// `KR_*` variables that are not configuration keys.
 const RESERVED_ENV: &[&str] = &["KR_LOG", "KR_CONFIG", "KR_HELD"];
 
-/// The merged configuration.
+mod project;
+mod span;
+
+pub use project::*;
+
+/// Keys that only the machine file may set.
+const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines"];
+
+/// The loaded configuration: machine layers merged, plus the project file if any.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+pub struct Config {
+    pub machine: MachineConfig,
+    pub project: Option<ProjectConfig>,
+}
+
+/// Machine-level settings: `~/.config/kr/config.toml`, `KR_*` variables, overrides.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Config {
+pub struct MachineConfig {
     /// Where kr keeps events and other state. Default: `~/.local/state/kr`.
     pub state_dir: Option<PathBuf>,
     /// Manual resource capacities. Unset values come from the machine profile.
     pub resources: Resources,
-    pub project: Option<Project>,
+    /// Per-machine settings, keyed by LocalHostName (`scutil --get LocalHostName`).
+    pub machines: BTreeMap<String, MachineOverride>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MachineOverride {
+    pub resources: Resources,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,13 +63,7 @@ pub struct Resources {
     pub light: Option<u32>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Project {
-    pub name: String,
-}
-
-impl Config {
+impl MachineConfig {
     /// The state directory: `state_dir`, else `$XDG_STATE_HOME/kr`, else `$HOME/.local/state/kr`.
     pub fn state_dir(&self, env: &[(String, String)]) -> Option<PathBuf> {
         if let Some(dir) = &self.state_dir {
@@ -54,6 +73,20 @@ impl Config {
             return Some(Path::new(xdg).join("kr"));
         }
         var(env, "HOME").map(|home| Path::new(home).join(".local/state/kr"))
+    }
+
+    /// Capacities set for this machine: `[machines.<host>.resources]` over `[resources]`.
+    pub fn resources_for(&self, host: Option<&str>) -> Resources {
+        let general = &self.resources;
+        let Some(specific) = host.and_then(|h| self.machines.get(h)) else {
+            return general.clone();
+        };
+        let r = &specific.resources;
+        Resources {
+            build: r.build.or(general.build),
+            sim: r.sim.or(general.sim),
+            light: r.light.or(general.light),
+        }
     }
 }
 
@@ -83,11 +116,11 @@ impl Sources {
 
     pub fn load(&self) -> Result<Config, ConfigError> {
         let mut figment = Figment::new();
-        for path in [&self.machine, &self.project].into_iter().flatten() {
-            if let Some(text) = read_optional(path)? {
-                check_file(path, &text)?;
-                figment = figment.merge(Layer::new(path.display().to_string(), toml_dict(&text)));
-            }
+        if let Some(path) = &self.machine
+            && let Some(text) = read_optional(path)?
+        {
+            check_file::<MachineConfig>(path, &text)?;
+            figment = figment.merge(Layer::new(path.display().to_string(), toml_dict(&text)));
         }
         for (key, value) in &self.env {
             if !key.starts_with("KR_") || RESERVED_ENV.contains(&key.as_str()) {
@@ -103,8 +136,47 @@ impl Sources {
         for (key, value) in &self.overrides {
             figment = figment.merge(Layer::value(format!("override {key}"), key, value));
         }
-        figment.extract().map_err(ConfigError::from_figment)
+        let machine = figment.extract().map_err(ConfigError::from_figment)?;
+
+        let project = match &self.project {
+            Some(path) => match read_optional(path)? {
+                Some(text) => Some(load_project(path, &text)?),
+                None => None,
+            },
+            None => None,
+        };
+        Ok(Config { machine, project })
     }
+}
+
+fn load_project(path: &Path, text: &str) -> Result<ProjectConfig, ConfigError> {
+    let doc = toml::de::DeTable::parse(text).map_err(|e| toml_error(path, text, &e))?;
+    for (key, _) in doc.get_ref().iter() {
+        if MACHINE_KEYS.contains(&&**key.get_ref()) {
+            return Err(file_error(
+                path,
+                text,
+                key.span(),
+                format!("`{}` is a machine setting", key.get_ref()),
+                format!(
+                    "move it to the machine config (~/.config/kr/config.toml); {} is shared by every machine",
+                    PROJECT_FILE
+                ),
+            ));
+        }
+    }
+    let config: ProjectConfig = check_file(path, text)?;
+    let problems = config.problems();
+    if let Some(first) = problems.first() {
+        let segs: Vec<&str> = first.path.iter().map(String::as_str).collect();
+        let span = span::find(&doc, &segs, first.index).unwrap_or(0..0);
+        let mut err = file_error(path, text, span, first.message.clone(), first.help.clone());
+        if let ConfigError::File(file) = &mut err {
+            file.others = problems.len() - 1;
+        }
+        return Err(err);
+    }
+    Ok(config)
 }
 
 /// The machine file: `$KR_CONFIG`, else `$XDG_CONFIG_HOME/kr/config.toml`, else
@@ -152,20 +224,38 @@ fn read_optional(path: &Path) -> Result<Option<String>, ConfigError> {
     }
 }
 
-fn check_file(path: &Path, text: &str) -> Result<(), ConfigError> {
-    let Err(err) = toml::from_str::<Config>(text) else {
-        return Ok(());
-    };
-    let span = err.span().unwrap_or(0..0);
+fn check_file<T: serde::de::DeserializeOwned>(path: &Path, text: &str) -> Result<T, ConfigError> {
+    toml::from_str::<T>(text).map_err(|e| toml_error(path, text, &e))
+}
+
+fn toml_error(path: &Path, text: &str, err: &toml::de::Error) -> ConfigError {
+    file_error(
+        path,
+        text,
+        err.span().unwrap_or(0..0),
+        err.message().to_owned(),
+        format!("fix the marked item in {}", path.display()),
+    )
+}
+
+fn file_error(
+    path: &Path,
+    text: &str,
+    span: std::ops::Range<usize>,
+    message: String,
+    help: String,
+) -> ConfigError {
     let (line, column) = line_column(text, span.start);
-    Err(ConfigError::File(Box::new(FileError {
+    ConfigError::File(Box::new(FileError {
         path: path.to_owned(),
         line,
         column,
-        message: err.message().to_owned(),
+        message,
+        help,
+        others: 0,
         src: NamedSource::new(path.display().to_string(), text.to_owned()),
         span: span.into(),
-    })))
+    }))
 }
 
 fn line_column(text: &str, offset: usize) -> (usize, usize) {
@@ -237,17 +327,28 @@ pub enum ConfigError {
 
 /// A TOML file that does not parse or does not match the schema.
 #[derive(Debug, thiserror::Error, Diagnostic)]
-#[error("{}:{line}:{column}: {message}", path.display())]
-#[diagnostic(code(kr::config::file), help("fix the marked item in {}", path.display()))]
+#[error("{}:{line}:{column}: {message}{}", path.display(), more(*others))]
+#[diagnostic(code(kr::config::file))]
 pub struct FileError {
     pub path: PathBuf,
     pub line: usize,
     pub column: usize,
     pub message: String,
+    #[help]
+    pub help: String,
+    /// How many more problems the file has after this one.
+    pub others: usize,
     #[source_code]
     src: NamedSource<String>,
     #[label("{message}")]
     span: SourceSpan,
+}
+
+fn more(others: usize) -> String {
+    match others {
+        0 => String::new(),
+        n => format!(" (and {n} more problem(s); fix this one and run again)"),
+    }
 }
 
 impl ConfigError {

@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/load.rs
+assertion_line: 68
+expression: "render(&err).replace(dir.path().to_str().unwrap(), \"<tmp>\")"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:4:2: `resources` is a machine setting
+   ╭─[<tmp>/.kr.toml:4:2]
+ 3 │ 
+ 4 │ [resources]
+   ·  ────┬────
+   ·      ╰── `resources` is a machine setting
+ 5 │ sim = 3
+   ╰────
+  help: move it to the machine config (~/.config/kr/config.toml); .kr.toml is shared by every machine

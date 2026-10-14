@@ -1,19 +1,43 @@
 ---
 source: crates/kr/tests/cli.rs
-assertion_line: 69
+assertion_line: 81
 expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string().as_bytes())).unwrap()"
 ---
 {
   "config": {
+    "machine": {
+      "machines": {},
+      "resources": {
+        "build": 1,
+        "light": null,
+        "sim": 3
+      },
+      "state_dir": null
+    },
     "project": {
-      "name": "krill"
-    },
-    "resources": {
-      "build": 1,
-      "light": null,
-      "sim": 3
-    },
-    "state_dir": null
+      "gates": {},
+      "isolation": {
+        "bundle_ids": [],
+        "entitlements": {}
+      },
+      "project": {
+        "build_settings": {},
+        "configuration": null,
+        "generate": null,
+        "name": "krill",
+        "platforms": [],
+        "scheme": null,
+        "workspace": null,
+        "xcode": null,
+        "xcodeproj": null
+      },
+      "scenarios": {},
+      "simulators": {
+        "devices": {},
+        "runtime": null
+      },
+      "suites": {}
+    }
   },
   "sources": {
     "machine": "<home>/.config/kr/config.toml",

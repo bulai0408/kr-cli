@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 139
+expression: "error_for(r#\"only = [\"DemoUITests/LoginUITests\"]\"#, \"only = []\")"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:17:12: a scenario needs at least one test in `only`
+    ╭─[<tmp>/.kr.toml:17:12]
+ 16 │ 
+ 17 │ [scenarios.login]
+    ·            ──┬──
+    ·              ╰── a scenario needs at least one test in `only`
+ 18 │ only = []
+    ╰────
+  help: add the UI test classes, e.g. only = ["AppUITests/LoginUITests"]

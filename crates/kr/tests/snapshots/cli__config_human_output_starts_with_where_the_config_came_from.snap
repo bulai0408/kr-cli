@@ -1,13 +1,13 @@
 ---
 source: crates/kr/tests/cli.rs
-assertion_line: 80
+assertion_line: 94
 expression: sb.clean(&out.stdout)
 ---
 machine config: (none)
 project config: <home>/repo/.kr.toml
 state dir:      <home>/.local/state/kr
-
-[resources]
-
-[project]
-name = "krill"
+resources:      build auto, sim auto, light auto
+project:        krill (Xcode any)
+suites:         (none)
+scenarios:      0
+gates:          (none)

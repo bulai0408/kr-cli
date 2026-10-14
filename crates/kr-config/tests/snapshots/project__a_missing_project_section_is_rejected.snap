@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 149
+expression: "error_for(\"[project]\\nname = \\\"Demo\\\"\\nscheme = \\\"Demo\\\"\\n\", \"\")"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:1:1: missing field `project`
+   ╭─[<tmp>/.kr.toml:1:1]
+ 1 │ 
+   · ▲
+   · ╰── missing field `project`
+ 2 │ 
+ 3 │ [simulators]
+   ╰────
+  help: fix the marked item in <tmp>/.kr.toml

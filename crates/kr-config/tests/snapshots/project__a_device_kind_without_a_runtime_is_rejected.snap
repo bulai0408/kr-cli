@@ -1,0 +1,16 @@
+---
+source: crates/kr-config/tests/project.rs
+assertion_line: 134
+expression: "error_for(\"[simulators]\\nruntime = \\\"iOS 18.6\\\"\\n\", \"[simulators]\\n\")"
+---
+kr::config::file
+
+  × <tmp>/.kr.toml:8:21: no runtime for this kind
+   ╭─[<tmp>/.kr.toml:8:21]
+ 7 │ 
+ 8 │ [simulators.devices.default]
+   ·                     ───┬───
+   ·                        ╰── no runtime for this kind
+ 9 │ device_type = "iPhone 16 Pro"
+   ╰────
+  help: set `runtime` here or in [simulators], e.g. runtime = "iOS 18.6"
