@@ -38,14 +38,14 @@ pub use project::*;
 const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load", "legacy"];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize)]
 pub struct Config {
     pub machine: MachineConfig,
     pub project: Option<ProjectConfig>,
 }
 
 /// Machine-level settings: `~/.config/kr/config.toml`, `KR_*` variables, overrides.
-#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MachineConfig {
     /// Where kr keeps events and other state. Default: `~/.local/state/kr`.
@@ -73,11 +73,16 @@ pub struct Legacy {
     pub poll: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LoadCheck {
-    /// Wait for the load to drop before `build` and `sim` work.
-    pub check: bool,
+    /// Also wait while the 1-minute load is above `per_core` × cores. Off by default:
+    /// macOS load counts processes waiting for I/O, so it does not say how much CPU
+    /// is left (ADR 0003). kr always waits while memory pressure is critical.
+    pub block: bool,
+    /// "High load" is a 1-minute load above `per_core` × logical cores. Failures then
+    /// are marked as high-load failures and the item is run once more.
+    pub per_core: f64,
     /// Give up waiting after this long and go ahead, e.g. "20m".
     pub max_wait: String,
 }
@@ -85,7 +90,8 @@ pub struct LoadCheck {
 impl Default for LoadCheck {
     fn default() -> Self {
         Self {
-            check: true,
+            block: false,
+            per_core: 4.0,
             max_wait: "20m".to_owned(),
         }
     }

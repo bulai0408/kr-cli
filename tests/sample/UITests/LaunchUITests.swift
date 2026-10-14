@@ -19,6 +19,13 @@ final class LaunchUITests: XCTestCase {
 }
 
 final class SettingsUITests: XCTestCase {
+    /// Fails whenever KR_FAIL_ALWAYS is set (TEST_RUNNER_KR_FAIL_ALWAYS for xcodebuild).
+    func testFailsOnRequest() {
+        if ProcessInfo.processInfo.environment["KR_FAIL_ALWAYS"] != nil {
+            XCTFail("asked to fail")
+        }
+    }
+
     func testLaunchesTwice() {
         let app = XCUIApplication()
         app.launch()

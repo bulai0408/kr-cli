@@ -19,6 +19,9 @@ use jiff::Timestamp;
 
 /// How many guards of this process share each lock directory it owns.
 static HELD: Mutex<Option<HashMap<PathBuf, usize>>> = Mutex::new(None);
+/// One thread of this process acquires at a time, so parallel lanes of one kr run
+/// share the lock instead of queueing behind each other.
+static ACQUIRING: Mutex<()> = Mutex::new(());
 
 /// The old protocol's retry interval.
 pub const DEFAULT_POLL: Duration = Duration::from_secs(30);
@@ -92,6 +95,7 @@ impl LegacyLock {
         task: &str,
         mut on_wait: impl FnMut(Option<&Owner>),
     ) -> Result<LegacyGuard> {
+        let _one_at_a_time = ACQUIRING.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(count) = held_map().get_mut(&self.lock_dir) {
             *count += 1;
             return Ok(self.guard(Kind::Shared));
@@ -135,7 +139,7 @@ impl LegacyLock {
                     std::process::id(),
                     Timestamp::now()
                 );
-                if let Err(e) = std::fs::write(self.lock_dir.join("owner"), line) {
+                if let Err(e) = write_owner(&self.lock_dir, &line) {
                     let _ = std::fs::remove_dir(&self.lock_dir);
                     return Err(e).context("failed to write the machine lock owner");
                 }
@@ -217,6 +221,34 @@ impl LegacyLock {
             }
         }
     }
+}
+
+/// Rewrites the owner line of every machine lock this process holds so it names `pid`
+/// (the process group doing the heavy work). If kr is killed while that group still
+/// runs, old scripts see a live owner and wait, as kr's own slots do (orphan rule).
+pub fn set_owner_pid(pid: u32) {
+    let dirs: Vec<PathBuf> = held_map()
+        .as_ref()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
+    for dir in dirs {
+        let path = dir.join("owner");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let mut fields: Vec<String> = text.split_whitespace().map(str::to_owned).collect();
+        if fields.len() >= 3 {
+            fields[2] = pid.to_string();
+            let _ = write_owner(&dir, &(fields.join(" ") + "\n"));
+        }
+    }
+}
+
+/// Replaces `<lock>/owner` atomically, so readers never see a partial line.
+fn write_owner(lock_dir: &Path, line: &str) -> std::io::Result<()> {
+    let tmp = lock_dir.join(format!(".owner-{}", std::process::id()));
+    std::fs::write(&tmp, line)?;
+    std::fs::rename(&tmp, lock_dir.join("owner"))
 }
 
 fn held_map() -> std::sync::MutexGuard<'static, Option<HashMap<PathBuf, usize>>> {

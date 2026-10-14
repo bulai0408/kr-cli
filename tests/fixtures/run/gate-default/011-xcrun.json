@@ -1,0 +1,12 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "bootstatus",
+    "31038384-DFE3-45BC-8984-78A3857E5A5F",
+    "-b"
+  ],
+  "status": 0,
+  "stdout": "Monitoring boot status for KrSample-Verify-1 (31038384-DFE3-45BC-8984-78A3857E5A5F).\nBooting device...\n[2026-10-14 07:20:30 +0000] Status=0, isTerminal=NO, Elapsed=00:00.\n\tBooting\n\n[2026-10-14 07:20:34 +0000] Status=1, isTerminal=NO, Elapsed=00:03.\n\tWaiting on BackBoard\n\n[2026-10-14 07:20:39 +0000] Status=2, isTerminal=NO, Elapsed=00:08.\n\tWaiting on Data Migration\n\t\tReason:(null)\n\t\tMigration Elapsed:00:00 seconds\n\n[2026-10-14 07:20:47 +0000] Status=4294967295, isTerminal=YES, Elapsed=00:16.\n\tFinished\n\n",
+  "stderr": ""
+}

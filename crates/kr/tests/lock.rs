@@ -25,8 +25,6 @@ impl Machine {
             .env("HOME", self.dir.path())
             .env("PATH", std::env::var("PATH").unwrap())
             .env("KR_STATE_DIR", self.dir.path().join("state"))
-            // A busy machine must not slow these tests down; the load check has its own tests.
-            .env("KR_LOAD__CHECK", "false")
             .env("NO_COLOR", "1")
             .current_dir(self.dir.path().join("work"));
         cmd
@@ -506,4 +504,39 @@ fn with_the_bridge_on_nested_kr_under_a_holder_does_not_wait_for_itself() {
         by_ancestor.contains(&true),
         "the nested kr relies on its parent's lock"
     );
+}
+
+#[test]
+fn with_the_bridge_on_the_owner_names_the_running_command_so_a_killed_kr_is_not_stale() {
+    let m = Machine::new();
+    let lock = m.dir.path().join("native-build.lock");
+    let holder = bridged(&m, "build", "echo started >> \"$LOG\"; sleep 30");
+    m.wait_for_line("started");
+    let pgid = m.queue_json()["resources"][0]["holders"][0]["child_pid"]
+        .as_i64()
+        .unwrap();
+    let owner_pid = |lock: &std::path::Path| -> i64 {
+        std::fs::read_to_string(lock.join("owner"))
+            .unwrap()
+            .split_whitespace()
+            .nth(2)
+            .unwrap()
+            .parse()
+            .unwrap()
+    };
+    assert_eq!(owner_pid(&lock), pgid, "the owner is the command, not kr");
+
+    kill9(holder);
+    // The command still runs: an old script (and kr) must still see the lock as taken.
+    let mut next = bridged(&m, "build", "echo next >> \"$LOG\"");
+    std::thread::sleep(Duration::from_millis(2500));
+    assert!(
+        next.try_wait().unwrap().is_none(),
+        "the lock is not stale while the command runs"
+    );
+    assert!(lock.join("owner").exists());
+
+    kill_group(pgid);
+    assert_eq!(finish(next, Duration::from_secs(10)), 0);
+    assert!(m.lines().contains(&"next".to_owned()));
 }

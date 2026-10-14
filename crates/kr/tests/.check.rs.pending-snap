@@ -1,0 +1,15 @@
+{"run_id":"1791962408-721092000","line":164,"new":{"module_name":"check","snapshot_name":"a_filter_that_matches_no_test_points_at_its_line","metadata":{"source":"crates/kr/tests/check.rs","assertion_line":164,"expression":"out"},"snapshot":"FAIL: check · filters failed after 0s\n  `KrSampleUITests/SettingsUITests/testFailsOnRequest` matches no test (<home>/repo/.kr.toml:31:9)\n  `KrSampleUITests/NoSuchTests` matches no test (<home>/repo/.kr.toml:25:9)"},"old":{"module_name":"check","metadata":{},"snapshot":"FAIL: check · filters failed after 0s\n  `KrSampleUITests/NoSuchTests` matches no test (<home>/repo/.kr.toml:25:9)"}}
+{"run_id":"1791962413-10360000","line":164,"new":{"module_name":"check","snapshot_name":"a_filter_that_matches_no_test_points_at_its_line","metadata":{"source":"crates/kr/tests/check.rs","assertion_line":164,"expression":"out"},"snapshot":"FAIL: check · filters failed after 0s\n  `KrSampleUITests/SettingsUITests/testFailsOnRequest` matches no test (<home>/repo/.kr.toml:31:9)\n  `KrSampleUITests/NoSuchTests` matches no test (<home>/repo/.kr.toml:25:9)"},"old":{"module_name":"check","metadata":{},"snapshot":"FAIL: check · filters failed after 0s\n  `KrSampleUITests/NoSuchTests` matches no test (<home>/repo/.kr.toml:25:9)"}}
+{"run_id":"1791962653-209474000","line":164,"new":null,"old":null}
+{"run_id":"1791962670-101300000","line":164,"new":null,"old":null}
+{"run_id":"1791962758-677604000","line":164,"new":null,"old":null}
+{"run_id":"1791962802-669107000","line":164,"new":null,"old":null}
+{"run_id":"1791962827-751882000","line":164,"new":null,"old":null}
+{"run_id":"1791963132-200395000","line":163,"new":null,"old":null}
+{"run_id":"1791963137-175413000","line":163,"new":null,"old":null}
+{"run_id":"1791963209-803612000","line":163,"new":null,"old":null}
+{"run_id":"1791963219-518294000","line":163,"new":null,"old":null}
+{"run_id":"1791963228-256972000","line":163,"new":null,"old":null}
+{"run_id":"1791963247-236388000","line":163,"new":null,"old":null}
+{"run_id":"1791963258-910402000","line":163,"new":null,"old":null}
+{"run_id":"1791963270-614183000","line":163,"new":null,"old":null}

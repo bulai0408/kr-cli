@@ -89,7 +89,7 @@ fn error_summary_falls_back_to_the_last_lines() {
 #[test]
 fn xctestrun_lists_test_targets_with_resolved_paths() {
     let run = XcTestRun::read(&fixture(
-        "xcode/products/KrSample_iphonesimulator.xctestrun",
+        "xcode/products/KrSample_iphonesimulator27.1-arm64-x86_64.xctestrun",
     ))
     .unwrap();
     let ui = run.target("KrSampleUITests").unwrap();

@@ -15,10 +15,12 @@ kr-events = { path = "crates/kr-events" }
 kr-exec = { path = "crates/kr-exec" }
 kr-machine = { path = "crates/kr-machine" }
 kr-resource = { path = "crates/kr-resource" }
+kr-run = { path = "crates/kr-run" }
 kr-sim = { path = "crates/kr-sim" }
 kr-xcode = { path = "crates/kr-xcode" }
 
 anyhow = "1"
+blake3 = "1"
 clap = { version = "4.6", features = ["derive", "env"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 jiff = { version = "0.2", features = ["serde"] }

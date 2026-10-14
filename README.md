@@ -16,7 +16,7 @@
 
 `kr` 把这些做成固定、可检查的步骤。
 
-## 三个例子
+## 常用命令
 
 ```sh
 # 0. 体检：本机的 Xcode、模拟器运行时、模拟器池、磁盘、负载，以及推算出的资源容量
@@ -28,14 +28,25 @@ kr check
 # 2. 构建一次，在两台模拟器上跑指定场景；排队、租模拟器、核对测试数都自动完成
 kr run ratings shelf-share
 
-# 3. 看现在谁在用机器、谁在排队、还要等多久
+# 3. 跑门禁：.kr.toml 里 [gates.default] 的套件和场景，每项一行 PASS / FAIL
+kr gate
+kr gate smoke
+
+# 4. 看现在谁在用机器、谁在排队、还要等多久
 kr queue
 
-# 4. 拿到一个 build 槽位后执行任意命令，结束立即归还，退出码原样返回
+# 5. 拿到一个 build 槽位后执行任意命令，结束立即归还，退出码原样返回
 kr lock build -- xcodebuild build-for-testing …
 ```
 
 每个命令都支持 `--json`，给 agent 读。
+
+`kr run` / `kr gate` 怎么判定：
+- 构建一次：输入（git 知道的文件内容、xcodebuild 命令行、Xcode）没变就复用上次的测试产物，不再构建。
+- 每个场景先在租到的模拟器上真实枚举测试，0 条即失败；运行后从 xcresult 核对：实际跑的测试必须正好是枚举出的那些，xcodebuild 的退出码和测试结果必须一致。
+- 失败的测试单独重跑一次：通过记为偶发（场景仍通过，输出里列出），仍失败记为失败。
+- 每个场景有硬超时（默认 20 分钟，`.kr.toml` 里 `timeout` 可改），超时终止整个进程组并判失败。
+- 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`。
 
 ## 它是什么、不是什么
 

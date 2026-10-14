@@ -110,23 +110,32 @@ impl Hardware {
         self.memory_bytes >> 30
     }
 
-    /// Above this 1-minute load, heavy work waits: 1.25 × logical cores.
-    pub fn load_threshold(&self) -> f64 {
-        self.cores as f64 * 1.25
+    /// Above this 1-minute load, heavy work waits: `per_core` × logical cores.
+    pub fn load_threshold(&self, per_core: f64) -> f64 {
+        self.cores as f64 * per_core
     }
 
-    /// Why heavy work should wait now, if it should.
-    pub fn overloaded(&self) -> Option<String> {
-        if self.load.one > self.load_threshold() {
-            return Some(format!(
-                "1-minute load {:.2} is above {:.0} (1.25 × {} cores)",
-                self.load.one,
-                self.load_threshold(),
-                self.cores
-            ));
-        }
+    /// Why heavy work must wait now: memory pressure is critical (the Mac is paging and
+    /// tests fail for that alone), or, if `block_on_load`, the load is high.
+    pub fn must_wait(&self, block_on_load: bool, per_core: f64) -> Option<String> {
         if self.pressure == Pressure::Critical {
             return Some("memory pressure is critical".to_owned());
+        }
+        if block_on_load {
+            return self.overloaded(per_core);
+        }
+        None
+    }
+
+    /// Why the load counts as high now, if it does.
+    pub fn overloaded(&self, per_core: f64) -> Option<String> {
+        if self.load.one > self.load_threshold(per_core) {
+            return Some(format!(
+                "1-minute load {:.2} is above {:.0} ({per_core} × {} cores)",
+                self.load.one,
+                self.load_threshold(per_core),
+                self.cores
+            ));
         }
         None
     }
@@ -191,10 +200,12 @@ pub struct LoadWait {
     pub timed_out: bool,
 }
 
-/// Reads the load until it is acceptable, sleeping `poll` between reads, at most `limit`.
-/// `on_busy` is called with each reading that is too high.
+/// Reads the machine state until work may start (see [`Hardware::must_wait`]), sleeping
+/// `poll` between reads, at most `limit`. `on_busy` is called with each blocking reading.
 pub fn wait_for_load(
     runner: &dyn Runner,
+    block_on_load: bool,
+    per_core: f64,
     poll: Duration,
     limit: Duration,
     mut on_busy: impl FnMut(&Hardware),
@@ -204,7 +215,7 @@ pub fn wait_for_load(
     loop {
         let hw = read_hardware(runner)?;
         checks += 1;
-        if hw.overloaded().is_none() {
+        if hw.must_wait(block_on_load, per_core).is_none() {
             return Ok(LoadWait {
                 checks,
                 waited: start.elapsed(),

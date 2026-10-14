@@ -79,7 +79,7 @@ fn a_mac_without_performance_levels_counts_all_cores() {
 }
 
 #[test]
-fn load_over_one_and_a_quarter_per_core_is_too_high() {
+fn load_is_high_above_the_factor_per_core_and_pressure_is_separate() {
     let busy = read_hardware(&ReplayRunner::new(vec![sysctl(
         8,
         Some(4),
@@ -89,8 +89,8 @@ fn load_over_one_and_a_quarter_per_core_is_too_high() {
         "Apple M3",
     )]))
     .unwrap();
-    assert_eq!(busy.load_threshold(), 10.0);
-    assert!(busy.overloaded().unwrap().contains("10.50"));
+    assert_eq!(busy.load_threshold(1.25), 10.0);
+    assert!(busy.overloaded(1.25).unwrap().contains("10.50"));
     let pressured = read_hardware(&ReplayRunner::new(vec![sysctl(
         8,
         Some(4),
@@ -100,8 +100,14 @@ fn load_over_one_and_a_quarter_per_core_is_too_high() {
         "Apple M3",
     )]))
     .unwrap();
-    assert!(pressured.overloaded().unwrap().contains("critical"));
-    assert_eq!(m3().overloaded(), None);
+    assert!(pressured.overloaded(1.25).is_none(), "the load is low");
+    assert!(
+        pressured
+            .must_wait(false, 1.25)
+            .unwrap()
+            .contains("critical")
+    );
+    assert_eq!(m3().overloaded(1.25), None);
 }
 
 #[test]
@@ -112,9 +118,14 @@ fn waiting_for_load_rechecks_until_it_drops() {
         sysctl(8, Some(4), 24, 4.0, 1, "Apple M3"),
     ]);
     let mut seen = Vec::new();
-    let wait = wait_for_load(&runner, Duration::ZERO, Duration::from_secs(60), |hw| {
-        seen.push(hw.load.one)
-    })
+    let wait = wait_for_load(
+        &runner,
+        true,
+        1.25,
+        Duration::ZERO,
+        Duration::from_secs(60),
+        |hw| seen.push(hw.load.one),
+    )
     .unwrap();
     assert_eq!(seen, [30.0, 12.0]);
     assert_eq!(wait.checks, 3);
@@ -129,6 +140,8 @@ fn waiting_for_load_gives_up_after_the_limit() {
     ]);
     let wait = wait_for_load(
         &runner,
+        true,
+        1.25,
         Duration::from_millis(5),
         Duration::from_millis(1),
         |_| {},
@@ -196,4 +209,53 @@ fn required_xcode_matches_by_version_components() {
     assert_eq!(find_xcode(&profile.xcodes, "26.6").unwrap().version, "26.6");
     assert!(find_xcode(&profile.xcodes, "27.10").is_none());
     assert!(find_xcode(&profile.xcodes, "2").is_none());
+}
+
+#[test]
+fn the_load_factor_per_core_is_configurable() {
+    let hw = read_hardware(&ReplayRunner::new(vec![sysctl(
+        8,
+        Some(4),
+        24,
+        15.0,
+        1,
+        "Apple M3",
+    )]))
+    .unwrap();
+    assert!(hw.overloaded(1.25).is_some());
+    assert_eq!(hw.load_threshold(2.5), 20.0);
+    assert!(hw.overloaded(2.5).is_none());
+}
+
+#[test]
+fn by_default_only_critical_memory_pressure_blocks() {
+    let busy = read_hardware(&ReplayRunner::new(vec![sysctl(
+        8,
+        Some(4),
+        24,
+        547.0,
+        1,
+        "Apple M3",
+    )]))
+    .unwrap();
+    assert_eq!(
+        busy.must_wait(false, 4.0),
+        None,
+        "load alone does not block"
+    );
+    assert!(busy.must_wait(true, 4.0).is_some());
+    let runner = ReplayRunner::new(vec![
+        sysctl(8, Some(4), 24, 547.0, 4, "Apple M3"),
+        sysctl(8, Some(4), 24, 547.0, 1, "Apple M3"),
+    ]);
+    let wait = wait_for_load(
+        &runner,
+        false,
+        4.0,
+        Duration::ZERO,
+        Duration::from_secs(60),
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(wait.checks, 2, "waited for the pressure only");
 }

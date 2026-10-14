@@ -10,12 +10,14 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+blake3.workspace = true
 clap.workspace = true
 kr-config.workspace = true
 kr-events.workspace = true
 kr-exec.workspace = true
 kr-machine.workspace = true
 kr-resource.workspace = true
+kr-run.workspace = true
 kr-sim.workspace = true
 kr-xcode.workspace = true
 jiff.workspace = true

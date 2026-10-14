@@ -37,6 +37,11 @@ enum Command {
     /// Pre-check before the simulator queue: generate, compile with the app's settings,
     /// confirm test filters, check data isolation. Holds only a `build` slot.
     Check(commands::check::CheckArgs),
+    /// Build once, then run scenarios and suites on pool simulators and verify the
+    /// results (test counts, real exit codes, one rerun of each failure).
+    Run(commands::run::RunArgs),
+    /// Run a gate from .kr.toml: its suites and scenarios, like `kr run`.
+    Gate(commands::run::GateArgs),
     /// The project's simulator pool: status, sync, lease.
     Pool(commands::pool::PoolArgs),
 }
@@ -46,6 +51,7 @@ pub use ctx::{Ctx, Loaded};
 fn main() -> ExitCode {
     let cli = Cli::parse();
     init_tracing(cli.verbose);
+    slots::watch_children();
     let ctx = Ctx {
         cwd: std::env::current_dir().unwrap_or_default(),
         env: std::env::vars().collect(),
@@ -58,6 +64,8 @@ fn main() -> ExitCode {
         Command::Doctor => commands::doctor::run(&ctx),
         Command::Pool(args) => commands::pool::run(&ctx, args),
         Command::Check(args) => commands::check::run(&ctx, args),
+        Command::Run(args) => commands::run::run(&ctx, args),
+        Command::Gate(args) => commands::run::gate(&ctx, args),
     };
     match result {
         Ok(code) => code,

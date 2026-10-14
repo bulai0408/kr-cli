@@ -1,0 +1,15 @@
+{
+  "program": "xcrun",
+  "args": [
+    "xcresulttool",
+    "get",
+    "test-results",
+    "tests",
+    "--path",
+    "build/kr/results/settings/run.xcresult",
+    "--compact"
+  ],
+  "status": 0,
+  "stdout": "{\"devices\":[{\"architecture\":\"arm64\",\"deviceId\":\"31038384-DFE3-45BC-8984-78A3857E5A5F\",\"deviceName\":\"KrSample-Verify-1\",\"modelName\":\"iPhone 16 Pro\",\"osBuildNumber\":\"22G86\",\"osVersion\":\"18.6\",\"platform\":\"iOS Simulator\"}],\"testNodes\":[{\"children\":[{\"children\":[{\"children\":[{\"duration\":\"8秒\",\"durationInSeconds\":8.500810980796814,\"name\":\"testLaunchesTwice()\",\"nodeIdentifier\":\"SettingsUITests/testLaunchesTwice()\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests/SettingsUITests/testLaunchesTwice\",\"nodeType\":\"Test Case\",\"result\":\"Passed\"}],\"name\":\"SettingsUITests\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests/SettingsUITests\",\"nodeType\":\"Test Suite\",\"result\":\"Passed\"}],\"name\":\"KrSampleUITests\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests\",\"nodeType\":\"UI test bundle\",\"result\":\"Passed\"}],\"name\":\"KrSample\",\"nodeType\":\"Test Plan\",\"result\":\"Passed\"}],\"testPlanConfigurations\":[{\"configurationId\":\"1\",\"configurationName\":\"Test Scheme Action\"}]}\n",
+  "stderr": ""
+}

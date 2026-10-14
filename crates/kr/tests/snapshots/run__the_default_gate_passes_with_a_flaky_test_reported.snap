@@ -1,0 +1,10 @@
+---
+source: crates/kr/tests/run.rs
+assertion_line: 108
+expression: "verdict_lines(&out).join(\"\\n\")"
+---
+PASS: unit (2 tests, KrSample-Verify-1)
+PASS: broken (1 tests, KrSample-Verify-1)
+PASS: launch (2 tests, 1 flaky, KrSample-Verify-1)
+  flaky: KrSampleUITests/LaunchUITests/testFlakyOnce()
+PASS: settings (1 tests, KrSample-Verify-1)

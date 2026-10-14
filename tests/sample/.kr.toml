@@ -27,6 +27,9 @@ only = ["KrSampleUITests/LaunchUITests"]
 [scenarios.settings]
 only = ["KrSampleUITests/SettingsUITests/testLaunchesTwice"]
 
+[scenarios.broken]
+only = ["KrSampleUITests/SettingsUITests/testFailsOnRequest"]
+
 [gates.default]
 suites = ["unit"]
 scenarios = ["*"]

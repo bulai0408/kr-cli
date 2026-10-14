@@ -98,6 +98,35 @@ impl Output {
     }
 }
 
+/// A long-running child process started or finished (see [`set_spawn_observer`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Spawn {
+    /// Started; the PID also names its process group.
+    Started(u32),
+    Finished(u32),
+}
+
+type Observer = Arc<dyn Fn(Spawn) + Send + Sync>;
+static SPAWN_OBSERVER: Mutex<Option<Observer>> = Mutex::new(None);
+
+/// Sets the process-wide function told about long-running children (logged runs and
+/// commands kr runs under a slot). kr uses it to keep lock owner records pointing at
+/// the process that actually does the work.
+pub fn set_spawn_observer(observer: impl Fn(Spawn) + Send + Sync + 'static) {
+    *SPAWN_OBSERVER.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(observer));
+}
+
+/// Tells the observer, if any, about a child.
+pub fn notify_spawn(event: Spawn) {
+    let observer = SPAWN_OBSERVER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    if let Some(observer) = observer {
+        observer(event);
+    }
+}
+
 /// How much of a logged run's output is kept in memory.
 pub const TAIL_BYTES: u64 = 64 * 1024;
 /// After a timeout: time between SIGTERM and SIGKILL.
@@ -202,6 +231,7 @@ impl Runner for RealRunner {
                 .spawn()
                 .with_context(|| format!("failed to start `{cmd}`"))?;
             let pgid = libc::pid_t::try_from(child.id())?;
+            notify_spawn(Spawn::Started(child.id()));
             let deadline = cmd.timeout.map(|t| Instant::now() + t);
             let mut terminated_at: Option<Instant> = None;
             let mut interrupted = None;
@@ -224,6 +254,7 @@ impl Runner for RealRunner {
                 }
                 std::thread::sleep(Duration::from_millis(50));
             };
+            notify_spawn(Spawn::Finished(child.id()));
             // Whatever the command left behind in its group goes too.
             if terminated_at.is_some() || interrupted.is_some() {
                 kill_group(pgid, libc::SIGKILL);

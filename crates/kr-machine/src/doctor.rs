@@ -43,6 +43,7 @@ pub fn diagnose(
     profile: &Profile,
     project: Option<&ProjectConfig>,
     devices: Option<&SimDevices>,
+    load_per_core: f64,
 ) -> Vec<Problem> {
     let mut out = Vec::new();
     let free_gb = profile.disk_free_bytes / GB;
@@ -59,12 +60,12 @@ pub fn diagnose(
             "free space: delete old DerivedData (~/Library/Developer/Xcode/DerivedData) and unused simulators (`xcrun simctl delete unavailable`)".to_owned(),
         ));
     }
-    if let Some(reason) = profile.hardware.overloaded() {
+    if let Some(reason) = profile.hardware.overloaded(load_per_core) {
         out.push(Problem::new(
             Severity::Warning,
             "load_high",
             reason,
-            "heavy work will wait for the load to drop; check `top -o cpu` for processes that do not belong to a build".to_owned(),
+            "test failures now are marked as high-load failures and run again; check `top -o cpu` for processes that do not belong to a build".to_owned(),
         ));
     }
     let Some(project) = project else {

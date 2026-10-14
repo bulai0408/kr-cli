@@ -1,0 +1,11 @@
+{
+  "program": "xcrun",
+  "args": [
+    "simctl",
+    "shutdown",
+    "31038384-DFE3-45BC-8984-78A3857E5A5F"
+  ],
+  "status": 0,
+  "stdout": "",
+  "stderr": ""
+}

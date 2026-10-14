@@ -258,13 +258,21 @@ impl BuildJob {
         xb.command().current_dir(root.join(&self.dir))
     }
 
+    /// Records the input hash of the last successful build of this job.
+    pub fn marker(&self, root: &Path) -> PathBuf {
+        let key = blake3::hash(self.label().as_bytes()).to_hex();
+        root.join(&self.dir)
+            .join("build/kr")
+            .join(format!("built-{}.json", &key[..16]))
+    }
+
     pub fn products(&self, root: &Path) -> PathBuf {
         root.join(&self.dir)
             .join(DERIVED_DATA)
             .join("Build/Products")
     }
 
-    fn label(&self) -> String {
+    pub fn label(&self) -> String {
         let dir = if self.dir.as_os_str().is_empty() {
             String::new()
         } else {
@@ -293,6 +301,8 @@ pub struct Steps<'a> {
     pub run_id: RunId,
     pub command: &'static str,
     pub results: Vec<StepResult>,
+    /// Builds skipped because their inputs did not change.
+    pub cached: Vec<String>,
 }
 
 impl Steps<'_> {
@@ -378,6 +388,7 @@ pub fn run(ctx: &Ctx, args: CheckArgs) -> Result<ExitCode> {
         run_id,
         command: "check",
         results: Vec::new(),
+        cached: Vec::new(),
     };
     let result = check(
         project,
@@ -414,7 +425,7 @@ fn describe(sel: &Selection) -> String {
     names.join(",")
 }
 
-fn with_xcode(cmd: Command, developer_dir: Option<&Path>) -> Command {
+pub fn with_xcode(cmd: Command, developer_dir: Option<&Path>) -> Command {
     match developer_dir {
         Some(dir) => cmd.env("DEVELOPER_DIR", dir.display().to_string()),
         None => cmd,
@@ -422,6 +433,7 @@ fn with_xcode(cmd: Command, developer_dir: Option<&Path>) -> Command {
 }
 
 /// The check steps; returns whether all passed. Stops at the first failing step.
+/// Builds whose inputs are unchanged since their last successful build are skipped.
 pub fn check(
     project: &ProjectConfig,
     root: &Path,
@@ -431,6 +443,27 @@ pub fn check(
     loaded: &Loaded,
     steps: &mut Steps<'_>,
 ) -> Result<bool> {
+    let hashes = job_hashes(project, root, jobs, runner, developer_dir);
+    let todo = stale(jobs, &hashes, root, steps);
+    if !build(project, root, &todo, runner, developer_dir, steps)? {
+        return Ok(false);
+    }
+    verify(project, root, jobs, runner, developer_dir, loaded, steps)
+}
+
+/// Generates the project (if anything needs building) and runs the builds, recording
+/// each successful build's input hash next to its products.
+pub fn build(
+    project: &ProjectConfig,
+    root: &Path,
+    todo: &[(&BuildJob, Option<String>)],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    steps: &mut Steps<'_>,
+) -> Result<bool> {
+    if todo.is_empty() {
+        return Ok(true);
+    }
     if let Some(generate) = &project.project.generate {
         let cmd = Command::new("sh")
             .args(["-c", generate.as_str()])
@@ -440,12 +473,35 @@ pub fn check(
             return Ok(false);
         }
     }
-    for job in jobs {
+    for (job, hash) in todo {
         let cmd = with_xcode(job.command(project, root), developer_dir).timeout(BUILD_TIMEOUT);
         if !steps.run_logged(runner, &format!("build {}", job.label()), &cmd)? {
             return Ok(false);
         }
+        if let Some(hash) = hash {
+            let marker = job.marker(root);
+            if let Some(dir) = marker.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(
+                &marker,
+                json!({ "hash": hash, "job": job.label() }).to_string(),
+            )?;
+        }
     }
+    Ok(true)
+}
+
+/// Static checks of built products: test filters and data isolation.
+pub fn verify(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    loaded: &Loaded,
+    steps: &mut Steps<'_>,
+) -> Result<bool> {
     let project_file = loaded.project_file.as_deref();
     let started = Instant::now();
     let mut problems = Vec::new();
@@ -490,6 +546,82 @@ pub fn check(
         first_three(&problems),
         None,
     )
+}
+
+/// Input hashes of the jobs: files git knows about in the job's directory (tracked and
+/// untracked, not ignored) by content, plus the command line, the Xcode and the
+/// generate command. `None` when git cannot list the files: always build then.
+pub fn job_hashes(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+) -> Vec<Option<String>> {
+    let list = Command::new("git")
+        .args(["ls-files", "-co", "--exclude-standard", "-z"])
+        .current_dir(root);
+    let files: Option<Vec<String>> = runner.run(&list).ok().filter(|o| o.success()).map(|o| {
+        o.stdout
+            .split('\0')
+            .filter(|f| !f.is_empty())
+            .map(str::to_owned)
+            .collect()
+    });
+    jobs.iter()
+        .map(|job| {
+            let files = files.as_ref()?;
+            let cmd = job.command(project, root);
+            let xcode = developer_dir
+                .map(|d| d.display().to_string())
+                .unwrap_or_default();
+            let mut parts: Vec<&str> = vec![cmd.program.as_str()];
+            parts.extend(cmd.args.iter().map(String::as_str));
+            parts.push(&xcode);
+            parts.push(project.project.generate.as_deref().unwrap_or(""));
+            kr_run::input_hash(root, files, &parts).ok()
+        })
+        .collect()
+}
+
+/// True if the job's last successful build had these inputs (and, for
+/// build-for-testing, its products are still there).
+pub fn is_fresh(job: &BuildJob, root: &Path, hash: Option<&str>) -> bool {
+    let Some(hash) = hash else {
+        return false;
+    };
+    let stored = std::fs::read_to_string(job.marker(root))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v["hash"].as_str().map(str::to_owned));
+    stored.as_deref() == Some(hash)
+        && (job.action == "build" || XcTestRun::find(&job.products(root)).is_ok())
+}
+
+/// The jobs that need building; records a cache hit (once) for the others.
+pub fn stale<'j>(
+    jobs: &'j [BuildJob],
+    hashes: &[Option<String>],
+    root: &Path,
+    steps: &mut Steps<'_>,
+) -> Vec<(&'j BuildJob, Option<String>)> {
+    let mut todo = Vec::new();
+    for (job, hash) in jobs.iter().zip(hashes) {
+        if !is_fresh(job, root, hash.as_deref()) {
+            todo.push((job, hash.clone()));
+            continue;
+        }
+        if !steps.cached.contains(&job.label()) {
+            steps.cached.push(job.label());
+            let _ = steps.loaded.events().append(&Event::now(
+                steps.run_id,
+                steps.loaded.project(),
+                EventKind::BuildCacheHit,
+                json!({ "job": job.label(), "hash": hash }),
+            ));
+        }
+    }
+    todo
 }
 
 fn first_three(problems: &[String]) -> Vec<String> {
