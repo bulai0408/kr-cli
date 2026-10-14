@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 pub const PROJECT_FILE: &str = ".kr.toml";
 
 /// `KR_*` variables that are not configuration keys.
-const RESERVED_ENV: &[&str] = &["KR_LOG", "KR_CONFIG"];
+const RESERVED_ENV: &[&str] = &["KR_LOG", "KR_CONFIG", "KR_HELD"];
 
 /// The merged configuration.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

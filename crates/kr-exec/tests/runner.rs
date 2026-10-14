@@ -86,17 +86,28 @@ fn real_runner_captures_stdout_and_exit_status() {
 }
 
 #[test]
-fn sanitizer_removes_home_user_and_secrets_from_a_recording() {
+fn sanitizer_removes_home_and_secrets_but_keeps_words_containing_the_user_name() {
     let sanitizer = Sanitizer::new("/Users/alice", "alice").with_secrets(["s3cr3t-token"]);
     let rec = recording(
         "sh",
         &["-c", "cat /Users/alice/a"],
         0,
-        "owner alice at /Users/alice/Library token=s3cr3t-token",
+        "malice at /Users/alice/Library /Users/alice/../alice/x token=s3cr3t-token",
     );
 
     let clean = sanitizer.sanitize(rec);
 
     assert_eq!(clean.args, vec!["-c", "cat ~/a"]);
-    assert_eq!(clean.stdout, "owner <user> at ~/Library token=<redacted>");
+    assert_eq!(
+        clean.stdout,
+        "malice at ~/Library ~/../alice/x token=<redacted>"
+    );
+}
+
+#[test]
+fn sanitizer_removes_the_user_name_from_other_paths_under_users() {
+    // e.g. a home directory moved elsewhere, with paths still mentioning /Users/<name>/.
+    let sanitizer = Sanitizer::new("/Volumes/Home/alice", "alice");
+    let rec = recording("ls", &[], 0, "/Users/alice/x");
+    assert_eq!(sanitizer.sanitize(rec).stdout, "/Users/<user>/x");
 }

@@ -241,7 +241,8 @@ impl Sanitizer {
             text = text.replace(self.home.as_str(), "~");
         }
         if !self.user.is_empty() {
-            text = text.replace(self.user.as_str(), "<user>");
+            // Only as a path segment: a short user name may also be part of normal words.
+            text = text.replace(&format!("/Users/{}/", self.user), "/Users/<user>/");
         }
         text
     }

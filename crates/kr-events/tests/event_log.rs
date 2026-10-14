@@ -1,7 +1,7 @@
 use std::process::{Command, Stdio};
 
 use jiff::Timestamp;
-use kr_events::{Event, EventLog, RunId};
+use kr_events::{Event, EventKind, EventLog, RunId};
 use serde_json::{Value, json};
 
 fn lines(dir: &std::path::Path) -> Vec<Value> {
@@ -28,7 +28,7 @@ fn append_writes_one_json_line_into_the_utc_day_file() {
         ts,
         run,
         Some("krill"),
-        "slot_acquired",
+        EventKind::SlotAcquired,
         json!({"resource": "build", "slot": 1}),
     ))
     .unwrap();
@@ -66,7 +66,7 @@ fn concurrent_writer_child() {
         log.append(&Event::now(
             run,
             Some("krill"),
-            "tick",
+            EventKind::QueueStart,
             json!({"i": i, "padding": padding}),
         ))
         .unwrap();
@@ -96,4 +96,40 @@ fn concurrent_processes_never_interleave_lines() {
     let runs: std::collections::HashSet<_> =
         events.iter().map(|e| e["run_id"].to_string()).collect();
     assert_eq!(runs.len(), WRITERS);
+}
+
+#[test]
+fn unknown_event_types_from_newer_versions_still_read() {
+    let line = r#"{"ts":"2026-10-14T00:00:00Z","run_id":"0199e1c4-0000-7000-8000-000000000000","project":null,"type":"from_the_future","fields":{}}"#;
+    let event: Event = serde_json::from_str(line).unwrap();
+    assert_eq!(event.kind, EventKind::Other);
+}
+
+#[test]
+fn read_since_returns_events_from_that_day_on_and_skips_bad_lines() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = EventLog::new(dir.path());
+    let run = RunId::new();
+    for ts in [
+        "2026-10-01T10:00:00Z",
+        "2026-10-07T10:00:00Z",
+        "2026-10-08T10:00:00Z",
+    ] {
+        log.append(&Event::at(
+            ts.parse().unwrap(),
+            run,
+            None,
+            EventKind::SlotReleased,
+            json!({}),
+        ))
+        .unwrap();
+    }
+    std::fs::write(dir.path().join("2026-10-09.ndjson"), "not json\n").unwrap();
+
+    let events = log
+        .read_since("2026-10-07T12:00:00Z".parse().unwrap())
+        .unwrap();
+
+    let times: Vec<String> = events.iter().map(|e| e.ts.to_string()).collect();
+    assert_eq!(times, ["2026-10-08T10:00:00Z"]);
 }

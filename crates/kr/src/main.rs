@@ -26,6 +26,10 @@ struct Cli {
 enum Command {
     /// Show the merged configuration and where each layer came from.
     Config,
+    /// Wait for a slot of a resource, run a command, then give the slot back.
+    Lock(commands::lock::LockArgs),
+    /// Show who holds and who waits for each resource.
+    Queue(commands::queue::QueueArgs),
 }
 
 /// What every command gets from the process.
@@ -33,6 +37,55 @@ pub struct Ctx {
     pub cwd: std::path::PathBuf,
     pub env: Vec<(String, String)>,
     pub json: bool,
+}
+
+impl Ctx {
+    pub fn env_var(&self, key: &str) -> Option<&str> {
+        self.env
+            .iter()
+            .rev()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+    }
+
+    /// Loads the configuration and resolves the state directory.
+    pub fn load(&self) -> anyhow::Result<Loaded> {
+        let config = kr_config::Sources::discover(&self.cwd, self.env.clone()).load()?;
+        let state_dir = config.state_dir(&self.env).ok_or_else(|| {
+            anyhow::anyhow!("cannot find a state directory: set HOME or KR_STATE_DIR")
+        })?;
+        Ok(Loaded { config, state_dir })
+    }
+}
+
+pub struct Loaded {
+    pub config: kr_config::Config,
+    pub state_dir: std::path::PathBuf,
+}
+
+impl Loaded {
+    pub fn pool(&self) -> kr_resource::Pool {
+        kr_resource::Pool::new(self.state_dir.join("resources"))
+    }
+
+    pub fn events(&self) -> kr_events::EventLog {
+        kr_events::EventLog::new(self.state_dir.join("events"))
+    }
+
+    pub fn project(&self) -> Option<&str> {
+        self.config.project.as_ref().map(|p| p.name.as_str())
+    }
+
+    /// Slots of `res`. Until the machine profile lands (#4), unset capacities are 1.
+    pub fn capacity(&self, res: kr_resource::Resource) -> u32 {
+        let r = &self.config.resources;
+        let configured = match res {
+            kr_resource::Resource::Build => r.build,
+            kr_resource::Resource::Sim => r.sim,
+            kr_resource::Resource::Light => r.light,
+        };
+        configured.unwrap_or(1).max(1)
+    }
 }
 
 fn main() -> ExitCode {
@@ -45,6 +98,8 @@ fn main() -> ExitCode {
     };
     let result = match cli.command {
         Command::Config => commands::config::run(&ctx),
+        Command::Lock(args) => commands::lock::run(&ctx, args),
+        Command::Queue(args) => commands::queue::run(&ctx, args),
     };
     match result {
         Ok(code) => code,

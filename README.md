@@ -27,6 +27,9 @@ kr run ratings shelf-share
 
 # 3. 看现在谁在用机器、谁在排队、还要等多久
 kr queue
+
+# 4. 拿到一个 build 槽位后执行任意命令，结束立即归还，退出码原样返回
+kr lock build -- xcodebuild build-for-testing …
 ```
 
 每个命令都支持 `--json`，给 agent 读。

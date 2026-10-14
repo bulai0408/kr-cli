@@ -1,0 +1,50 @@
+---
+source: crates/kr/tests/lock.rs
+assertion_line: 295
+expression: json
+---
+{
+  "resources": [
+    {
+      "avg_hold_seconds": "<avg>",
+      "capacity": 1,
+      "holders": [
+        {
+          "child_pid": "<child_pid>",
+          "held_seconds": "<held_seconds>",
+          "orphan": false,
+          "pid": "<pid>",
+          "project": null,
+          "slot": 1,
+          "started": "<started>",
+          "task": "sh -c echo start holder >> \"$LOG\"; sleep 3; echo end holder >> \"$LOG\""
+        }
+      ],
+      "resource": "build",
+      "waiters": [
+        {
+          "enqueued": "<enqueued>",
+          "eta_seconds": "<eta_seconds>",
+          "pid": "<pid>",
+          "project": null,
+          "task": "sh -c true",
+          "waited_seconds": "<waited_seconds>"
+        }
+      ]
+    },
+    {
+      "avg_hold_seconds": null,
+      "capacity": 1,
+      "holders": [],
+      "resource": "sim",
+      "waiters": []
+    },
+    {
+      "avg_hold_seconds": null,
+      "capacity": 1,
+      "holders": [],
+      "resource": "light",
+      "waiters": []
+    }
+  ]
+}
