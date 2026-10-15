@@ -106,6 +106,9 @@ fn decide(ctx: &Ctx, choices: &[(String, String)], reason: &str, via: &str) -> R
         run_id = Some(of);
     }
     let run_id = run_id.context("nothing to decide")?;
+    if super::merge::pending_path(&loaded, run_id).exists() {
+        return super::merge::decide(ctx, &loaded, run_id, choices, reason, via);
+    }
     let file = loaded.run_dir(run_id).join(PENDING);
     let mut pending: Pending = std::fs::read(&file)
         .ok()

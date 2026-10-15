@@ -5,6 +5,7 @@ pub mod deliver;
 pub mod device;
 pub mod doctor;
 pub mod lock;
+pub mod merge;
 pub mod plan;
 pub mod pool;
 pub mod queue;

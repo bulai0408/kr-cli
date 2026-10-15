@@ -678,6 +678,7 @@ dependencies = [
  "libc",
  "miette",
  "plist",
+ "regex",
  "serde",
  "serde_json",
  "signal-hook",

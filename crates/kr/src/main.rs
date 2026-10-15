@@ -28,6 +28,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Predict merge conflicts, install rerere and the catalog driver, or check a merge.
+    Merge(commands::merge::MergeArgs),
     /// Show the merged configuration and where each layer came from.
     Config,
     /// Wait for a slot of a resource, run a command, then give the slot back.
@@ -107,6 +109,7 @@ fn main() -> ExitCode {
     slots::watch_children();
     ctx.json = cli.json;
     let result = match cli.command {
+        Command::Merge(args) => commands::merge::run(&ctx, args),
         Command::Config => commands::config::run(&ctx),
         Command::Lock(args) => commands::lock::run(&ctx, args),
         Command::Queue(args) => commands::queue::run(&ctx, args),

@@ -15,7 +15,7 @@ are only added, never changed.
 ## Exit codes
 - 0 passed; 1 failed, unverified, or kr failed; 2 bad arguments.
 - 4 no verdict yet: the run stopped at decision points (only `check`, `run`, `gate`,
-  `decide`). Hand them back, do not run again.
+  `decide`, `merge predict`). Hand them back, do not run again.
 - 3 only `kr plan --exit-code`: there is work to do. 128 + n: stopped by signal n.
 
 ## Decision points

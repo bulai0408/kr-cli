@@ -7,6 +7,7 @@ Kami's Apple development workflow tool: resource queues, simulator pool, pre-che
 Usage: kr [OPTIONS] <COMMAND>
 
 Commands:
+  merge     Predict merge conflicts, install rerere and the catalog driver, or check a merge
   config    Show the merged configuration and where each layer came from
   lock      Wait for a slot of a resource, run a command, then give the slot back
   queue     Show who holds and who waits for each resource
