@@ -137,3 +137,31 @@ fn free_slots_mean_no_wait() {
     let waits = estimate_waits(Duration::from_secs(60), 2, &[], 2);
     assert_eq!(waits, vec![Duration::ZERO, Duration::ZERO]);
 }
+
+#[test]
+fn lanes_of_one_process_joining_the_queue_at_once_each_get_a_ticket() {
+    // Krill #125: two lanes of one `kr run` joined the sim queue in the same
+    // microsecond; the second ticket's rename failed with "No such file or directory".
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    for _ in 0..20 {
+        let barrier = std::sync::Barrier::new(8);
+        let results: Vec<Result<(), String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|i| {
+                    let (pool, barrier) = (&pool, &barrier);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        pool.enqueue(Resource::Sim, &holder(&format!("lane {i}")))
+                            .map(drop)
+                            .map_err(|e| format!("{e:#}"))
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        for r in results {
+            r.unwrap();
+        }
+    }
+}
