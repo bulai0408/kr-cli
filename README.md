@@ -61,6 +61,12 @@ kr run --decide <判断点 ID>=flaky --reason "..."   # 也可以在下一条运
 # 11. 给调用 kr 的 agent 读的使用说明，与当前版本一致；项目 .kr/skill.md、个人 ~/.config/kr/skill.md 追加在后面
 kr skill
 kr skill --reference decisions
+
+# 12. 一批的报告：排队和运行时间、返工轮数、偶发排行、agent 调了哪些命令、参数错几次、
+#     绕了哪些弯、每类判断的判对率。批次 = 时间范围（默认最近 24 小时）里这个项目的运行；
+#     并行的几批用 --worktree / --agent 分开。只给数据，不改任何东西
+kr report --since 2026-10-14T10:55:00Z --until 2026-10-14T16:20:00Z
+kr report --since 7d --worktree ~/work/krill-133
 ```
 
 每个命令都支持 `--json`，给 agent 读。
@@ -73,7 +79,7 @@ kr skill --reference decisions
 - 每个 `--json` 输出都有 `schema_version`（现为 1）和 `decisions`；字段只加不改。
 - 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。
 - 每个场景有硬超时（默认 20 分钟，`.kr.toml` 里 `timeout` 可改），超时终止整个进程组并判失败。
-- 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`。
+- 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`；每次 kr 调用（命令、参数、退出码）另记在 `~/.local/state/kr/invocations/`，给 `kr report` 用（ADR 0016）。
 - 每个场景的判定依据（枚举、每次运行的测试结果、重跑结果）和结论存为运行目录里的 `<场景>/verdict.json`，几 KB，`kr rejudge` 用它重判。
 
 ## 它是什么、不是什么
