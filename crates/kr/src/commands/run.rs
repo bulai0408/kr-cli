@@ -680,6 +680,24 @@ struct RealLanes<'scope, 'env> {
     rx: mpsc::Receiver<Report<'env>>,
 }
 
+impl<'scope, 'env> RealLanes<'scope, 'env> {
+    /// Runs `f` on its own thread and reports its end; a panic fails the lane instead
+    /// of leaving the scheduler waiting.
+    fn spawn(&self, lane: LaneId, f: impl FnOnce() -> Report<'env> + Send + 'scope) {
+        let tx = self.tx.clone();
+        self.scope.spawn(move || {
+            let report =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| {
+                    Report::done(Done::Failed(
+                        lane,
+                        anyhow::anyhow!("internal: the lane's thread panicked"),
+                    ))
+                });
+            let _ = tx.send(report);
+        });
+    }
+}
+
 /// What a lane holds between its actions.
 #[derive(Default)]
 struct Held<'a> {
@@ -709,26 +727,18 @@ impl<'scope, 'env> Executor for RealLanes<'scope, 'env> {
     type Output = ItemResult;
 
     fn start(&mut self, action: Action<WorkItem>) {
-        let (s, tx) = (self.s, self.tx.clone());
+        let s = self.s;
         match action {
             Action::Take(lane) => {
                 let task = format!("run {} lane", self.kinds[lane]);
-                self.scope.spawn(move || {
-                    let report = match slots::take(
-                        s.ctx,
-                        s.loaded,
-                        s.runner,
-                        s.run_id,
-                        Resource::Sim,
-                        &task,
-                    ) {
+                self.spawn(lane, move || {
+                    match slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task) {
                         Ok(taken) => Report {
                             taken: Some(taken),
                             ..Report::done(Done::Taken(lane))
                         },
                         Err(e) => Report::done(Done::Failed(lane, e)),
-                    };
-                    let _ = tx.send(report);
+                    }
                 });
             }
             Action::Lease(lane) => {
@@ -738,26 +748,23 @@ impl<'scope, 'env> Executor for RealLanes<'scope, 'env> {
                     .expect("a lane leases with a slot");
                 let (simctl, locks, pool) = (self.simctl, self.locks, self.pool);
                 let kind = self.kinds[lane].clone();
-                self.scope.spawn(move || {
-                    let _ = tx.send(lease(s, simctl, locks, pool, &kind, lane, taken));
+                self.spawn(lane, move || {
+                    lease(s, simctl, locks, pool, &kind, lane, taken)
                 });
             }
             Action::Run(lane, item) => {
                 let (lease, _) = self.held[lane].lease.as_ref().expect("a lane runs leased");
                 let (name, udid) = (lease.name().to_owned(), lease.udid().to_owned());
-                self.scope.spawn(move || {
-                    let done = match run_item_or_fail(s, &item, Some((&name, &udid))) {
+                self.spawn(lane, move || {
+                    Report::done(match run_item_or_fail(s, &item, Some((&name, &udid))) {
                         Ok(r) => Done::Ran(lane, r),
                         Err(e) => Done::Failed(lane, e),
-                    };
-                    let _ = tx.send(Report::done(done));
+                    })
                 });
             }
             Action::Release(lane, ok) => {
                 let held = std::mem::take(&mut self.held[lane]);
-                self.scope.spawn(move || {
-                    let _ = tx.send(Report::done(release(s, lane, held, ok)));
-                });
+                self.spawn(lane, move || Report::done(release(s, lane, held, ok)));
             }
             Action::GiveBack(lane) => {
                 let taken = self.held[lane]

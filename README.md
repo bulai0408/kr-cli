@@ -38,7 +38,14 @@ kr queue
 # 5. 拿到一个 build 槽位后执行任意命令，结束立即归还，退出码原样返回
 kr lock build -- xcodebuild build-for-testing …
 
-# 6. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
+# 6. 只算不跑：哪些构建命中缓存、每项为什么要跑、通道怎么分、按历史大约多久
+kr plan
+kr plan ratings shelf-share --exit-code   # 有事要做退出 3，无事可做退出 0
+
+# 7. 用 kr 自己的调度代码重放记录的运行，比较设定（容量、通道顺序、缓存），带校准误差
+kr simulate --sim 2 --sim 3 --order ipad-first --order name
+
+# 8. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
 #    改动里的 schema（待部署）、Artboard（手感）、法律文本（owner 复核）自动列入
 kr deliver --base main
 ```
@@ -49,6 +56,7 @@ kr deliver --base main
 - 构建一次：输入（git 知道的文件内容、xcodebuild 命令行、Xcode）没变就复用上次的测试产物，不再构建。
 - 每个场景先在租到的模拟器上真实枚举测试，0 条即失败；运行后从 xcresult 核对：实际跑的测试必须正好是枚举出的那些，xcodebuild 的退出码和测试结果必须一致。
 - 失败的测试单独重跑一次：通过记为偶发（场景仍通过，输出里列出），仍失败记为失败。
+- 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。
 - 每个场景有硬超时（默认 20 分钟，`.kr.toml` 里 `timeout` 可改），超时终止整个进程组并判失败。
 - 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`。
 

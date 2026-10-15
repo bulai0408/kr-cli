@@ -88,6 +88,8 @@
 
 校准：用本次 kr 自己记录的每项耗时（33 项）模拟，预测 49.4 分钟；实测有设备在跑的时间 46.0 分钟，误差 +7%。本次通道启动顺序由线程竞争决定（iPad 通道抢到第二个槽位），模型按固定顺序，这是误差来源之一。sim=3 的结果属于外推：并发变化会改变单项耗时（见 offline-evaluation.md 0.1），只能作为方向。
 
+> 2026-10-15（#18）：上面的 Python 模拟已迁进 `kr simulate`（用 kr 自己的调度代码，脚本已删除，见 git 历史）。两份数据换成 kr 事件放在 `tests/fixtures/simulate/`，`crates/kr/tests/simulate.rs` 回测：按记录的通道顺序重放，kr 门禁 46.0 → 46.0 分钟（+0.0%），第 6 批 44.4 → 41.6 分钟（−6.5%），排序与实测一致。module-watchlist 第一次失败的那次按证据算 230 秒（上表按 120 秒估），所以第 6 批「先 iPad」现为 38.0 分钟、「先 iPhone」41.7 分钟。
+
 ## 对第一阶段验收的意义
 
 - 拿锁后才发现编译失败：本次 0 次。`kr check` 在占模拟器之前完成全部构建和过滤核对。
@@ -105,4 +107,4 @@
 
 - 旧基线：`/Users/cyh/orca/workspaces/Krill/v0-evidence/batch6-gate/`（e2e.log、test.log、各场景 summary.json）。
 - kr 事件：`~/.local/state/kr/events/2026-10-14.ndjson`，运行 ID：check1 `01a1395a-0125-72db-92ee-8d50442be0ca`、check2 `01a1396e-7e35-7663-b9a9-a0bb10e5b8a8`、smoke `01a1396e-a8a2-7628-bd0c-15e4a955f915`、default `01a13972-e967-759e-b387-d49fbf89cf37`、rerun3 `01a139b8-ce63-73e3-a9ce-f8446d2936ab`。
-- 生成脚本：`docs/research/krill-p0-trial/`（report.py、sim2.py）。
+- 生成脚本：`docs/research/krill-p0-trial/`（report.py、sim2.py），#18 已删除，见 git 历史；排程模拟改用 `kr simulate`。
