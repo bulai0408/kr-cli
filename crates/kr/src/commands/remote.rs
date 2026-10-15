@@ -78,6 +78,8 @@ fn signing_problems(
     let one = |suites: &[String], scenarios: &[String]| Selection {
         suites: suites.to_vec(),
         scenarios: scenarios.to_vec(),
+        on_device: sel.on_device,
+        device: sel.device.clone(),
     };
     let items = sel
         .suites

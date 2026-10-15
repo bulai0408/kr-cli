@@ -1,6 +1,5 @@
 ---
 source: crates/kr/tests/cli.rs
-assertion_line: 81
 expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string().as_bytes())).unwrap()"
 ---
 {
@@ -43,6 +42,10 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "xcodeproj": null
       },
       "scenarios": {},
+      "signing": {
+        "register_devices": false,
+        "team": null
+      },
       "simulators": {
         "devices": {},
         "runtime": null

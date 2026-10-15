@@ -1,0 +1,17 @@
+{
+  "program": "xcrun",
+  "args": [
+    "devicectl",
+    "device",
+    "info",
+    "lockState",
+    "--device",
+    "00008130-00AA00AA00AA001C",
+    "--json-output",
+    "-",
+    "--quiet"
+  ],
+  "status": 0,
+  "stdout": "{\n \"info\": {\n  \"arguments\": [\n   \"devicectl\",\n   \"device\",\n   \"info\",\n   \"lockState\",\n   \"--device\",\n   \"00008130-00AA00AA00AA001C\",\n   \"--json-output\",\n   \"-\",\n   \"--quiet\"\n  ],\n  \"commandType\": \"devicectl.device.info.lockState\",\n  \"environment\": {},\n  \"jsonVersion\": 5,\n  \"outcome\": \"success\",\n  \"version\": \"651.13.4\"\n },\n \"result\": {\n  \"deviceIdentifier\": \"11111111-2222-4333-8444-555555555555\",\n  \"passcodeRequired\": true,\n  \"unlockedSinceBoot\": true\n }\n}\n",
+  "stderr": ""
+}

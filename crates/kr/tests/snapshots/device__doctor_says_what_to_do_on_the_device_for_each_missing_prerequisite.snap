@@ -1,0 +1,10 @@
+---
+source: crates/kr/tests/device.rs
+expression: device_lines(&text)
+---
+doctor: 2 error(s), 1 warning(s)
+  error device_developer_mode_off: Developer Mode is off on 蔡煜恒的 iPad Mini
+    fix: On the iPad: Settings > Privacy & Security > Developer Mode, turn it on and tap Restart; after the restart tap Enable and enter the passcode
+  error device_os_unsupported: 蔡煜恒的 iPad Mini runs iOS 28.0; Xcode 27.1 only knows iOS 27.1
+    fix: install an Xcode with the iOS 28.0 SDK or later and set [project].xcode in .kr.toml to it, or use a device on iOS 27 or earlier
+device    蔡煜恒的 iPad Mini · iPad mini (A17 Pro) · iOS 28.0 · paired (localNetwork) · not asked · Developer Mode off

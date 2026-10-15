@@ -11,6 +11,7 @@ repository = "https://github.com/bulai0408/kr-cli"
 
 [workspace.dependencies]
 kr-config = { path = "crates/kr-config" }
+kr-device = { path = "crates/kr-device" }
 kr-events = { path = "crates/kr-events" }
 kr-exec = { path = "crates/kr-exec" }
 kr-machine = { path = "crates/kr-machine" }

@@ -1,0 +1,26 @@
+{
+ "program": "xcodebuild",
+ "args": [
+  "build-for-testing",
+  "-quiet",
+  "-skipMacroValidation",
+  "-project",
+  "KrSample.xcodeproj",
+  "-scheme",
+  "KrSample",
+  "-configuration",
+  "Debug",
+  "-destination",
+  "platform=iOS,id=00008130-00AA00AA00AA001C",
+  "-derivedDataPath",
+  "build/kr/DerivedData",
+  "-allowProvisioningUpdates",
+  "-allowProvisioningDeviceRegistration",
+  "CODE_SIGN_IDENTITY=Apple Development",
+  "DEVELOPMENT_TEAM=K4AXH95DCF",
+  "KR_SAMPLE_BUNDLE_ID=dev.kr.sample.e2e"
+ ],
+ "status": 0,
+ "stdout": "warning: All interface orientations must be supported unless the app requires full screen. (in target 'KrSample' from project 'KrSample')\nnote: Using codesigning identity override: Apple Development\n",
+ "stderr": ""
+}

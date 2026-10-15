@@ -21,9 +21,7 @@ use kr_run::rejudge::{self, Saved};
 use kr_run::schedule::{self, Action, Done, Executor, LaneId, Order, WallClock};
 use kr_run::{Attempt, Final, Verdict, judge, longest_first};
 use kr_sim::{DeviceLocks, Lease, LeaseHolder, PoolDevice, Simctl};
-use kr_xcode::{
-    Enumeration, XcTestRun, Xcodebuild, only_testing_id, parse_test_results, results_command,
-};
+use kr_xcode::{Enumeration, Xcodebuild, only_testing_id, parse_test_results, results_command};
 use serde::Serialize;
 use serde_json::json;
 
@@ -42,6 +40,13 @@ pub struct RunArgs {
     /// its kr fetches the pushed branch and runs there; the result comes back here.
     #[arg(long, value_name = "NAME")]
     remote: Option<String>,
+
+    /// Run the scenarios (and simulator test suites) on this real iPhone or iPad
+    /// instead of pool simulators: its name, UDID or CoreDevice identifier. Builds once
+    /// for iOS devices and reads the signing back before installing; a device lost
+    /// during an item leaves the item unverified.
+    #[arg(long, value_name = "NAME", conflicts_with = "remote")]
+    device: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -62,15 +67,28 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
-    let sel = check::select(project, &args.targets, None)?;
+    let mut sel = check::select(project, &args.targets, None)?;
     if let Some(host) = &args.remote {
         let kr_args = std::iter::once("run".to_owned())
             .chain(args.targets)
             .collect();
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
     }
+    sel.on_device = args.device.is_some();
     remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
-    execute(ctx, &loaded, project, &root, &sel, "run".to_owned())
+    let label = match &args.device {
+        Some(name) => format!("run on {name}"),
+        None => "run".to_owned(),
+    };
+    execute(
+        ctx,
+        &loaded,
+        project,
+        &root,
+        &sel,
+        label,
+        args.device.as_deref(),
+    )
 }
 
 pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
@@ -87,7 +105,15 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
     }
     remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
-    execute(ctx, &loaded, project, &root, &sel, format!("gate {name}"))
+    execute(
+        ctx,
+        &loaded,
+        project,
+        &root,
+        &sel,
+        format!("gate {name}"),
+        None,
+    )
 }
 
 /// One scenario or suite and how it ended.
@@ -117,6 +143,10 @@ struct ItemResult {
     /// Each test of a test item: outcome, time, failure signature and category.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cases: Vec<kr_run::Case>,
+    /// Why the item is unverified (the device was lost during it), with the count in
+    /// `tests.unverified`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unverified_reason: Option<String>,
 }
 
 impl ItemResult {
@@ -137,7 +167,36 @@ impl ItemResult {
             high_load: None,
             job: None,
             cases: Vec::new(),
+            unverified_reason: None,
         }
+    }
+
+    /// The device was lost during the item, so its failures say nothing about the code:
+    /// they become unverified (at least one when no test got a result), and so does the
+    /// item.
+    fn unverified(mut self, why: String) -> Self {
+        let tests = self.tests.get_or_insert_with(BTreeMap::new);
+        let failed = tests.insert("failed", 0).unwrap_or(0);
+        let total: usize = tests.values().sum();
+        tests.insert(
+            "unverified",
+            if total == 0 { failed.max(1) } else { failed },
+        );
+        self.passed = false;
+        self.summary = std::iter::once(why.clone())
+            .chain(self.summary)
+            .take(3)
+            .collect();
+        self.unverified_reason = Some(why);
+        self
+    }
+
+    fn unverified_count(&self) -> usize {
+        self.tests
+            .as_ref()
+            .and_then(|t| t.get("unverified"))
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -173,6 +232,8 @@ struct Shared<'a> {
     rebuilt: Mutex<BTreeSet<usize>>,
     /// Items a stop signal ended midway.
     interrupted: Mutex<Vec<String>>,
+    /// The real device the run's items run on (`kr run --device`).
+    device: Option<kr_device::Device>,
 }
 
 /// Runs, and if a stop signal (SIGINT, SIGTERM, SIGHUP) ends it, records that, reports
@@ -184,10 +245,11 @@ fn execute(
     root: &Path,
     sel: &Selection,
     label: String,
+    device: Option<&str>,
 ) -> Result<ExitCode> {
     kr_exec::catch_stop_signals()?;
     let run_id = RunId::new();
-    let result = execute_run(ctx, loaded, project, root, sel, &label, run_id);
+    let result = execute_run(ctx, loaded, project, root, sel, &label, run_id, device);
     match (result, kr_exec::stop_signal()) {
         // Stopped before any item ran, e.g. while building.
         (Err(e), Some(signal)) => {
@@ -431,6 +493,7 @@ impl Stopped {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn execute_run(
     ctx: &Ctx,
     loaded: &Loaded,
@@ -439,10 +502,26 @@ fn execute_run(
     sel: &Selection,
     label: &str,
     run_id: RunId,
+    device: Option<&str>,
 ) -> Result<ExitCode> {
     let started = Instant::now();
     let runner = ctx.runner()?;
     run_start(ctx, loaded, root, sel, label, run_id)?;
+    // Before building: a device that cannot run tests fails the run at once.
+    let mut sel = sel.clone();
+    let device = match device {
+        Some(name) => {
+            let inspected = super::device::inspect(ctx, loaded, runner.as_ref(), name)?;
+            inspected.require()?;
+            for m in inspected.missing.iter().filter(|m| m.warning) {
+                eprintln!("warning: {}; {}", m.message, m.next);
+            }
+            sel.device = inspected.device.udid.clone();
+            Some(inspected.device)
+        }
+        None => None,
+    };
+    let sel = &sel;
     let _sampler = LoadSampler::start(loaded, run_id);
     let developer_dir = loaded.developer_dir(ctx)?;
     let identity = identity(ctx, loaded, root, runner.as_ref(), developer_dir.as_deref());
@@ -521,6 +600,7 @@ fn execute_run(
         pool: OnceLock::new(),
         rebuilt: Mutex::new(BTreeSet::new()),
         interrupted: Mutex::new(Vec::new()),
+        device,
     };
     let mut results: Vec<ItemResult> = Vec::new();
     let mut not_started: Vec<String> = Vec::new();
@@ -755,6 +835,10 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
         not_started.extend(sim.into_iter().map(|i| i.name));
         return Ok((results, not_started));
     }
+    if let Some(device) = &s.device {
+        run_on_device(s, device, sim, &mut results, &mut not_started)?;
+        return Ok((results, not_started));
+    }
     let simctl = Simctl::new(s.runner, s.developer_dir.map(Path::to_path_buf));
     let pool = kr_sim::plan(s.project, &simctl.runtimes()?, &simctl.devices()?)?;
     let pool = s.pool.get_or_init(|| pool);
@@ -826,6 +910,70 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
     }
     results.extend(collected);
     Ok((results, not_started))
+}
+
+/// Runs the items one after another on the run's real device, holding its one slot.
+/// Before each item, kr connects to the device; an item it cannot reach is unverified.
+fn run_on_device(
+    s: &Shared<'_>,
+    device: &kr_device::Device,
+    items: Vec<WorkItem>,
+    results: &mut Vec<ItemResult>,
+    not_started: &mut Vec<String>,
+) -> Result<()> {
+    let udid = device.udid.as_deref().unwrap_or(&device.identifier);
+    let task = format!("run on {}", device.name);
+    let taken = slots::take_device(s.ctx, s.loaded, s.runner, s.run_id, udid, &task)?;
+    let mut ok = true;
+    for item in items {
+        if kr_exec::stop_signal().is_some() {
+            not_started.push(item.name);
+            continue;
+        }
+        if let Some(why) = device_lost(s)? {
+            let mut r = ItemResult::new(&item.name, item.kind);
+            r.device = Some(device.name.clone());
+            r.job = Some(item.job);
+            let r = r.unverified(format!("{why}; the item did not start"));
+            item_event(s, &r)?;
+            ok = false;
+            results.push(r);
+            continue;
+        }
+        if let Some(r) = run_item_or_fail(s, &item, Some((&device.name, udid)))? {
+            ok &= r.passed;
+            results.push(r);
+        }
+    }
+    slots::give_back(s.loaded, s.run_id, taken, Some(if ok { 0 } else { 1 }))
+}
+
+/// For a run on a real device: why the device cannot be reached now, or `None` if it
+/// can (or the run is not on a device).
+fn device_lost(s: &Shared<'_>) -> Result<Option<String>> {
+    let Some(device) = &s.device else {
+        return Ok(None);
+    };
+    Ok(match super::device::reach(s.runner, device)? {
+        kr_device::Reach::Unreachable(why) => Some(format!(
+            "lost {}: {}",
+            device.name,
+            why.trim_end_matches('.')
+        )),
+        kr_device::Reach::Locked => Some(format!("{} locked itself", device.name)),
+        // Over another transport than at the start (e.g. Wi-Fi after the cable was
+        // pulled), the test runner's connection broke even though devicectl reaches it.
+        kr_device::Reach::Unlocked => {
+            let now = super::device::transport(s.runner, device)?;
+            match (&device.transport, now) {
+                (Some(start), Some(now)) if *start != now => Some(format!(
+                    "lost {}: it was connected over {start} when the run started and is now on {now}",
+                    device.name
+                )),
+                _ => None,
+            }
+        }
+    })
 }
 
 /// iPad kinds' lanes queue first (ADR 0010).
@@ -1094,24 +1242,31 @@ fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
         s.run_id,
         s.loaded.project(),
         EventKind::ItemEnd,
-        json!({
-            "item": r.name,
-            "kind": r.kind,
-            "passed": r.passed,
-            "duration_ms": r.duration_ms,
-            "device": r.device,
-            "tests": r.tests,
-            "flaky": r.flaky,
-            "load": r.load,
-            "high_load": r.high_load,
-            "xcresult": r.xcresult,
-            "cases": r.cases,
-            "identity": identity_of(s, r),
-        }),
+        {
+            let mut fields = json!({
+                "item": r.name,
+                "kind": r.kind,
+                "passed": r.passed,
+                "duration_ms": r.duration_ms,
+                "device": r.device,
+                "tests": r.tests,
+                "flaky": r.flaky,
+                "load": r.load,
+                "high_load": r.high_load,
+                "xcresult": r.xcresult,
+                "cases": r.cases,
+                "identity": identity_of(s, r),
+            });
+            if let Some(why) = &r.unverified_reason {
+                fields["unverified_reason"] = json!(why);
+            }
+            fields
+        },
     ))
 }
 
-/// The run's identity with the item's part: its build inputs and its simulator.
+/// The run's identity with the item's part: its build inputs and its simulator, or
+/// the real device's OS and model.
 fn identity_of(s: &Shared<'_>, r: &ItemResult) -> serde_json::Value {
     let device = s
         .pool
@@ -1121,6 +1276,18 @@ fn identity_of(s: &Shared<'_>, r: &ItemResult) -> serde_json::Value {
     identity["input_hash"] = json!(r.job.and_then(|j| s.hashes[j].clone()));
     identity["runtime"] = json!(device.map(|d| &d.runtime));
     identity["device_type"] = json!(device.map(|d| &d.device_type));
+    if let Some(real) = s
+        .device
+        .as_ref()
+        .filter(|d| Some(&d.name) == r.device.as_ref())
+    {
+        identity["runtime"] = json!(
+            real.os_version
+                .as_ref()
+                .map(|v| format!("{} {v}", real.platform))
+        );
+        identity["device_type"] = json!(real.model.as_ref().unwrap_or(&real.device_type));
+    }
     identity
 }
 
@@ -1141,7 +1308,19 @@ fn run_item_or_fail(
             s.interrupted.lock().unwrap().push(item.name.clone());
             Ok(None)
         }
-        Err(e) => failed_item(s, &item.name, item.kind, device.map(|d| d.0), &e).map(Some),
+        Err(e) => {
+            if let Some(why) = device_lost(s)? {
+                let mut r = ItemResult::new(&item.name, item.kind);
+                r.device = device.map(|d| d.0.to_owned());
+                r.job = Some(item.job);
+                r.summary = vec![format!("{e:#}")];
+                r.log = Some(s.loaded.run_dir(s.run_id).join(&item.name));
+                let r = r.unverified(format!("{why}; the item did not finish"));
+                item_event(s, &r)?;
+                return Ok(Some(r));
+            }
+            failed_item(s, &item.name, item.kind, device.map(|d| d.0), &e).map(Some)
+        }
     }
 }
 
@@ -1167,7 +1346,7 @@ fn failed_item(
 fn ensure_products(s: &Shared<'_>, item: &WorkItem) -> Result<Option<String>, String> {
     let job = &s.jobs[item.job];
     let products = job.products(s.root);
-    let present = || XcTestRun::find(&products, &job.scheme).is_ok();
+    let present = || job.xctestrun(s.root).is_ok();
     if present() {
         return Ok(None);
     }
@@ -1279,6 +1458,26 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     let sample = || kr_machine::read_hardware(s.runner).ok();
     let before = sample();
     let mut r = run_item_once(s, item, device, "")?;
+    if !r.passed
+        && let Some(why) = device_lost(s)?
+    {
+        r.notes.extend(rebuilt);
+        r.duration_ms = started.elapsed().as_millis() as u64;
+        let r = r.unverified(format!("{why}; the item did not finish"));
+        item_event(s, &r)?;
+        return Ok(r);
+    }
+    if !r.passed && s.device.is_some() && mentions_ui_automation(&r) {
+        r.notes.push(
+            "on a device, kAXError usually means UI Automation is off: on the device, Settings > Developer > Enable UI Automation, then run again"
+                .to_owned(),
+        );
+    }
+    if let Some(device) = s.device.as_ref().filter(|_| !r.passed)
+        && let Some(note) = not_in_profile(s.project, device, &r)
+    {
+        r.notes.push(note);
+    }
     let after = sample();
     let high = [&before, &after]
         .into_iter()
@@ -1324,6 +1523,34 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     Ok(r)
 }
 
+/// True if a failed item's summary or run log has kAXError: UI tests could not drive the
+/// app (pitfalls P1).
+fn mentions_ui_automation(r: &ItemResult) -> bool {
+    let log = r
+        .log
+        .as_ref()
+        .and_then(|l| std::fs::read_to_string(l.join("run.log")).ok())
+        .unwrap_or_default();
+    r.summary.iter().any(|l| l.contains("kAXError")) || log.contains("kAXError")
+}
+
+/// What to do when the device refused a profile that does not include it (0xe8008012,
+/// seen on the UI test runner): register the device, or let xcodebuild do it.
+fn not_in_profile(
+    project: &ProjectConfig,
+    device: &kr_device::Device,
+    r: &ItemResult,
+) -> Option<String> {
+    let refused = r.summary.iter().any(|l| l.contains("0xe8008012"));
+    (refused && !project.signing.register_devices).then(|| {
+        format!(
+            "the provisioning profile does not include {}: register it in team {} (Xcode > Window > Devices and Simulators), or set [signing] register_devices = true in .kr.toml to let xcodebuild register it, then run again",
+            device.name,
+            project.signing.team.as_deref().unwrap_or("the app's team")
+        )
+    })
+}
+
 /// One pass of an item on a device (or this Mac): enumerate, run, read results, rerun
 /// failed tests one by one, judge. `round` names a repeat ("again").
 fn run_item_once(
@@ -1341,7 +1568,7 @@ fn run_item_once(
     // the repo lives.
     let cwd = s.root.join(&job.dir);
     let products = Path::new(check::DERIVED_DATA).join("Build/Products");
-    let xctestrun = XcTestRun::find(&cwd.join(&products), &job.scheme)?;
+    let xctestrun = job.xctestrun(s.root)?;
     let xctestrun = products.join(xctestrun.file_name().unwrap_or_default());
     let destination = match device {
         Some((_, udid)) => format!("id={udid}"),
@@ -1394,7 +1621,8 @@ fn run_item_once(
         Ok((enumeration, out.timed_out))
     };
     let (enumeration, enum_timed_out) = enumerate(&filters, &logs.join("enumerate.log"))?;
-    for f in &item.only {
+    // An enumeration that failed (e.g. the runner was not installed) says nothing about filters.
+    for f in item.only.iter().filter(|_| enumeration.errors.is_empty()) {
         if !enumeration.hits(f) {
             let note = format!("`{f}` passed the static check but selects no test on the device");
             s.loaded.events().append(&Event::now(
@@ -1438,7 +1666,7 @@ fn run_item_once(
     };
 
     let mut invalid: Vec<String> = Vec::new();
-    let saved = if enumeration.enabled.is_empty() {
+    let saved = if enumeration.enabled.is_empty() || !enumeration.errors.is_empty() {
         let first = Attempt {
             exit: Some(0),
             timed_out: enum_timed_out,
@@ -1450,7 +1678,14 @@ fn run_item_once(
         let (first, bundle) = attempt("run", filters.clone())?;
         r.xcresult = Some(cwd.join(&bundle));
         let mut reruns = Vec::new();
-        for (n, test) in Verdict::to_rerun(&first).iter().enumerate() {
+        // On a real device that is gone, reruns would only fail again.
+        let to_rerun = Verdict::to_rerun(&first);
+        let to_rerun = if !to_rerun.is_empty() && device_lost(s)?.is_some() {
+            Vec::new()
+        } else {
+            to_rerun
+        };
+        for (n, test) in to_rerun.iter().enumerate() {
             let name = format!("rerun-{}", n + 1);
             // The filter follows the test's framework (Swift Testing keeps "()").
             let id = first
@@ -1551,13 +1786,18 @@ fn save(
     Ok(saved)
 }
 
-/// The JSON document at the end of xcodebuild's enumeration output.
+/// The JSON document at the end of xcodebuild's enumeration output. Lines before it may
+/// also start with "{": on a device, the "multiple matching destinations" warning lists
+/// `{ platform:iOS, … }` and a property list follows.
 fn json_tail(text: &str) -> Option<&str> {
-    let start = text
-        .find("\n{")
-        .map(|i| i + 1)
-        .or_else(|| text.starts_with('{').then_some(0))?;
-    Some(&text[start..])
+    let starts = text
+        .starts_with('{')
+        .then_some(0)
+        .into_iter()
+        .chain(text.match_indices("\n{").map(|(i, _)| i + 1));
+    starts
+        .map(|i| &text[i..])
+        .find(|t| serde_json::from_str::<serde::de::IgnoredAny>(t).is_ok())
 }
 
 fn report_build_failure(ctx: &Ctx, label: &str, steps: &[check::StepResult]) -> Result<()> {
@@ -1623,9 +1863,9 @@ fn report(
         let dur = human_duration(Duration::from_millis(r.duration_ms));
         let counts = r.tests.as_ref().map(|t| {
             let mut parts = vec![format!("{} tests", t.values().sum::<usize>())];
-            for (k, label) in [("flaky", "flaky"), ("skipped", "skipped")] {
-                if t[k] > 0 {
-                    parts.push(format!("{} {label}", t[k]));
+            for k in ["flaky", "skipped", "unverified"] {
+                if t.get(k).copied().unwrap_or(0) > 0 {
+                    parts.push(format!("{} {k}", t[k]));
                 }
             }
             parts.join(", ")
@@ -1635,7 +1875,17 @@ fn report(
             (Some(c), None) => format!("{c}, {dur}"),
             (None, _) => dur,
         };
-        if r.passed {
+        if r.unverified_count() > 0 {
+            println!("UNVERIFIED: {} ({detail})", r.name);
+            for line in r.summary.iter().take(3) {
+                println!("  {line}");
+            }
+            if let Some(x) = &r.xcresult {
+                println!("  xcresult: {}", x.display());
+            } else if let Some(log) = &r.log {
+                println!("  log: {}", log.display());
+            }
+        } else if r.passed {
             println!("PASS: {} ({detail})", r.name);
             if let Some(h) = &r.high_load {
                 println!("  high load: {h}");
@@ -1662,8 +1912,14 @@ fn report(
         println!("{}", stop.line(label));
         return Ok(());
     }
+    let unverified = results.iter().filter(|r| r.unverified_count() > 0).count();
+    let unverified = if unverified > 0 {
+        format!(", {unverified} unverified")
+    } else {
+        String::new()
+    };
     println!(
-        "{label}: {passed}/{} PASS · {build} · {}",
+        "{label}: {passed}/{} PASS{unverified} · {build} · {}",
         results.len(),
         human_duration(elapsed)
     );

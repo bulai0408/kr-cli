@@ -1,6 +1,7 @@
 pub mod check;
 pub mod config;
 pub mod deliver;
+pub mod device;
 pub mod doctor;
 pub mod lock;
 pub mod plan;
