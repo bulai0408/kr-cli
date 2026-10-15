@@ -98,7 +98,11 @@ impl Quarantine {
         r.quarantined = r
             .cases
             .iter()
-            .filter(|c| c.outcome == Final::Failed && self.contains(&r.name, &c.id))
+            .filter(|c| {
+                r.unverified_count() == 0
+                    && c.outcome == Final::Failed
+                    && self.contains(&r.name, &c.id)
+            })
             .map(|c| c.id.clone())
             .collect();
         r.blocking = Some(!r.passed && !self.exempt(r));

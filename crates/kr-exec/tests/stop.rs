@@ -43,4 +43,13 @@ fn a_sigterm_stops_a_replayed_command_and_every_later_one() {
     );
     assert!(later.is_err());
     assert!(!marker.exists());
+    let mut cleanup = Command::new("touch").arg(marker.display().to_string());
+    cleanup.cleanup = true;
+    assert!(
+        RealRunner
+            .run_logged(&cleanup, &dir.path().join("cleanup.log"))
+            .unwrap()
+            .success()
+    );
+    assert!(marker.exists(), "cleanup still runs after SIGTERM");
 }

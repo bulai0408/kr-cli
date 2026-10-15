@@ -60,3 +60,10 @@ For `additional_scenarios`, read `kr skill --reference decisions` before changin
 - `kr <command> --help`: arguments and exit codes of each command.
 - Additions without a new kr: `.kr/skill.md` in the project repo and
   `~/.config/kr/skill.md` for you; kr prints them after this text.
+
+## Scenario dependencies (ADR 0020)
+Scenarios support prepare: run, dir, timeout (30s), background (false), ready, cleanup, shared. Background commands stay foreground; ready retries until exit 0 or timeout.
+Shared definitions must match; one instance serves all lanes from first user to last user, with no per-scenario retry after failure. Use temporary ports and instance-aware readiness.
+Commands receive KR_RUN_ID, KR_PROJECT, KR_SCENARIO, KR_DEVICE_UDID, KR_RUN_DIR; shared scenario/UDID are empty.
+Preparation/readiness/cleanup failure is unverified (exit 1). Read preparation logs and unverified_reason, fix, retry.
+kr stops owned groups on success/errors/SIGINT/SIGTERM: TERM then KILL after 5s; cleanup runs on interruption (5s). Use the existing slot; never cache prepared test results. Build caching is valid. Suites have no prepare.

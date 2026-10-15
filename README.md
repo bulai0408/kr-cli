@@ -243,6 +243,39 @@ kr run --device "蔡煜恒的 iPad Mini" launch
 cargo install --git https://github.com/bulai0408/kr-cli kr
 ```
 
+### 场景依赖的准备与清理（ADR 0020）
+
+`kr run` 和 `kr gate` 在场景测试前按顺序执行 `prepare`。准备失败、就绪超时或清理失败记为「未验证」，退出 1；不记测试失败，不触发失败分类判断点。先检查准备日志和服务配置，再重试。
+
+```toml
+[[scenarios.shelf.prepare]]
+shared = "local-backend" # 可选；同一次 run/gate 跨设备通道只启动一次
+run = "python3 service.py start"
+dir = "tools"          # 可选，相对项目根目录；默认根目录
+background = true       # 默认 false：一次性准备命令，等待退出 0
+ready = "python3 service.py ready" # 后台步骤必填，退出 0 表示就绪
+timeout = "30s"        # 可选，准备/就绪截止时间；默认 30s
+cleanup = "python3 service.py cleanup" # 可选，进程终止后的状态清理，硬超时 5s
+```
+
+同名 `shared` 的 run/dir/ready/cleanup/background/timeout 必须相同；不同时配置错误指出两个场景和键路径。共享实例在第一个依赖场景前启动，在最后一个结束后清理；失败只尝试一次，所有依赖场景记相同的环境原因。不带 `shared` 的步骤只属于当前场景。套件暂不支持准备步骤。
+
+后台服务必须保持前台，不要自行 daemonize。kr 在正常结束、准备失败、就绪超时、Ctrl-C 和 SIGTERM 时，逆序终止它启动的进程组，5 秒后升级 SIGKILL，并回收子进程。清理命令在失败和中断时也运行。kr 自身被 SIGKILL 时无法保证清理。
+
+每个准备、就绪和清理命令都收到以下环境变量：
+
+| 变量 | 值 |
+|---|---|
+| `KR_RUN_ID` | 本次运行 ID |
+| `KR_PROJECT` | 项目名 |
+| `KR_SCENARIO` | 场景名；共享步骤为空 |
+| `KR_DEVICE_UDID` | 设备 UDID；共享步骤为空 |
+| `KR_RUN_DIR` | 本次运行的产物目录 |
+
+准备步骤在原有 sim/device 槽位内执行，不增加槽位。独立实例用临时端口或独立端口文件；共享实例可用固定端口。就绪检查应核对本实例身份，kr 不杀占用端口的其他进程。带准备步骤的场景等同 `external`，不得复用测试结论；构建产物仍可缓存（当前 kr 本就每次运行测试）。JSON 的 `preparation` 和 `preparation_start` / `preparation_end` 事件带共享名、使用场景、日志、就绪探测次数和清理结果。`item_end` 的 `tests.unverified` 与 `unverified_reason` 是结论契约。
+
+真实小服务示例见 `tests/sample/service.py`，以端口 0 绑定回环地址，再通过运行目录传递端口；清理后断言 PID 消失、端口关闭。该样例只用于显式真实验收，不加入默认回放场景。
+
 ## 合并辅助
 
 `kr merge` 先算事实，agent 判断逻辑冲突。不会自动执行 `git merge`。

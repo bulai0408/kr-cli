@@ -28,6 +28,11 @@ const RESERVED_ENV: &[&str] = &[
     "KR_RECORD",
     "KR_APPLICATIONS",
     "KR_REQUESTER",
+    "KR_RUN_ID",
+    "KR_PROJECT",
+    "KR_SCENARIO",
+    "KR_DEVICE_UDID",
+    "KR_RUN_DIR",
 ];
 
 mod project;
@@ -267,6 +272,28 @@ fn load_project(path: &Path, text: &str) -> Result<ProjectConfig, ConfigError> {
             file.others = problems.len() - 1;
         }
         return Err(err);
+    }
+    for (name, scenario) in &config.scenarios {
+        for (index, step) in scenario.prepare.iter().enumerate() {
+            if let Some(dir) = &step.dir
+                && !path.parent().unwrap_or(Path::new(".")).join(dir).is_dir()
+            {
+                let index = index.to_string();
+                let key = ["scenarios", name, "prepare", &index, "dir"];
+                return Err(file_error(
+                    path,
+                    text,
+                    span::find(&doc, &key, None).unwrap_or(0..0),
+                    format!(
+                        "{}: directory `{}` does not exist",
+                        key.join("."),
+                        dir.display()
+                    ),
+                    "create the directory relative to the project root, or correct `dir`"
+                        .to_owned(),
+                ));
+            }
+        }
     }
     Ok(config)
 }

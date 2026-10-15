@@ -9,6 +9,7 @@ pub mod lock;
 pub mod merge;
 pub mod plan;
 pub mod pool;
+mod prepare;
 pub(crate) mod quarantine;
 pub mod queue;
 pub mod rejudge;

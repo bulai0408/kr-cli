@@ -82,3 +82,18 @@ kr report --project Krill --since 2026-10-14T00:00:00Z --until 2026-10-16T00:00:
 合入集成分支前：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 均成功；Rust harness 汇总 347 passed / 0 failed。原生集成测试开关 `KR_INTEGRATION` 未开启，这些测试体未执行，不能作为原生验证通过的证据。新增命令回放覆盖 gate/run、加入/移出建议、kr decide 复核与对账、上限报错、完整性保护、项目/场景范围、跨窗口计数、历史正反向重判和远程隔离结果展示。
 
 合入 `origin/p1p2/integration@4610e54` 后：三项检查再全部通过，392 passed / 0 failed。新增 14 个命令回放的完整名称见 `evidence/quarantine/verification.json`。冲突仅在 run 的选择/判断汇总与输出及追加测试区：保留 #30 的选择与解释、判断点 ID 预分配和提前记录默认事件；隔离建议在结果后通过同一 record_default 接口记录，序号接在选择与失败判断之后。两侧追加测试全部保留，另加跨功能回放断言 ID 不重叠、每种判断点和默认事件各仅一条。#31 的合并辅助和入口保持集成版本，本票未改选择规则或新增 Scenario 配置字段。
+
+### 合入 #41 场景准备
+
+以 merge 合入 `origin/p1p2/integration@d39ba71`，没有 rebase。逐处冲突处理：
+
+- `commands/mod.rs`：同时保留 `prepare` 和 `quarantine` 模块。
+- `run.rs` 的 `Shared` 定义和初始化：同时保留共享准备实例与只读隔离名单快照。
+- `run_item_tests` 的结尾：采用 #41 的执行边界，删除内部提前写结束事件；隔离计算移到准备、测试、清理之后。共享准备的最终清理结果回填后，再算隔离并写唯一结束事件，保留 `fields.unverified_reason`。
+- `kr-events` 和 `tests/run.rs` 自动合并，保留两侧事件和所有测试。
+
+新增命令回放 `quarantine_preserves_preparation_and_cleanup_failures_as_unverified`，在同一名单下分别覆盖准备失败、清理失败和正常准备清理。前两种保持 failed=0、unverified=1、blocking=true、隔离失败列表为空，后者保持 failed=1、blocking=false、隔离失败单列；三种都只写一条结束事件，事件与结论一致。准备失败不执行测试，也没有 xcresult 或逐条重跑。
+
+ADR 0010 第 3 层前后对比：合并接缝的 RED 回放暴露“清理失败已转为 unverified，但原始失败仍列入隔离”的错误；修正后上述三条路径均符合独立预期，计数差异为 0。这里只验证确定性录制与受控准备命令，没有重新采样真实数据；真实 Krill 历史覆盖仍为 0，没有新增 Xcode、模拟器、真机或真实服务验证。
+
+合入 #41 后三项检查全部通过：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test`；Rust harness 合计 410 passed / 0 failed，新增隔离回放累计 15 个。`KR_INTEGRATION` 未开启，原生测试体仍未执行。

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "integration_commit": "4610e54a296ce884657abdaa4e80ca071f1a3cf9",
+  "integration_commit": "d39ba71c98c872c8fc474c00c097778d5894cad4",
   "checks": [
     {
       "command": "cargo fmt --check",
@@ -13,7 +13,7 @@
     {
       "command": "cargo test",
       "exit_code": 0,
-      "passed": 392,
+      "passed": 410,
       "failed": 0,
       "ignored_by_harness": 0
     }
@@ -76,6 +76,10 @@
     {
       "file": "crates/kr/tests/remote.rs",
       "name": "remote_quarantined_failures_are_recorded_and_not_printed_as_passes"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_preserves_preparation_and_cleanup_failures_as_unverified"
     }
   ],
   "rejudge_controlled_changes": {
@@ -84,5 +88,14 @@
     "remove": 1,
     "difference_from_expected": 0
   },
-  "krill_saved_verdict_coverage": 0
+  "krill_saved_verdict_coverage": 0,
+  "prepare_merge_comparison": {
+    "method": "ADR 0010 level 3 deterministic CLI replay",
+    "paths": [
+      "prepare failure",
+      "cleanup failure",
+      "successful preparation and cleanup"
+    ],
+    "difference_from_expected": 0
+  }
 }

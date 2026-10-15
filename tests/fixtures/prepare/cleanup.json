@@ -1,0 +1,10 @@
+{
+  "program": "sh",
+  "args": [
+    "-c",
+    "python3 service.py cleanup"
+  ],
+  "status": 0,
+  "stdout": "service process reaped; port closed; state removed\n",
+  "stderr": ""
+}

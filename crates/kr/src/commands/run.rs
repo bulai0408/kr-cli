@@ -166,6 +166,8 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ItemResult {
     pub(crate) name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) preparation: Vec<super::prepare::Report>,
     kind: String,
     pub(crate) passed: bool,
     #[serde(default)]
@@ -216,6 +218,7 @@ impl ItemResult {
     fn new(name: &str, kind: &str) -> Self {
         Self {
             name: name.to_owned(),
+            preparation: Vec::new(),
             kind: kind.to_owned(),
             passed: false,
             blocking: None,
@@ -245,16 +248,22 @@ impl ItemResult {
     /// item.
     fn unverified(mut self, why: String) -> Self {
         let tests = self.tests.get_or_insert_with(BTreeMap::new);
-        let failed = tests.insert("failed".to_owned(), 0).unwrap_or(0);
+        let failed = tests.insert("failed".to_owned(), 0).unwrap_or(0)
+            + tests.remove("unverified").unwrap_or(0);
         let total: usize = tests.values().sum();
-        tests.insert(
-            "unverified".to_owned(),
-            if total == 0 { failed.max(1) } else { failed },
-        );
+        let count = if failed == 0 && total > 0 {
+            for count in tests.values_mut() {
+                *count = 0;
+            }
+            total
+        } else {
+            failed.max(1)
+        };
+        tests.insert("unverified".to_owned(), count);
         self.passed = false;
         self.only_test_failures = false;
         self.summary = std::iter::once(why.clone())
-            .chain(self.summary)
+            .chain(self.summary.into_iter().filter(|line| line != &why))
             .take(3)
             .collect();
         self.unverified_reason = Some(why);
@@ -289,6 +298,7 @@ pub(crate) struct WorkItem {
 
 struct Shared<'a> {
     quarantine: &'a Quarantine,
+    preparation: super::prepare::SharedInstances<'a>,
     ctx: &'a Ctx,
     loaded: &'a Loaded,
     project: &'a ProjectConfig,
@@ -685,6 +695,7 @@ fn execute_run(
 
     let shared = Shared {
         quarantine,
+        preparation: super::prepare::SharedInstances::new(project, &sel.scenarios),
         ctx,
         loaded,
         project,
@@ -729,6 +740,24 @@ fn execute_run(
     let (done, left) = run_items(&shared, items)?;
     results.extend(done);
     not_started.extend(left);
+    shared.preparation.finish();
+    for r in &mut results {
+        for report in &mut r.preparation {
+            if let Some(key) = &report.shared
+                && let Some(mut final_report) = shared.preparation.report(key)
+            {
+                final_report.step = report.step;
+                *report = final_report;
+            }
+        }
+        if let Some(why) = r.preparation.iter().find_map(|p| p.reason.clone()) {
+            *r = r.clone().unverified(why);
+        }
+        quarantine.apply(r);
+        if !r.preparation.is_empty() {
+            item_event(&shared, r)?;
+        }
+    }
 
     // Report in the order of the selection.
     let order: Vec<&String> = sel.suites.iter().chain(&sel.scenarios).collect();
@@ -1173,8 +1202,8 @@ pub(crate) fn is_ipad(project: &ProjectConfig, kind: &str) -> bool {
 
 /// The real lanes: `sim` slots from the resource layer, leased pool simulators and
 /// [`run_item_or_fail`]. Actions that wait run on their own thread and report back.
-struct RealLanes<'scope, 'env> {
-    s: &'env Shared<'env>,
+struct RealLanes<'scope, 'env, 'data> {
+    s: &'env Shared<'data>,
     simctl: &'env Simctl<'env>,
     pool: &'env [PoolDevice],
     locks: &'env DeviceLocks,
@@ -1187,7 +1216,7 @@ struct RealLanes<'scope, 'env> {
     rx: mpsc::Receiver<Report<'env>>,
 }
 
-impl<'scope, 'env> RealLanes<'scope, 'env> {
+impl<'scope, 'env, 'data> RealLanes<'scope, 'env, 'data> {
     /// Runs `f` on its own thread and reports its end; a panic fails the lane instead
     /// of leaving the scheduler waiting.
     fn spawn(&self, lane: LaneId, f: impl FnOnce() -> Report<'env> + Send + 'scope) {
@@ -1229,7 +1258,7 @@ impl<'a> Report<'a> {
     }
 }
 
-impl<'scope, 'env> Executor for RealLanes<'scope, 'env> {
+impl<'scope, 'env, 'data> Executor for RealLanes<'scope, 'env, 'data> {
     type Item = WorkItem;
     type Output = ItemResult;
 
@@ -1451,6 +1480,9 @@ fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
             if let Some(why) = &r.unverified_reason {
                 fields["unverified_reason"] = json!(why);
             }
+            if !r.preparation.is_empty() {
+                fields["preparation"] = json!(r.preparation);
+            }
             fields
         },
     ))
@@ -1634,6 +1666,136 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
             "concurrency": slots::concurrency(s.loaded),
         }),
     ))?;
+    let steps = s
+        .project
+        .scenarios
+        .get(&item.name)
+        .filter(|_| item.kind == "scenario")
+        .map(|scenario| scenario.prepare.as_slice())
+        .unwrap_or_default();
+    let dir = s.loaded.run_dir(s.run_id).join(&item.name);
+    let mut instances = Vec::new();
+    let mut reports = Vec::new();
+    for (index, step) in steps.iter().enumerate() {
+        let shared = step.shared.is_some();
+        let env = vec![
+            ("KR_RUN_ID".into(), s.run_id.to_string()),
+            ("KR_PROJECT".into(), s.project.project.name.clone()),
+            (
+                "KR_SCENARIO".into(),
+                if shared {
+                    String::new()
+                } else {
+                    item.name.clone()
+                },
+            ),
+            (
+                "KR_DEVICE_UDID".into(),
+                if shared {
+                    ""
+                } else {
+                    device.map(|d| d.1).unwrap_or("")
+                }
+                .into(),
+            ),
+            (
+                "KR_RUN_DIR".into(),
+                s.loaded.run_dir(s.run_id).display().to_string(),
+            ),
+        ];
+        let start = |users| {
+            super::prepare::Instance::start(
+                super::prepare::Context {
+                    runner: s.runner,
+                    root: s.root,
+                    events: s.loaded.events(),
+                    run_id: s.run_id,
+                    project: s.project.project.name.clone(),
+                },
+                step,
+                &dir,
+                index,
+                env,
+                users,
+            )
+        };
+        let mut report = if let Some(key) = &step.shared {
+            s.preparation.acquire(key, &item.name, start)
+        } else {
+            instances.push(start(vec![item.name.clone()]));
+            instances.last().unwrap().report.clone()
+        };
+        report.step = index;
+        let failed = report.reason.is_some();
+        reports.push(report);
+        if failed {
+            break;
+        }
+    }
+    let failed = reports.iter().find_map(|i| i.reason.clone());
+    let result = match failed {
+        Some(why) => Ok(ItemResult::new(&item.name, item.kind).unverified(why)),
+        None => run_item_tests(s, item, device),
+    };
+    for (index, step) in steps.iter().enumerate().rev() {
+        if let Some(key) = &step.shared {
+            s.preparation.release_step(key, &item.name);
+        } else if let Some(instance) = instances.iter_mut().find(|i| i.report.step == index) {
+            instance.finish();
+        }
+    }
+    s.preparation.release(&item.name);
+    let mut r = match result {
+        Ok(r) => r,
+        Err(e) if !reports.is_empty() => {
+            if kr_exec::stop_signal().is_some() {
+                s.interrupted.lock().unwrap().push(item.name.clone());
+            }
+            let mut failed = ItemResult::new(&item.name, item.kind);
+            failed.summary = vec![format!("{e:#}")];
+            failed.log = Some(dir.clone());
+            if kr_exec::stop_signal().is_some() {
+                failed.unverified(format!("scenario interrupted: {e:#}"))
+            } else if let Some(why) = device_lost(s)? {
+                failed.unverified(format!("{why}; the item did not finish"))
+            } else {
+                failed
+            }
+        }
+        Err(e) => return Err(e),
+    };
+    for instance in &instances {
+        reports[instance.report.step] = instance.report.clone();
+    }
+    r.preparation = reports;
+    if !steps.is_empty() {
+        r.job = Some(item.job);
+        r.device = device.map(|d| d.0.to_owned());
+    }
+    if let Some(why) = r.preparation.iter().find_map(|p| p.reason.clone()) {
+        r.log = r.preparation.first().map(|p| p.log.clone());
+        r = r.unverified(why);
+    }
+    if kr_exec::stop_signal().is_some() && !steps.is_empty() {
+        let mut interrupted = s.interrupted.lock().unwrap();
+        if !interrupted.contains(&item.name) {
+            interrupted.push(item.name.clone());
+        }
+    }
+    r.duration_ms = started.elapsed().as_millis() as u64;
+    s.quarantine.apply(&mut r);
+    if r.preparation.is_empty() {
+        item_event(s, &r)?;
+    }
+    Ok(r)
+}
+
+fn run_item_tests(
+    s: &Shared<'_>,
+    item: &WorkItem,
+    device: Option<(&str, &str)>,
+) -> Result<ItemResult> {
+    let started = Instant::now();
     let rebuilt = match ensure_products(s, item) {
         Ok(note) => note,
         Err(why) => {
@@ -1642,7 +1804,6 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
             r.job = Some(item.job);
             r.summary = vec![why];
             r.duration_ms = started.elapsed().as_millis() as u64;
-            item_event(s, &r)?;
             return Ok(r);
         }
     };
@@ -1656,7 +1817,6 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
         r.notes.extend(rebuilt);
         r.duration_ms = started.elapsed().as_millis() as u64;
         let r = r.unverified(format!("{why}; the item did not finish"));
-        item_event(s, &r)?;
         return Ok(r);
     }
     if !r.passed && s.device.is_some() && mentions_ui_automation(&r) {
@@ -1726,8 +1886,6 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     r.high_load = high;
     r.notes.extend(rebuilt);
     r.duration_ms = started.elapsed().as_millis() as u64;
-    s.quarantine.apply(&mut r);
-    item_event(s, &r)?;
     Ok(r)
 }
 
