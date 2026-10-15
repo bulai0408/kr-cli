@@ -1,0 +1,12 @@
+{
+  "program": "git",
+  "args": [
+    "diff",
+    "--name-only",
+    "--merge-base",
+    "419120c"
+  ],
+  "status": 0,
+  "stdout": ".kr.toml\nKrill/DebugCatalog/ShelfCodeCatalog.swift\nKrill/Home/ShelvesView.swift\nKrill/KrillApp.swift\nKrill/Localizable.xcstrings\nKrill/ShelfShare/ShelfCodeService.swift\nKrill/ShelfShare/ShelfCodeViews.swift\nKrill/ShelfShare/ShelfShareCode.swift\nKrillTests/ShelfCodeServiceTests.swift\nKrillTests/ShelfShareCodeTests.swift\nKrillUITests/ShelfCodeUITests.swift\nbackend/shelf-link.html\nbackend/shelf-migrations/0001_shelf_shares.sql\nbackend/src/index.ts\nbackend/src/shelf-local.ts\nbackend/src/shelf-share.ts\nbackend/test/shelf-share.test.ts\nbackend/vitest.config.ts\nbackend/wrangler.shelf-local.jsonc\ndocs/adr/0022-shelf-share-codes.md\ndocs/agents/125-shelf-code.md\ndocs/artboards/shelf-share-code.html\ndocs/legal/privacy-policy.en.md\ndocs/legal/privacy-policy.zh.md\ndocs/legal/shelf-share-terms.en.md\ndocs/legal/shelf-share-terms.zh.md\nscripts/e2e-impact.json\n",
+  "stderr": ""
+}

@@ -1,0 +1,42 @@
+---
+source: crates/kr/tests/deliver.rs
+expression: out
+---
+# Delivery report draft
+run 01a13a1f-8950-75e5-8020-4988e20bfa16 · Krill · started 2026-10-14 11:15 UTC
+
+## 1. Decided by machine: 7/9 PASS
+- PASS backend (suite, exit code only)
+- FAIL shelf-code-ipad (2 tests, 1 failed, Krill-Verify-iPad-1)
+  failed: KrillUITests/ShelfCodeUITests/testPublishImportRelaunchAndWithdrawAgainstLocalBackend()
+  whole item ran again: failed during high load (1-minute load 48.85 is above 32 (4 × 8 cores))
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-code-ipad/run.xcresult (not found)
+  xcresult (again): /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-code-ipad-again/run.xcresult (not found)
+- PASS shelf-share-ipad (2 tests, Krill-Verify-iPad-1)
+  high load: 1-minute load 106.47 is above 32 (4 × 8 cores)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-share-ipad/run.xcresult (not found)
+- FAIL shelf-code (7 tests, 3 failed, Krill-Verify-1)
+  failed: KrillTests/ShelfCodeServiceTests/testLocalBackendKeepsPackageEncryptedAndReceiptCanWithdraw()
+  failed: KrillTests/ShelfCodeServiceTests/accountExpiryIsAssignedByServerAndReceiptPersistsAcrossStoreReopen()
+  failed: KrillUITests/ShelfCodeUITests/testPublishImportRelaunchAndWithdrawAgainstLocalBackend()
+  whole item ran again: failed during high load (1-minute load 48.85 is above 32 (4 × 8 cores))
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-code/run.xcresult (not found)
+  xcresult (again): /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-code-again/run.xcresult (not found)
+- PASS modules (22 tests, Krill-Verify-1)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/modules/run.xcresult (not found)
+- PASS shelf-edit (11 tests, Krill-Verify-1)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-edit/run.xcresult (not found)
+- PASS source-view (8 tests, Krill-Verify-1)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/source-view/run.xcresult (not found)
+- PASS shelf-share (24 tests, Krill-Verify-1)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/shelf-share/run.xcresult (not found)
+- PASS viewing-environment (6 tests, Krill-Verify-1)
+  xcresult: /Users/me/Krill/v0-125-shelf-code/build/kr/results/viewing-environment/run.xcresult (not found)
+
+## 2. Needs human judgment of feel: 1
+- Feel check: docs/artboards/shelf-share-code.html (compare the app with the changed Artboard; attach a screenshot or screen recording)
+
+## 3. Not verified: 3
+- Pending deploy: backend/shelf-migrations/0001_shelf_shares.sql (schema changed; deploy it, or say who deploys it and when)
+- Owner review: docs/legal/privacy-policy.en.md, docs/legal/privacy-policy.zh.md, docs/legal/shelf-share-terms.en.md, docs/legal/shelf-share-terms.zh.md (legal text changed; the owner must review it)
+- backend: only the exit code was checked; the test count was not verified
