@@ -562,3 +562,37 @@ fn a_normal_run_builds_once_takes_the_device_and_passes() {
     assert_eq!(identity["runtime"], "iOS 27.2", "{end}");
     assert_eq!(identity["device_type"], "iPad mini (A17 Pro)", "{end}");
 }
+
+#[test]
+fn a_cable_pulled_between_items_leaves_the_next_item_unverified() {
+    // Real (2026-10-15 19:36, this kr): `slow` finished over Wi-Fi after the cable was
+    // pulled; before `launch`, kr saw the device on localNetwork instead of wired.
+    let sample = Sample::with(
+        "register_devices = true\n",
+        "[scenarios.slow]\nonly = [\"KrSampleUITests/SlowUITests\"]\ntimeout = \"25m\"\n",
+    );
+    let (code, text) = sample.kr(
+        &device_recordings("unplugged-between-items"),
+        &["run", "--device", IPAD, "slow", "launch"],
+    );
+    assert_eq!(code, Some(1), "{text}");
+    assert!(
+        text.contains("PASS: slow (1 tests, 蔡煜恒的 iPad Mini"),
+        "{text}"
+    );
+    assert!(text.contains("UNVERIFIED: launch"), "{text}");
+    assert!(
+        text.contains("run on 蔡煜恒的 iPad Mini: 1/2 PASS, 1 unverified"),
+        "{text}"
+    );
+    let launch = sample
+        .events()
+        .into_iter()
+        .find(|e| e["type"] == "item_end" && e["fields"]["item"] == "launch")
+        .unwrap();
+    assert_eq!(launch["fields"]["tests"]["unverified"], 1, "{launch}");
+    assert_eq!(
+        launch["fields"]["unverified_reason"],
+        "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork; the item did not start"
+    );
+}

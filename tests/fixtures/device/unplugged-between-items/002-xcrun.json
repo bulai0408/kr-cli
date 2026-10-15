@@ -1,0 +1,11 @@
+{
+ "program": "xcrun",
+ "args": [
+  "--sdk",
+  "iphoneos",
+  "--show-sdk-version"
+ ],
+ "status": 0,
+ "stdout": "27.1\n",
+ "stderr": ""
+}
