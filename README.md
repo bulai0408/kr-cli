@@ -131,11 +131,11 @@ kr gate --remote mini
 ```
 
 - kr 只连接这里声明的主机，用系统的 `ssh`（加 `BatchMode=yes`，不弹密码提示）。地址和连接安全由主机和 owner 负责：kr 不检查地址，不保存也不读取凭证。
-- 开始前检查，有问题时一次列出全部原因和下一步，以退出码 1 结束，不连远程跑：分支没推送或推送的不是 HEAD、有未提交的改动、没有 `origin`、主机连不上、主机不是 macOS、没装 Xcode、没有 kr 或 kr 版本不一致、选中的项需要开发者证书签名。
+- 开始前检查，有问题时一次列出全部原因和下一步，以退出码 1 结束，不连远程跑：分支没推送或推送的不是 HEAD、有未提交的改动、没有 `origin`、主机连不上、主机不是 macOS、没装 Xcode、没有 kr 或 kr 版本不一致、选中的项需要开发者证书签名而主机签不了。
 - 远程主机自己用 git 拉取已推送的分支，需要能不弹提示地访问 `origin`（例如钥匙串在 SSH 会话里可用，或给 git 服务器配 SSH 密钥）（每个项目一个克隆，每个分支一个 worktree：`<dir>/<项目>@<分支>`），在用户的登录 shell 里（`$SHELL -l`，和在那台 Mac 上开终端时的 PATH 一样，例如能找到 Homebrew 的 xcodegen）运行它自己的 `kr --json`；资源由远程 kr 自己排队。结果回传本机，输出和本机运行一样，`--json` 多了 `host` 和 `remote`。xcresult 和日志路径在远程主机上。
 - 事件两边都写：远程 kr 写它自己的，本机在自己的运行 ID 下写每项的开始和结束（带 `host`）以及 `run_end`。
 - 运行途中失联（ssh 以 255 结束、没拿到结果）：每项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。本机收到 SIGINT / SIGTERM 时 ssh 断开，远程 kr 收到 SIGHUP 后自己停下、归还资源。
-- 签名：SSH 会话拿不到登录钥匙串里的签名身份。在仓库根目录为真机或 macOS 构建 App 的项（例如 `destination = "macos"` 的测试套件、根目录的 `build` 套件）需要开发者证书，远程运行时提前拒绝；在 SSH 会话里直接运行 `kr run` / `kr gate` / `kr check` 也一样。模拟器构建和单独构建的包（`dir`）不受影响；`[project].build_settings` 里写了 `CODE_SIGNING_ALLOWED = "NO"` 的项目也不受影响。
+- 签名（ADR 0014）：在仓库根目录为真机或 macOS 构建 App 的项（例如 `destination = "macos"` 的测试套件、根目录的 `build` 套件、`--device`）需要开发者证书。这时 kr 先在要签名的机器上试签一次：远程运行在主机上试签，在 SSH 会话里直接运行 `kr run` / `kr gate` / `kr check` 在本机试签。试签给一个临时文件签名，签完删除；不改钥匙串，不读不存凭证，输出里只有身份序号、指纹前 8 位和团队 ID，没有证书名。签得了（且团队等于 `[signing] team`，没写时任意团队）就照常运行；签不了就提前拒绝，写明原因和要在那台机器上做什么，例如 SSH 会话里钥匙串锁着（`errSecInternalComponent`）时，让那台 Mac 在 SSH 登录时解锁钥匙串，或在那台 Mac 的登录会话里运行。kr 不替用户解锁钥匙串。模拟器构建和单独构建的包（`dir`）不需要试签；`[project].build_settings` 里写了 `CODE_SIGNING_ALLOWED = "NO"` 的项目也不需要。
 
 ## 在真机上运行
 
@@ -160,7 +160,8 @@ kr run --device "蔡煜恒的 iPad Mini" launch
 - 构建一次（`-destination 'platform=iOS,id=<UDID>' -allowProvisioningUpdates`，自动签名为这台设备准备描述文件），再依次在设备上跑各项。设备还没登记到团队时，设备会拒绝安装测试 runner（`0xe8008012`）：在 Xcode 里登记，或在 `[signing]` 写 `register_devices = true` 让 xcodebuild 登记（加 `-allowProvisioningDeviceRegistration`，会改动团队的开发者账号，所以默认不开）。每台设备是容量为 1 的资源，同一台设备上同时只跑一个运行，后来的排队等待（`kr queue` 还不列出设备）。
 - 安装前回读签名（`codesign`）：签名团队必须等于 `[signing] team`（没写时提示补上）；`[isolation]` 里配置的 entitlement 必须一致；App 带 iCloud entitlement 时，`com.apple.developer.icloud-container-environment` 必须写明，且在允许的值里（`[isolation.entitlements]` 没写时只允许 `Development`）。不对就停下，说明是哪一项、应该是什么。
 - 运行途中设备掉线或锁屏（每项开始前和失败后用 `devicectl device info lockState` 确认能否连上、是否锁屏，并比较连接方式：拔线后 devicectl 常常还能经 Wi-Fi 连上设备，但测试的连接已经断了，所以连接方式从开始时的 `wired` 变成别的也算掉线）：这一项和后面没跑的项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。事件和模拟器运行一样写 #29 的字段，身份里是设备的型号和系统。
-- 不支持：真机截图、性能分析、多台设备并行、CloudKit Production、注入真实服务凭证。`--device` 不能和 `--remote` 一起用。
+- 设备插在远程主机上时，`kr run --device <名字> --remote <主机> <场景>`：主机上的 kr 做设备检查、签名回读、掉线记「未验证」，结果按远程运行的方式传回，本机的 `item_end` 带 `device`、`tests.unverified` 和 `unverified_reason`。主机上设备的开始前问题（例如锁屏）逐条传回，写明在设备上怎么做。
+- 不支持：真机截图、性能分析、多台设备并行（本机或远程）、CloudKit Production、注入真实服务凭证。
 
 ## 状态
 

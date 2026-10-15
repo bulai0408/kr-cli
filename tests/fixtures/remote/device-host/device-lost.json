@@ -1,0 +1,109 @@
+{
+  "aborted": null,
+  "build": {
+    "cached": [],
+    "steps": [
+      {
+        "duration_ms": 0,
+        "log": "~/.local/state/kr/runs/01a1400b-a4f4-73f1-9bbd-9fc8eca3e3fa/generate.log",
+        "ok": true,
+        "step": "generate",
+        "summary": []
+      },
+      {
+        "duration_ms": 0,
+        "log": "~/.local/state/kr/runs/01a1400b-a4f4-73f1-9bbd-9fc8eca3e3fa/build_build-for-testing_KrSample__platform_iOS_id_00008130-00AA00AA00AA001C_.log",
+        "ok": true,
+        "step": "build build-for-testing KrSample (platform=iOS,id=00008130-00AA00AA00AA001C)",
+        "summary": []
+      },
+      {
+        "duration_ms": 1,
+        "log": null,
+        "ok": true,
+        "step": "filters",
+        "summary": []
+      },
+      {
+        "duration_ms": 0,
+        "log": null,
+        "ok": true,
+        "step": "isolation",
+        "summary": []
+      },
+      {
+        "duration_ms": 0,
+        "log": null,
+        "ok": true,
+        "step": "signing",
+        "summary": []
+      }
+    ]
+  },
+  "concluded": true,
+  "decisions": [],
+  "duration_ms": 14,
+  "items": [
+    {
+      "cases": [
+        {
+          "category": "infrastructure",
+          "duration_s": 0.0,
+          "id": "KrSampleUITests/KrSampleUITests-Runner (4922) encountered an error",
+          "outcome": "failed",
+          "signature": "Encountered a problem with the test runner after launch. (Underlying Error: An error occurred while communicating with a remote process. (Underlying Error: The connection was invalidated.))"
+        }
+      ],
+      "device": "蔡煜恒的 iPad Mini",
+      "duration_ms": 1,
+      "flaky": [],
+      "high_load": null,
+      "kind": "scenario",
+      "load": null,
+      "log": "~/.local/state/kr/runs/01a1400b-a4f4-73f1-9bbd-9fc8eca3e3fa/slow",
+      "name": "slow",
+      "notes": [],
+      "passed": false,
+      "summary": [
+        "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork; the item did not finish",
+        "ran 0 of 1 selected tests; not run: KrSampleUITests/SlowUITests/testStaysOnScreen()",
+        "ran 1 test(s) the filters did not select: KrSampleUITests/KrSampleUITests-Runner (4922) encountered an error"
+      ],
+      "tests": {
+        "failed": 0,
+        "flaky": 0,
+        "passed": 0,
+        "skipped": 0,
+        "unverified": 1
+      },
+      "unverified_reason": "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork; the item did not finish",
+      "xcresult": "~/repo/build/kr/results/slow/run.xcresult"
+    },
+    {
+      "device": "蔡煜恒的 iPad Mini",
+      "duration_ms": 0,
+      "flaky": [],
+      "high_load": null,
+      "kind": "scenario",
+      "load": null,
+      "log": null,
+      "name": "launch",
+      "notes": [],
+      "passed": false,
+      "summary": [
+        "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork; the item did not start"
+      ],
+      "tests": {
+        "failed": 0,
+        "unverified": 1
+      },
+      "unverified_reason": "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork; the item did not start",
+      "xcresult": null
+    }
+  ],
+  "label": "run on 蔡煜恒的 iPad Mini",
+  "ok": false,
+  "passed": 0,
+  "schema_version": 1,
+  "total": 2
+}

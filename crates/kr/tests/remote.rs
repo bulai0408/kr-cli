@@ -69,6 +69,11 @@ ssh = "fnos"
 
 [remotes.nowhere]
 ssh = "nowhere.invalid"
+
+[remotes.work]
+ssh = "work"
+dir = "~/kr38/remote"
+kr = "~/kr38/bin/kr"
 "#;
 
 struct Repo {
@@ -556,7 +561,7 @@ fn an_undeclared_remote_names_the_declared_ones_and_the_file() {
     assert!(out.stderr.contains("[remotes.studio]"), "{}", out.stderr);
 }
 
-// --- Signing over SSH ---
+// --- Signing: decided by a trial sign where the signing happens (ADR 0014) ---
 
 /// Krill plus a macOS test suite at the repo root: Xcode signs that build with a
 /// developer certificate.
@@ -566,11 +571,110 @@ fn with_mac_suite() -> Repo {
     Repo::with_project(&toml)
 }
 
+/// The host `localhost` of [`CONFIG`].
+fn localhost() -> kr_config::Remote {
+    kr_config::Remote {
+        ssh: "localhost".into(),
+        dir: Some("/tmp/kr-remote".into()),
+        kr: Some("/tmp/kr-remote/bin/kr".into()),
+    }
+}
+
+/// The trial sign on `localhost` printing `stdout`. The real outputs are recorded on
+/// `work` (tests/fixtures/remote/trial-sign-work.json); only the host differs.
+fn trial_sign_on_host(stdout: &str) -> Recording {
+    let cmd = kr_remote::ssh(&localhost(), kr_remote::signing::SCRIPT, false);
+    Recording {
+        program: cmd.program,
+        args: cmd.args,
+        status: Some(0),
+        stdout: stdout.to_owned(),
+        stderr: String::new(),
+        timed_out: false,
+        duration_ms: None,
+    }
+}
+
+/// Real: both Apple Development identities of `work` sign for K4AXH95DCF over SSH.
+fn work_signs() -> String {
+    let rec = fixture("trial-sign-work").remove(0);
+    assert_eq!(
+        rec.args.last().unwrap(),
+        &format!("sh -c {}", kr_remote::sh_quote(kr_remote::signing::SCRIPT)),
+        "the trial sign script changed: record trial-sign-work.json again"
+    );
+    rec.stdout
+}
+
+/// Constructed in codesign's format: this Mac's `ssh localhost` is not authorized for
+/// the current user, so a real locked keychain could not be recorded.
+const LOCKED: &str = "identity 1 AAAA1111 failed errSecInternalComponent\nidentity 2 BBBB2222 failed errSecInternalComponent\nidentities=2\n";
+
+/// A run on the host `localhost` of `project` at the pushed checkout, asked for with
+/// `kr_args`, whose kr printed `result` and exited with `status`.
+fn host_run(project: &str, kr_args: &[&str], result: &str, status: i32) -> Recording {
+    let co = kr_remote::Checkout {
+        url: "/tmp/kr32/origin.git".into(),
+        branch: "v0/integration".into(),
+        commit: "4ea68bc7212949937b6cb0714fdfd8a59cc6855b".into(),
+        prefix: String::new(),
+    };
+    let args: Vec<String> = kr_args.iter().map(|a| (*a).to_owned()).collect();
+    let cmd = kr_remote::ssh(
+        &localhost(),
+        &kr_remote::run_script(&localhost(), project, &co, &args),
+        true,
+    );
+    Recording {
+        program: cmd.program,
+        args: cmd.args,
+        status: Some(status),
+        stdout: format!(
+            "kr-remote: fetching\r\nkr-remote: starting kr\r\n{}\r\nConnection to localhost closed.\r\n",
+            result.trim_end().replace('\n', "\r\n")
+        ),
+        stderr: String::new(),
+        timed_out: false,
+        duration_ms: None,
+    }
+}
+
+fn krill_result() -> String {
+    let run = fixture("run-localhost").remove(0);
+    let json = kr_remote::json_result(&run.stdout).unwrap();
+    serde_json::to_string_pretty(&json).unwrap()
+}
+
 #[test]
-fn a_remote_run_refuses_work_that_needs_a_developer_certificate() {
+fn a_host_that_can_sign_runs_work_that_needs_a_developer_certificate() {
     let r = with_mac_suite();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(trial_sign_on_host(&work_signs()));
+    recs.push(host_run(
+        "Krill",
+        &["run", "mac-tests", "kit-build"],
+        &krill_result(),
+        0,
+    ));
     let out = r.kr(
-        &with(fixture("git-pushed"), &["probe-localhost"]),
+        &recs,
+        &["run", "--remote", "localhost", "mac-tests", "kit-build"],
+    );
+    assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.contains("run on localhost: 2/2 PASS"),
+        "{}",
+        out.stdout
+    );
+}
+
+#[test]
+fn a_host_that_cannot_sign_is_refused_with_what_to_do_there() {
+    let r = with_mac_suite();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(trial_sign_on_host(LOCKED));
+    let out = r.kr(
+        &recs,
         &[
             "--json",
             "run",
@@ -580,48 +684,305 @@ fn a_remote_run_refuses_work_that_needs_a_developer_certificate() {
             "kit-build",
         ],
     );
-    assert_eq!(out.code, Some(1));
+    assert_eq!(out.code, Some(1), "{}{}", out.stdout, out.stderr);
     let v = json(&out);
+    assert_eq!(v["error"]["code"], "kr::remote::preflight", "{v}");
     let problems = v["error"]["problems"].as_array().unwrap();
     assert_eq!(problems.len(), 1, "{v}");
-    assert_eq!(problems[0]["code"], "needs_signing");
+    assert_eq!(problems[0]["code"], "signing_unavailable");
+    assert_eq!(
+        problems[0]["message"],
+        "`mac-tests` (generic/platform=macOS) needs a developer certificate; localhost cannot sign in this session: identity #1 (AAAA1111): errSecInternalComponent; #2 (BBBB2222): errSecInternalComponent (the login keychain is locked in this session)"
+    );
     assert!(
-        problems[0]["message"]
+        problems[0]["next"]
             .as_str()
             .unwrap()
-            .starts_with("`mac-tests` builds the app for generic/platform=macOS"),
+            .starts_with("on localhost: make the login keychain usable in SSH sessions"),
         "{v}"
     );
+    let end = &r.events_of("run_end")[0];
+    assert_eq!(end["fields"]["ok"], false);
 }
 
 #[test]
-fn in_an_ssh_session_work_that_needs_a_certificate_is_refused_at_once() {
+fn simulator_work_on_a_host_needs_no_trial_sign() {
+    // No trial-sign recording: a call to it would fail the replay.
+    let r = Repo::new();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(host_run(
+        "Krill",
+        &["run", "source-checks", "kit-build"],
+        &krill_result(),
+        0,
+    ));
+    let out = r.kr(
+        &recs,
+        &["run", "--remote", "localhost", "source-checks", "kit-build"],
+    );
+    assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
+}
+
+/// This Mac's trial sign, as `sh -c`, printing `stdout`.
+fn trial_sign_here(stdout: &str) -> Recording {
+    let cmd = kr_remote::signing::local_command();
+    Recording {
+        program: cmd.program,
+        args: cmd.args,
+        status: Some(0),
+        stdout: stdout.to_owned(),
+        stderr: String::new(),
+        timed_out: false,
+        duration_ms: None,
+    }
+}
+
+const SSH_SESSION: (&str, &str) = ("SSH_CONNECTION", "192.0.2.1 50000 192.0.2.2 22");
+
+#[test]
+fn in_an_ssh_session_this_mac_refuses_signing_work_it_cannot_sign() {
     let r = with_mac_suite();
-    // No recordings: refused before any command runs.
     let out = r.kr_env(
-        &[],
+        &[trial_sign_here(LOCKED)],
         &["run", "mac-tests"],
-        &[("SSH_CONNECTION", "192.0.2.1 50000 192.0.2.2 22")],
+        &[SSH_SESSION],
     );
     assert_eq!(out.code, Some(1));
     insta::assert_snapshot!(out.stderr);
 }
 
 #[test]
-fn in_an_ssh_session_simulator_and_package_work_is_not_refused() {
+fn in_an_ssh_session_this_mac_goes_on_when_it_can_sign() {
+    // Real: this Mac's own trial sign (other teams' IDs replaced).
+    let rec = kr_exec::read_recording(&root().join("tests/fixtures/signing/trial-sign-local.json"))
+        .unwrap();
+    assert_eq!(rec.args, kr_remote::signing::local_command().args);
     let r = with_mac_suite();
-    // Gets past the signing rule and fails later, on the missing recording.
+    // Gets past the trial sign and fails later, on the missing recording.
+    let out = r.kr_env(&[rec], &["run", "mac-tests"], &[SSH_SESSION]);
+    assert!(!out.stderr.contains("certificate"), "{}", out.stderr);
+    assert!(out.stderr.contains("no recording for"), "{}", out.stderr);
+}
+
+#[test]
+fn kr_check_in_an_ssh_session_also_decides_by_the_trial_sign() {
+    let r = with_mac_suite();
     let out = r.kr_env(
-        &[],
-        &["run", "kit-build", "smoke"],
-        &[("SSH_CONNECTION", "192.0.2.1 50000 192.0.2.2 22")],
+        &[trial_sign_here("identities=0\n")],
+        &["--json", "check", "mac-tests"],
+        &[SSH_SESSION],
+    );
+    assert_eq!(out.code, Some(1));
+    let v = json(&out);
+    assert_eq!(v["error"]["code"], "kr::signing::unavailable", "{v}");
+    assert_eq!(v["error"]["problems"][0]["code"], "signing_no_identity");
+    assert!(
+        v["error"]["problems"][0]["next"]
+            .as_str()
+            .unwrap()
+            .starts_with("on this Mac: add an Apple Development certificate"),
+        "{v}"
+    );
+}
+
+#[test]
+fn in_an_ssh_session_simulator_and_package_work_needs_no_trial_sign() {
+    let r = with_mac_suite();
+    // No recordings: gets past the signing rule and fails later, on the first command.
+    let out = r.kr_env(&[], &["run", "kit-build", "smoke"], &[SSH_SESSION]);
+    assert!(!out.stderr.contains("certificate"), "{}", out.stderr);
+    assert!(out.stderr.contains("no recording for"), "{}", out.stderr);
+    assert!(!out.stderr.contains("codesign"), "{}", out.stderr);
+}
+
+// --- A real device on the host (ADR 0014 §6) ---
+
+const IPAD: &str = "蔡煜恒的 iPad Mini";
+
+/// The sample project (KrSample), signed by K4AXH95DCF, with a `slow` scenario.
+fn sample_repo() -> Repo {
+    let toml = std::fs::read_to_string(root().join("tests/sample/.kr.toml")).unwrap()
+        + "\n[scenarios.slow]\nonly = [\"KrSampleUITests/SlowUITests\"]\ntimeout = \"25m\"\n\n[signing]\nteam = \"K4AXH95DCF\"\nregister_devices = true\n";
+    Repo::with_project(&toml)
+}
+
+/// What the host's kr printed for a device run: real output of `kr run --device` on
+/// the recorded iPad runs (tests/fixtures/device), as the host prints it.
+fn device_result(name: &str) -> String {
+    std::fs::read_to_string(
+        root()
+            .join("tests/fixtures/remote/device-host")
+            .join(format!("{name}.json")),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_device_on_the_host_runs_and_its_results_come_back() {
+    // Real (2026-10-15): `kr run --device "蔡煜恒的 iPad Mini" --remote work launch`
+    // from the iMac, the iPad on a cable at `work`; every call of this kr, recorded.
+    let r = sample_repo();
+    let out = r.kr(
+        &fixture("device-on-work"),
+        &["run", "--device", IPAD, "--remote", "work", "launch"],
+    );
+    assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout
+            .contains("PASS: launch (2 tests, 蔡煜恒的 iPad Mini"),
+        "{}",
+        out.stdout
     );
     assert!(
-        !out.stderr.contains("developer certificate"),
+        out.stdout
+            .contains("run on 蔡煜恒的 iPad Mini on work: 1/1 PASS"),
         "{}",
-        out.stderr
+        out.stdout
     );
-    assert!(out.stderr.contains("no recording for"), "{}", out.stderr);
+    let start = &r.events_of("item_start")[0];
+    assert_eq!(start["fields"]["device"], IPAD, "{start}");
+    let end = &r.events_of("item_end")[0];
+    assert_eq!(end["fields"]["device"], IPAD, "{end}");
+    assert_eq!(end["fields"]["host"], "work", "{end}");
+    assert_eq!(end["fields"]["tests"]["passed"], 2, "{end}");
+}
+
+#[test]
+fn a_device_lost_on_the_host_leaves_its_items_unverified_here() {
+    let r = sample_repo();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(trial_sign_on_host(&work_signs()));
+    recs.push(host_run(
+        "KrSample",
+        &["run", "--device", IPAD, "slow", "launch"],
+        &device_result("device-lost"),
+        1,
+    ));
+    let out = r.kr(
+        &recs,
+        &[
+            "run",
+            "--device",
+            IPAD,
+            "--remote",
+            "localhost",
+            "slow",
+            "launch",
+        ],
+    );
+    assert_eq!(out.code, Some(1), "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("UNVERIFIED: slow"), "{}", out.stdout);
+    assert!(out.stdout.contains("UNVERIFIED: launch"), "{}", out.stdout);
+    let reasons: Vec<String> = r
+        .events_of("item_end")
+        .iter()
+        .map(|e| {
+            assert_eq!(e["fields"]["tests"]["unverified"], 1, "{e}");
+            e["fields"]["unverified_reason"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    let lost = "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork";
+    assert_eq!(
+        reasons,
+        [
+            format!("{lost}; the item did not finish"),
+            format!("{lost}; the item did not start"),
+        ]
+    );
+    // Deliver lists them as not verified, like a local device run.
+    let out = r.kr(&[], &["--json", "deliver"]);
+    let v = json(&out);
+    assert_eq!(v["machine"]["items"][0]["result"], "unverified", "{v}");
+}
+
+#[test]
+fn a_device_problem_on_the_host_is_listed_here_with_what_to_do() {
+    // The host's kr refused before building, as a local `kr run --device` does
+    // (format of crates/kr/tests/device.rs, device locked).
+    let refused = serde_json::json!({
+        "schema_version": 1,
+        "error": {
+            "code": "kr::device::prerequisites",
+            "message": "cannot run tests on 蔡煜恒的 iPad Mini",
+            "problems": [{
+                "code": "device_locked",
+                "message": "蔡煜恒的 iPad Mini is locked",
+                "next": "On the iPad: unlock it and keep the screen on (Settings > Display & Brightness > Auto-Lock: Never while tests run), then run again",
+            }],
+        },
+    });
+    let r = sample_repo();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(trial_sign_on_host(&work_signs()));
+    recs.push(host_run(
+        "KrSample",
+        &["run", "--device", IPAD, "launch"],
+        &refused.to_string(),
+        1,
+    ));
+    let out = r.kr(
+        &recs,
+        &[
+            "--json",
+            "run",
+            "--device",
+            IPAD,
+            "--remote",
+            "localhost",
+            "launch",
+        ],
+    );
+    assert_eq!(out.code, Some(1), "{}{}", out.stdout, out.stderr);
+    let v = json(&out);
+    assert_eq!(v["error"]["code"], "kr::remote::host_refused", "{v}");
+    assert_eq!(
+        v["error"]["message"],
+        "localhost: cannot run tests on 蔡煜恒的 iPad Mini"
+    );
+    assert_eq!(v["error"]["problems"][0]["code"], "device_locked");
+    assert!(
+        v["error"]["problems"][0]["next"]
+            .as_str()
+            .unwrap()
+            .starts_with("On the iPad: unlock it")
+    );
+}
+
+#[test]
+fn a_host_run_waiting_for_decisions_keeps_them_and_exits_4_here() {
+    // ADR 0015: the host's run stopped at a decision point and exited 4.
+    let mut result: serde_json::Value = serde_json::from_str(&krill_result()).unwrap();
+    result["ok"] = false.into();
+    result["items"][0]["passed"] = false.into();
+    result["items"][0]["decisions"] = serde_json::json!(["d1"]);
+    result["decisions"] = serde_json::json!([{ "id": "d1", "affects": "conclusion" }]);
+    let r = Repo::new();
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(host_run(
+        "Krill",
+        &["run", "source-checks", "kit-build"],
+        &serde_json::to_string_pretty(&result).unwrap(),
+        4,
+    ));
+    let out = r.kr(
+        &recs,
+        &[
+            "--json",
+            "run",
+            "--remote",
+            "localhost",
+            "source-checks",
+            "kit-build",
+        ],
+    );
+    assert_eq!(out.code, Some(4), "{}{}", out.stdout, out.stderr);
+    assert_eq!(json(&out)["decisions"][0]["id"], "d1");
+    let ended = r.events_of("item_end");
+    assert_eq!(ended[0]["fields"]["decisions"], serde_json::json!(["d1"]));
+    assert_eq!(r.events_of("run_end")[0]["fields"]["decisions_pending"], 1);
 }
 
 // --- Host lost during the run ---

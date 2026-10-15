@@ -283,7 +283,7 @@
 - 现象：Grok Bot 经 SSH 可编译和跑模拟器，但设备构建、archive、签名 macOS 构建、macOS XCUITest 不行。
 - 根因：SSH 会话拿不到钥匙串签名身份与 GUI 会话。
 - 现在：MK 文字规则。
-- CLI：**是** — doctor/签名检查（识别 SSH 会话，提前拒绝需要签名的任务）。
+- CLI：**是** — 签名检查：在要签名的机器上试签一次，签不了才提前拒绝（ADR 0014：配置为 SSH 登录时解锁钥匙串的主机，经 SSH 也能签名）。
 - 来源：MK/no-parallel-agents；KD/110-compliance-validation（L46）
 
 **P4 签名与 entitlement 回读**

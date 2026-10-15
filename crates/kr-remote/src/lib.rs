@@ -13,6 +13,8 @@ use kr_config::Remote;
 use kr_exec::{Command, Runner};
 use serde::Serialize;
 
+pub mod signing;
+
 /// `ssh` exits with this when the connection failed or was lost.
 pub const SSH_LOST: i32 = 255;
 
@@ -22,18 +24,28 @@ pub const STARTING_KR: &str = "kr-remote: starting kr";
 /// A reason a remote run cannot start, and what to do about it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Problem {
-    pub code: &'static str,
+    pub code: String,
     pub message: String,
     pub next: String,
 }
 
 impl Problem {
-    pub fn new(code: &'static str, message: impl Into<String>, next: impl Into<String>) -> Self {
+    pub fn new(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        next: impl Into<String>,
+    ) -> Self {
         Self {
-            code,
+            code: code.into(),
             message: message.into(),
             next: next.into(),
         }
+    }
+
+    /// A problem as another kr printed it in `--json` (`error.problems[]`).
+    pub fn from_json(v: &serde_json::Value) -> Self {
+        let text = |k: &str| v[k].as_str().unwrap_or_default().to_owned();
+        Self::new(text("code"), text("message"), text("next"))
     }
 }
 

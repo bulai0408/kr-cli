@@ -56,8 +56,9 @@ pub struct RunArgs {
     /// Run the scenarios (and simulator test suites) on this real iPhone or iPad
     /// instead of pool simulators: its name, UDID or CoreDevice identifier. Builds once
     /// for iOS devices and reads the signing back before installing; a device lost
-    /// during an item leaves the item unverified.
-    #[arg(long, value_name = "NAME", conflicts_with = "remote")]
+    /// during an item leaves the item unverified. With --remote, the device is the one
+    /// on that host.
+    #[arg(long, value_name = "NAME")]
     device: Option<String>,
 }
 
@@ -94,14 +95,20 @@ pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let mut sel = check::select(project, &args.targets, None)?;
+    sel.on_device = args.device.is_some();
     if let Some(host) = &args.remote {
+        // The host's kr checks the device, reads the signing back and runs.
+        let device = args
+            .device
+            .iter()
+            .flat_map(|d| ["--device".to_owned(), d.clone()]);
         let kr_args = std::iter::once("run".to_owned())
+            .chain(device)
             .chain(args.targets)
             .collect();
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
     }
-    sel.on_device = args.device.is_some();
-    remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
+    remote::check_signing_in_ssh_session(ctx, project, &sel)?;
     let label = match &args.device {
         Some(name) => format!("run on {name}"),
         None => "run".to_owned(),
@@ -133,7 +140,7 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
         let kr_args = vec!["gate".to_owned(), name];
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
     }
-    remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
+    remote::check_signing_in_ssh_session(ctx, project, &sel)?;
     execute(
         ctx,
         &loaded,

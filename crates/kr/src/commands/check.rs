@@ -459,7 +459,7 @@ pub fn run(ctx: &Ctx, args: CheckArgs) -> Result<ExitCode> {
     let (project, root) = loaded.require_project()?;
     let mut sel = select(project, &args.targets, args.gate.as_deref())?;
     sel.on_device = args.device.is_some();
-    super::remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
+    super::remote::check_signing_in_ssh_session(ctx, project, &sel)?;
     let runner = ctx.runner()?;
     if let Some(name) = &args.device {
         let inspected = super::device::inspect(ctx, &loaded, runner.as_ref(), name)?;
