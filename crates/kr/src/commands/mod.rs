@@ -10,6 +10,7 @@ pub mod pool;
 pub mod queue;
 pub mod rejudge;
 pub mod remote;
+pub mod report;
 pub mod run;
 pub mod simulate;
 pub mod skill;

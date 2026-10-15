@@ -1,0 +1,30 @@
+---
+source: crates/kr/tests/report.rs
+expression: out
+---
+Krill · 2026-10-14 09:40 → 2026-10-14 10:55 UTC: 13 runs · 53m wall, 27% queued · 2 rework rounds · 0 flaky tests · 0 of 0 reconciled decisions held
+
+Time (wall is per run, so parallel runs add up)
+  check  7 runs, 2 failed · 31m wall · 3m queued (11%)
+  run    6 runs, 4 failed · 22m wall · 11m queued (50%)
+  longest: 10:17 check smoke,kit-build,kit-tests +1 · 12m (0s queued) · pass
+  longest: 10:05 run default lane · 8m (5m queued) · pass
+  longest: 09:46 check module-watchlist · 6m (0s queued) · fail
+
+Rework: 2 rounds (runs of an item after it failed or was unverified)
+  catalog-storage: 3 runs, 2 failed, last pass
+
+Flaky: 0 tests
+
+Agent usage (inferred from events: no invocation log in this range, so commands without events and bad arguments are not counted)
+  commands: check 7, run 6
+  detours:
+    no_result 2
+      10:35 01a139fb-9e0a started without a result: modules, match-correction, ipad-layout
+      10:47 01a13a06-3117 started without a result: ipad-layout, modules, match-correction
+  decisions that did not hold: none
+
+Decision accuracy (from reconciliation events)
+  no decisions in this range
+
+This report is data only. Whether to trust the agent with more is for the owner to set in the agent host (ADR 0012).

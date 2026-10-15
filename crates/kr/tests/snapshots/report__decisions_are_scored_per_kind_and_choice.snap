@@ -1,0 +1,31 @@
+---
+source: crates/kr/tests/report.rs
+expression: out
+---
+Krill · 2026-10-15 09:00 → 2026-10-15 12:00 UTC: 2 runs · 50m wall, 0% queued · 1 rework round · 0 flaky tests · 1 of 2 reconciled decisions held
+
+Time (wall is per run, so parallel runs add up)
+  run    2 runs, 2 failed · 50m wall · 0s queued (0%)
+  longest: 10:10 run · 49m (0s queued) · fail
+  longest: 10:00 run · 1m (0s queued) · fail
+
+Rework: 1 round (runs of an item after it failed or was unverified)
+  modules: 2 runs, 2 failed, last fail
+
+Flaky: 0 tests
+
+Agent usage (inferred from events: no invocation log in this range, so commands without events and bad arguments are not counted)
+  commands: run 2
+  detours:
+    undecided 1
+      10:01 01a14000-0000-7000-8000-000000000001-4: modules T/d()
+  decisions that did not hold:
+    01a14000-0000-7000-8000-000000000001-2 failure_kind modules T/b(): chose flaky, a later run failed
+
+Decision accuracy (from reconciliation events)
+  failure_kind: 1 of 2 reconciled held (50%) · 3 decided · 1 waiting for a later run
+    environment: 0 of 0 reconciled held · 1 decided · 1 waiting for a later run
+    flaky: 0 of 1 reconciled held (0%) · 1 decided · 0 waiting for a later run
+    product: 1 of 1 reconciled held (100%) · 1 decided · 0 waiting for a later run
+
+This report is data only. Whether to trust the agent with more is for the owner to set in the agent host (ADR 0012).

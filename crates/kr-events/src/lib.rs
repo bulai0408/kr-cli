@@ -143,6 +143,12 @@ pub enum EventKind {
     /// choice, later {`run_id`, outcome}, `input_hash`, supported (the outcome agrees
     /// with the choice), rule.
     Reconciliation,
+    /// One kr call, in the invocation log (`<state dir>/invocations/`), not the event
+    /// log (ADR 0016). Fields: command (the subcommand; when parsing failed, the first
+    /// argument not starting with `-`, may be null), args (all but the program name),
+    /// `exit_code`, `duration_ms`, error (the first line of the error, if it failed),
+    /// requester {agent, worktree, `parent_pid`}. `--help` and `--version` are not logged.
+    Invocation,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod compilation_cache;
 mod ctx;
+mod invocations;
 mod output;
 mod slots;
 
@@ -67,19 +68,44 @@ enum Command {
     /// How to use this kr, for the agent that calls it: the usual flow, decision points,
     /// when to ask the owner, the hard rules. With project and personal additions.
     Skill(commands::skill::SkillArgs),
+    /// Report on a batch of runs: queue and run time, rework rounds, flaky tests, which
+    /// commands the agent called and where it went around, and how often its decisions
+    /// held. Data only; it changes nothing.
+    Report(commands::report::ReportArgs),
 }
 
 pub use ctx::{Ctx, Loaded};
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    init_tracing(cli.verbose);
-    slots::watch_children();
-    let ctx = Ctx {
+    let started = std::time::Instant::now();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let mut ctx = Ctx {
         cwd: std::env::current_dir().unwrap_or_default(),
         env: std::env::vars().collect(),
-        json: cli.json,
+        json: false,
     };
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(err) => {
+            // `--help` and `--version` print on stdout; they are not calls worth logging.
+            if err.use_stderr() {
+                invocations::record(
+                    &ctx,
+                    &args,
+                    output::BAD_ARGUMENTS,
+                    started.elapsed(),
+                    Some(err.to_string()),
+                );
+            }
+            err.exit();
+        }
+    };
+    init_tracing(cli.verbose);
+    slots::watch_children();
+    ctx.json = cli.json;
     let result = match cli.command {
         Command::Config => commands::config::run(&ctx),
         Command::Lock(args) => commands::lock::run(&ctx, args),
@@ -95,18 +121,26 @@ fn main() -> ExitCode {
         Command::Decide(args) => commands::decide::run(&ctx, args),
         Command::Deliver(args) => commands::deliver::run(&ctx, args),
         Command::Skill(args) => commands::skill::run(&ctx, args),
+        Command::Report(args) => commands::report::run(&ctx, args),
     };
-    match result {
-        Ok(code) => code,
+    let (code, error) = match result {
+        Ok(code) => (code, None),
         Err(err) => {
             output::report_error(&err, ctx.json);
-            if err.downcast_ref::<output::BadArguments>().is_some() {
+            let code = if err.downcast_ref::<output::BadArguments>().is_some() {
                 ExitCode::from(output::BAD_ARGUMENTS)
             } else {
                 ExitCode::FAILURE
-            }
+            };
+            (code, Some(format!("{err:#}")))
         }
-    }
+    };
+    // ExitCode has no getter: find the number it was made from.
+    let number = (0..=u8::MAX)
+        .find(|n| ExitCode::from(*n) == code)
+        .unwrap_or(1);
+    invocations::record(&ctx, &args, number, started.elapsed(), error);
+    code
 }
 
 fn init_tracing(verbose: u8) {
