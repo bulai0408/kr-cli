@@ -708,6 +708,7 @@ dependencies = [
  "insta",
  "kr-config",
  "kr-exec",
+ "libc",
  "plist",
  "serde",
  "serde_json",

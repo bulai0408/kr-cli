@@ -1,8 +1,11 @@
 //! Decisions of `kr run` that do not touch the machine (ADR 0005): whether a scenario
 //! passed, what the build inputs hash to, and in which order work goes to simulators.
 
+mod failure;
 pub mod rejudge;
 pub mod schedule;
+
+pub use failure::{Case, Category, cases, failure_category, signature};
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

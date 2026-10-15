@@ -27,6 +27,7 @@ const RESERVED_ENV: &[&str] = &[
     "KR_REPLAY",
     "KR_RECORD",
     "KR_APPLICATIONS",
+    "KR_REQUESTER",
 ];
 
 mod project;

@@ -45,6 +45,42 @@ pub enum Pressure {
     Critical,
 }
 
+/// Load and memory pressure now, from the kernel instead of a command: cheap enough to
+/// sample every few seconds while a run lasts (ADR 0010), and not part of what replayed
+/// recordings answer.
+pub fn sample_load() -> Option<(Load, Pressure)> {
+    let mut avg = [0f64; 3];
+    // SAFETY: getloadavg writes at most 3 values into `avg`.
+    if unsafe { libc::getloadavg(avg.as_mut_ptr(), 3) } != 3 {
+        return None;
+    }
+    let mut level: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is NUL-terminated; `level` and `size` describe one c_int.
+    let read = unsafe {
+        libc::sysctlbyname(
+            c"kern.memorystatus_vm_pressure_level".as_ptr(),
+            (&raw mut level).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    let pressure = match (read, level) {
+        (0, 4) => Pressure::Critical,
+        (0, 2) => Pressure::Warn,
+        _ => Pressure::Normal,
+    };
+    Some((
+        Load {
+            one: avg[0],
+            five: avg[1],
+            fifteen: avg[2],
+        },
+        pressure,
+    ))
+}
+
 /// One `sysctl` call. Keys a Mac does not have (e.g. performance levels on Intel) are
 /// reported on stderr and skipped.
 pub fn read_hardware(runner: &dyn Runner) -> Result<Hardware> {

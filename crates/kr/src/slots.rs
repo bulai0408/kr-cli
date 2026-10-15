@@ -120,6 +120,25 @@ pub fn give_back(
     Ok(())
 }
 
+/// What holds the machine now (ADR 0010): `build` and `sim` slots held by any project,
+/// and the holder of the old machine-wide lock if the bridge is configured.
+pub fn concurrency(loaded: &Loaded) -> serde_json::Value {
+    let pool = loaded.pool();
+    let held = |res| pool.status(res, 0).map_or(0, |s| s.holders.len());
+    let legacy = &loaded.config.machine.legacy;
+    let legacy_holder = legacy
+        .machine_lock
+        .as_ref()
+        .zip(legacy.queue.as_ref())
+        .and_then(|(lock, queue)| LegacyLock::new(lock, queue).owner())
+        .map(|o| format!("{} (pid {}, since {})", o.task, o.pid, o.started));
+    json!({
+        "build": held(Resource::Build),
+        "sim": held(Resource::Sim),
+        "legacy_holder": legacy_holder,
+    })
+}
+
 /// Takes the old machine-wide lock too, if the bridge is configured (ADR 0009).
 fn machine_lock(
     ctx: &Ctx,

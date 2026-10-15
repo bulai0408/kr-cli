@@ -54,6 +54,15 @@ impl Sample {
     }
 
     fn kr(&self, recordings: &[Recording], args: &[&str]) -> (Option<i32>, String) {
+        self.kr_env(recordings, args, &[])
+    }
+
+    fn kr_env(
+        &self,
+        recordings: &[Recording],
+        args: &[&str],
+        env: &[(&str, &str)],
+    ) -> (Option<i32>, String) {
         let dir = self.home.path().join(format!("replay-{}", rand_suffix()));
         std::fs::create_dir_all(&dir).unwrap();
         let files: Vec<String> = recordings
@@ -74,6 +83,7 @@ impl Sample {
             .env("KR_APPLICATIONS", root().join("tests/fixtures/xcode/apps"))
             .env("KR_RESOURCES__BUILD", "1")
             .env("KR_RESOURCES__SIM", "1")
+            .envs(env.iter().copied())
             .current_dir(self.home.path().join("repo"))
             .args(args)
             .output()
@@ -1017,4 +1027,194 @@ fn a_verdict_recorded_under_another_rule_is_listed_as_changed() {
             "rejudge: 4 items in 1 run; 1 verdict changed",
         ]
     );
+}
+
+const TREE: &str = "3aa0c7f1e5b0d0c4b9a8e7f6d5c4b3a2f1e0d9c8";
+
+/// `git rev-parse HEAD^{tree}` of the sample repo.
+fn tree() -> Recording {
+    Recording {
+        program: "git".into(),
+        args: vec!["rev-parse".into(), "HEAD^{tree}".into()],
+        status: Some(0),
+        stdout: format!("{TREE}\n"),
+        stderr: String::new(),
+        timed_out: false,
+        duration_ms: None,
+    }
+}
+
+fn event<'a>(events: &'a [serde_json::Value], kind: &str, item: &str) -> &'a serde_json::Value {
+    &events
+        .iter()
+        .find(|e| e["type"] == kind && e["fields"]["item"] == item)
+        .unwrap_or_else(|| panic!("no {kind} of {item}"))["fields"]
+}
+
+fn is_hash(v: &serde_json::Value) -> bool {
+    v.as_str()
+        .is_some_and(|h| h.len() == 64 && h.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+#[test]
+fn an_item_end_names_what_it_ran_on_and_keeps_each_test() {
+    let s = Sample::new();
+    let mut recs = recordings("gate-default");
+    recs.push(tree());
+    s.kr(&recs, &["gate"]);
+    let events = s.events();
+    let end = event(&events, "item_end", "launch");
+
+    let identity = &end["identity"];
+    assert!(is_hash(&identity["input_hash"]), "{identity}");
+    assert_eq!(identity["tree"], TREE);
+    assert_eq!(identity["xcode"]["version"], "27.1");
+    assert_eq!(identity["runtime"], "iOS 18.6");
+    assert_eq!(identity["device_type"], "iPhone 16 Pro");
+    assert_eq!(identity["kr_version"], env!("CARGO_PKG_VERSION"));
+    assert!(is_hash(&identity["config_hash"]), "{identity}");
+
+    let cases = end["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 2, "{end}");
+    let flaky = cases
+        .iter()
+        .find(|c| c["id"] == "KrSampleUITests/LaunchUITests/testFlakyOnce()")
+        .unwrap();
+    assert_eq!(flaky["outcome"], "flaky");
+    assert!(flaky["duration_s"].is_f64());
+    assert!(flaky["signature"].is_string(), "{flaky}");
+    assert!(flaky["category"].is_string(), "{flaky}");
+    assert!(
+        end["xcresult"]
+            .as_str()
+            .unwrap()
+            .ends_with("build/kr/results/launch/run.xcresult"),
+        "{end}"
+    );
+
+    let rerun = event(&events, "rerun", "launch");
+    assert_eq!(rerun["attempt"], 2);
+    assert!(
+        rerun["xcresult"]
+            .as_str()
+            .unwrap()
+            .ends_with("build/kr/results/launch/rerun-1.xcresult"),
+        "{rerun}"
+    );
+}
+
+#[test]
+fn a_failed_test_has_a_signature_and_a_category() {
+    let s = Sample::new();
+    let mut recs: Vec<Recording> = recordings("gate-default")
+        .into_iter()
+        .filter(|r| {
+            r.program == "git"
+                || r.program == "sh"
+                || r.args.first().is_some_and(|a| a == "build-for-testing")
+        })
+        .collect();
+    recs.extend(recordings("broken"));
+    s.kr(&recs, &["run", "broken"]);
+    let events = s.events();
+    assert_eq!(
+        event(&events, "item_end", "broken")["cases"],
+        serde_json::json!([{
+            "id": "KrSampleUITests/SettingsUITests/testFailsOnRequest()",
+            "outcome": "failed",
+            "duration_s": event(&events, "item_end", "broken")["cases"][0]["duration_s"],
+            "signature": "failed - asked to fail",
+            "category": "assertion",
+        }])
+    );
+}
+
+#[test]
+fn an_item_start_records_what_else_held_the_machine() {
+    let s = Sample::new();
+    s.kr(&recordings("gate-default"), &["gate"]);
+    let events = s.events();
+    // The run's own lane holds the only sim slot; its build slot is back.
+    assert_eq!(
+        event(&events, "item_start", "launch")["concurrency"],
+        serde_json::json!({ "build": 0, "sim": 1, "legacy_holder": null })
+    );
+}
+
+#[test]
+fn the_run_start_names_the_requester_and_its_previous_run() {
+    let s = Sample::new();
+    let env = [("KR_REQUESTER", "worker-7")];
+    s.kr_env(&recordings("gate-default"), &["gate"], &env);
+    let first = s.run_id();
+    s.kr_env(&recordings("gate-default"), &["gate"], &env);
+    let starts: Vec<serde_json::Value> = s
+        .events()
+        .into_iter()
+        .filter(|e| e["type"] == "run_start")
+        .map(|e| e["fields"].clone())
+        .collect();
+    assert_eq!(starts.len(), 2);
+    assert_eq!(starts[0]["label"], "gate default");
+    assert_eq!(starts[0]["requester"]["agent"], "worker-7");
+    assert!(
+        starts[0]["requester"]["worktree"]
+            .as_str()
+            .unwrap()
+            .ends_with("/repo"),
+        "{}",
+        starts[0]
+    );
+    assert_eq!(starts[0]["previous"], serde_json::Value::Null);
+    assert_eq!(starts[1]["previous"]["run_id"], first.as_str());
+    assert!(
+        starts[1]["previous"]["ended_ms_ago"].is_u64(),
+        "{}",
+        starts[1]
+    );
+}
+
+#[test]
+fn the_machine_load_is_sampled_while_the_run_lasts() {
+    let s = Sample::new();
+    s.kr(&recordings("gate-default"), &["gate"]);
+    let run_id = s.run_id();
+    let samples: Vec<serde_json::Value> = s
+        .events()
+        .into_iter()
+        .filter(|e| e["type"] == "load_sample" && e["run_id"] == run_id.as_str())
+        .collect();
+    assert!(!samples.is_empty());
+    let fields = &samples[0]["fields"];
+    assert!(fields["load"]["one"].is_f64(), "{fields}");
+    assert!(fields["pressure"].is_string(), "{fields}");
+}
+
+#[test]
+fn each_pick_of_the_scheduler_is_recorded_with_its_candidates_and_estimates() {
+    let s = Sample::new();
+    let recs: Vec<Recording> = recordings("gate-default");
+    s.kr(&recs, &["run", "launch", "settings"]);
+    s.kr(&recs, &["run", "launch", "settings"]);
+    let run_id = s.run_id();
+    let events = s.events();
+    let picks: Vec<&serde_json::Value> = events
+        .iter()
+        .filter(|e| e["type"] == "schedule_decision" && e["run_id"] == run_id.as_str())
+        .map(|e| &e["fields"])
+        .collect();
+    assert_eq!(picks.len(), 2, "{picks:?}");
+    assert_eq!(picks[0]["rule"], "longest_first");
+    assert_eq!(picks[0]["kind"], "default");
+    let candidates: Vec<&str> = picks[0]["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["item"].as_str().unwrap())
+        .collect();
+    assert_eq!(candidates.len(), 2);
+    assert_eq!(candidates[0], picks[0]["item"]);
+    // The second run has the first one's durations as estimates.
+    assert!(picks[0]["estimate_ms"].is_u64(), "{}", picks[0]);
+    assert_eq!(picks[1]["candidates"].as_array().unwrap().len(), 1);
 }
