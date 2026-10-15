@@ -790,3 +790,42 @@ fn test_products_still_missing_after_the_rebuild_fail_the_item_with_the_next_ste
     );
     assert!(out.contains("run `kr check`"), "{out}");
 }
+
+#[test]
+fn every_run_ends_with_a_run_end_event_even_when_kr_itself_fails() {
+    // #34: a run that ended with an error left no trace that it did not finish.
+    let s = Sample::new();
+    let (code, _) = s.kr(&recordings("gate-default"), &["gate"]);
+    assert_eq!(code, Some(0));
+    let end = s
+        .events()
+        .into_iter()
+        .rfind(|e| e["type"] == "run_end")
+        .expect("a run_end event");
+    assert_eq!(end["fields"]["ok"], true);
+    assert_eq!(end["fields"]["passed"], 4);
+    assert_eq!(end["fields"]["total"], 4);
+
+    // Without the simulator list kr cannot plan the lanes and stops with an error.
+    let recs: Vec<Recording> = recordings("gate-default")
+        .into_iter()
+        .filter(|r| {
+            !(r.program == "xcrun" && r.args.starts_with(&["simctl".into(), "list".into()]))
+        })
+        .collect();
+    let (code, out) = s.kr(&recs, &["run", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    let end = s
+        .events()
+        .into_iter()
+        .rfind(|e| e["type"] == "run_end")
+        .unwrap();
+    assert_eq!(end["fields"]["ok"], false);
+    assert!(
+        end["fields"]["error"]
+            .as_str()
+            .unwrap()
+            .contains("simctl list"),
+        "{end}"
+    );
+}

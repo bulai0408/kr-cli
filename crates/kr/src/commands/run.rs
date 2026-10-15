@@ -166,8 +166,30 @@ fn execute(
             stop.report(ctx, &label, &[])?;
             Ok(stop.exit_code())
         }
-        (result, _) => result,
+        (Err(e), None) => {
+            run_end(
+                loaded,
+                run_id,
+                &label,
+                &json!({ "ok": false, "error": format!("{e:#}") }),
+            )?;
+            Err(e)
+        }
+        (Ok(code), _) => Ok(code),
     }
+}
+
+/// Every run that is not aborted ends with this event, also when kr itself fails, so a
+/// run that did not finish is visible.
+fn run_end(loaded: &Loaded, run_id: RunId, label: &str, fields: &serde_json::Value) -> Result<()> {
+    let mut fields = fields.clone();
+    fields["label"] = json!(label);
+    loaded.events().append(&Event::now(
+        run_id,
+        loaded.project(),
+        EventKind::RunEnd,
+        fields,
+    ))
 }
 
 /// How a stop signal left the run.
@@ -307,6 +329,12 @@ fn execute_run(
         )?;
     }
     if !built {
+        run_end(
+            loaded,
+            run_id,
+            label,
+            &json!({ "ok": false, "passed": 0, "total": 0, "build_failed": true, "duration_ms": started.elapsed().as_millis() as u64 }),
+        )?;
         report_build_failure(ctx, label, &steps.results)?;
         return Ok(ExitCode::FAILURE);
     }
@@ -381,6 +409,17 @@ fn execute_run(
         return Ok(stop.exit_code());
     }
     let ok = results.iter().all(|r| r.passed);
+    run_end(
+        loaded,
+        run_id,
+        label,
+        &json!({
+            "ok": ok,
+            "passed": results.iter().filter(|r| r.passed).count(),
+            "total": results.len(),
+            "duration_ms": started.elapsed().as_millis() as u64,
+        }),
+    )?;
     report(ctx, label, &steps, &results, ok, started.elapsed(), None)?;
     Ok(if ok {
         ExitCode::SUCCESS

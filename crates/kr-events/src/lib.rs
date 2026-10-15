@@ -83,6 +83,10 @@ pub enum EventKind {
     SimLeased,
     /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.
     SimReleased,
+    /// A run (`kr run` / `kr gate`) ended without being aborted, also when kr itself
+    /// failed. Fields: label, ok, passed, total, `duration_ms`, `build_failed` (if the
+    /// build failed), error (if kr failed).
+    RunEnd,
     /// A run stopped on SIGINT, SIGTERM or SIGHUP. Fields: signal ("SIGTERM"),
     /// interrupted (items stopped midway), `not_started`, finished.
     RunAborted,
