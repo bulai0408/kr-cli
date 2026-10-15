@@ -10,7 +10,7 @@ Commands:
   config    Show the merged configuration and where each layer came from
   lock      Wait for a slot of a resource, run a command, then give the slot back
   queue     Show who holds and who waits for each resource
-  doctor    Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities
+  doctor    Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities, and with --device what a test run on that device needs
   check     Pre-check before the simulator queue: generate, compile with the app's settings, confirm test filters, check data isolation. Holds only a `build` slot
   run       Build once, then run scenarios and suites on pool simulators and verify the results (test counts, real exit codes, one rerun of each failure)
   gate      Run a gate from .kr.toml: its suites and scenarios, like `kr run`

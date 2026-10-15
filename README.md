@@ -119,6 +119,30 @@ kr gate --remote mini
 - 运行途中失联（ssh 以 255 结束、没拿到结果）：每项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。本机收到 SIGINT / SIGTERM 时 ssh 断开，远程 kr 收到 SIGHUP 后自己停下、归还资源。
 - 签名：SSH 会话拿不到登录钥匙串里的签名身份。在仓库根目录为真机或 macOS 构建 App 的项（例如 `destination = "macos"` 的测试套件、根目录的 `build` 套件）需要开发者证书，远程运行时提前拒绝；在 SSH 会话里直接运行 `kr run` / `kr gate` / `kr check` 也一样。模拟器构建和单独构建的包（`dir`）不受影响；`[project].build_settings` 里写了 `CODE_SIGNING_ALLOWED = "NO"` 的项目也不受影响。
 
+## 在真机上运行
+
+模拟器测不准的（硬件、系统行为）放到一台已配对的 iPhone 或 iPad 上跑：
+
+```toml
+# .kr.toml
+[signing]
+team = "K4AXH95DCF"       # 真机构建应签的团队；kr 只回读核对，不设定
+```
+
+```sh
+kr doctor --device "蔡煜恒的 iPad Mini"   # 只检查：配对、开发者模式、能否连上、是否锁屏、Xcode 是否认识它的系统
+kr check --device "蔡煜恒的 iPad Mini"    # 构建真机测试产物并回读签名
+kr run --device "蔡煜恒的 iPad Mini" launch
+```
+
+- 设备按名字、UDID 或 CoreDevice ID 找（`xcrun devicectl list devices` 里的）。kr 只用这一台，不抹掉、不重启、不管理设备。
+- 开始前检查，缺什么就说在设备上怎么做，以退出码 1 结束：没配对（连线、解锁、点「信任」）、开发者模式没开（设置 > 隐私与安全性 > 开发者模式，重启后点「启用」）、连不上、锁屏、设备系统的主版本比 Xcode 的 SDK 新。只新一个小版本时给警告，照常运行。
+- 「设置 > 开发者 > 启用 UI 自动化」devicectl 读不到，kr 不能事先检查；UI 测试失败且出现 `kAXError` 时，失败项下会提示去打开它。
+- 构建一次（`-destination generic/platform=iOS -allowProvisioningUpdates`），再依次在设备上跑各项。每台设备是容量为 1 的资源，同一台设备上同时只跑一个运行，后来的排队等待（`kr queue` 还不列出设备）。
+- 安装前回读签名（`codesign`）：签名团队必须等于 `[signing] team`（没写时提示补上）；`[isolation]` 里配置的 entitlement 必须一致；App 带 iCloud entitlement 时，`com.apple.developer.icloud-container-environment` 必须写明，且在允许的值里（`[isolation.entitlements]` 没写时只允许 `Development`）。不对就停下，说明是哪一项、应该是什么。
+- 运行途中设备掉线或锁屏（每项开始前和失败后用 `devicectl device info lockState` 确认）：这一项和后面没跑的项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。事件和模拟器运行一样写 #29 的字段，身份里是设备的型号和系统。
+- 不支持：真机截图、性能分析、多台设备并行、CloudKit Production、注入真实服务凭证。`--device` 不能和 `--remote` 一起用。
+
 ## 状态
 
 第一阶段开发中。路线见 [docs/spec.md](docs/spec.md)，每个设计决定的理由见 [docs/adr/](docs/adr/)，参考过的开源项目与调研见 [docs/research/](docs/research/)。术语见 [CONTEXT.md](CONTEXT.md)。

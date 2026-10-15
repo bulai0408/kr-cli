@@ -25,3 +25,10 @@ cargo run -p kr-exec --example record -- tests/fixtures/simctl/list-devices.json
   - `probe-localhost.json`、`run-localhost.json`：真实 `ssh localhost`。主机一侧的 kr 克隆、拉取，跑 Krill `source-checks` 和 `kit-build`（真 Xcode，按全机锁排队）。`-tt` 下行尾是 `\r\n`，结果 JSON 后面有 OpenSSH 自己的 `Connection to localhost closed.`。
   - `run-localhost-lost.json`：真实失联：主机一侧 xcodebuild 已经开始时结束了这次会话的 `sshd-session` 进程，ssh 以 255 结束。主机上的 kr 收到 SIGHUP，写了 `run_aborted` 并归还了 `build` 槽位。之后主机上的命令改为在登录 shell 里启动 kr，这份素材只更新了命令行，输出是原样的。
   - `run-work-build-failed.json`：局域网另一台 Mac（`work`）上第一次远程运行的真实输出：SSH 命令的 PATH 里没有 Homebrew 的 xcodegen，`generate` 失败，什么都没跑。这份输出暴露了两个问题：本机把它显示成 `0/0 PASS`，以及主机上的 kr 没有用登录 shell 的 PATH。命令行换成了 `run-localhost.json` 的，`/Users/kami` 换成 `~`，OpenSSH 断开提示里的局域网地址换成 `work`。
+- `devicectl/`、`xcrun/sdk-version-iphoneos.json`：2026-10-15 在 owner 的 iMac 上对「蔡煜恒的 iPad Mini」（iPad mini (A17 Pro)，iOS 27.2）录制，`kr doctor --device` / `kr run --device` 的回放素材（`crates/kr/tests/device.rs`）。UDID 换成 `00008130-00AA00AA00AA001C`，CoreDevice ID 换成 `11111111-2222-4333-8444-555555555555`，序列号和 ECID 清空，设备列表只留这台 iPad 和一台池模拟器。
+  - `list-devices-as-recorded.json`：USB 连着、已解锁时的 `list devices`，连接状态是 `disconnected`（`list devices` 不主动连接）。`list-devices-connected.json`：紧接着 `device info details` 之后录的，显示 `connected`。
+  - `list-devices-missing-prerequisites.json`：在上一份上改出来的：开发者模式关、系统 28.0。
+  - `lock-state-unlocked.json` 是真实输出；`lock-state-locked.json` 按同一格式把 `passcodeRequired` 改成 `true`。
+  - `lock-state-lost.json`：设备连不上时的失败，按 devicectl 的 JSON 错误格式构造（`error.userInfo.NSLocalizedDescription`、`info.outcome = failed`），等真机拔线实测后换成真实输出。
+- `device/runner-not-installed/`：2026-10-15 真实的 `kr run --device "蔡煜恒的 iPad Mini" launch`（KrSample 的临时副本，去掉了 App ID 不支持的 iCloud entitlement，签名团队 K4AXH95DCF）。构建和签名回读通过；UI 测试 runner 装不上设备（`0xe8008012`，自动签名的描述文件里没有这台 iPad），枚举 JSON 的 `errors` 写明原因。改动：`list devices` 换成上面裁剪过的 `devicectl/list-devices-connected.json`；构建命令的 `-destination` 从录制时的 `generic/platform=iOS` 改成现在 kr 用的 `platform=iOS,id=<UDID>`；UDID、CoreDevice ID、证书持有人姓名、临时目录和主目录换掉。签名错误和掉线的测试在这份素材上改 codesign 或 lockState 的输出。
+- `xcode/products/KrSample_iphoneos27.1-arm64.xctestrun`、`Debug-iphoneos/KrSample.app/Info.plist`：同一次真机构建的产物。

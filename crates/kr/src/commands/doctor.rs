@@ -1,16 +1,26 @@
 use std::process::ExitCode;
 
 use anyhow::Result;
+use clap::Args;
 use kr_exec::Command;
 use kr_machine::{Profile, Severity, SimDevices, diagnose, find_xcode};
 use kr_resource::Resource;
 use serde_json::{Value, json};
 
+use super::device;
 use crate::Ctx;
 
 const GB: f64 = (1u64 << 30) as f64;
 
-pub fn run(ctx: &Ctx) -> Result<ExitCode> {
+#[derive(Debug, Args)]
+pub struct DoctorArgs {
+    /// Also check a paired iPhone or iPad (its name, UDID or CoreDevice identifier):
+    /// paired, connected, Developer Mode, and whether this Xcode knows its iOS.
+    #[arg(long, value_name = "NAME")]
+    device: Option<String>,
+}
+
+pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let runner = ctx.runner()?;
     let profile = kr_machine::detect(
@@ -30,7 +40,24 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
         None => None,
     };
     let per_core = loaded.config.machine.load.per_core;
-    let problems = diagnose(&profile, project, devices.as_ref(), per_core);
+    let mut problems = diagnose(&profile, project, devices.as_ref(), per_core);
+    let device = args
+        .device
+        .as_deref()
+        .map(|name| device::inspect(ctx, &loaded, runner.as_ref(), name))
+        .transpose()?;
+    if let Some(d) = &device {
+        problems.extend(d.missing.iter().map(|m| kr_machine::Problem {
+            severity: if m.warning {
+                Severity::Warning
+            } else {
+                Severity::Error
+            },
+            code: m.code.to_owned(),
+            message: m.message.clone(),
+            fix: m.next.clone(),
+        }));
+    }
     let capacity: Vec<(String, Value)> = Resource::ALL
         .iter()
         .map(|&res| {
@@ -47,7 +74,7 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
     let warnings = problems.len() - errors;
 
     if ctx.json {
-        let out = json!({
+        let mut out = json!({
             "ok": errors == 0,
             "problems": problems,
             "machine": {
@@ -71,6 +98,9 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
             "runtimes": profile.runtimes.iter().filter(|r| r.is_available).map(|r| &r.name).collect::<Vec<_>>(),
             "capacity": capacity.iter().cloned().collect::<serde_json::Map<_, _>>(),
         });
+        if let Some(d) = &device {
+            out["device"] = d.json()["device"].clone();
+        }
         println!("{}", serde_json::to_string_pretty(&out)?);
     } else {
         print_human(
@@ -81,6 +111,10 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
             selected.as_ref(),
             &loaded,
         );
+        if let Some(d) = &device {
+            println!("device    {}", d.line());
+            println!("          {}", device::Inspected::UI_AUTOMATION_NOTE);
+        }
     }
     Ok(if errors == 0 {
         ExitCode::SUCCESS

@@ -97,6 +97,12 @@ pub fn judge(enumeration: &Enumeration, first: &Attempt, reruns: &[Option<Attemp
     if first.timed_out {
         v.reasons.push("timed out".to_owned());
     }
+    if let Some(error) = enumeration.errors.first() {
+        // e.g. the test runner could not be installed: nothing was listed or run.
+        v.reasons
+            .push(format!("xcodebuild could not list the tests: {error}"));
+        return v;
+    }
     if enumeration.enabled.is_empty() {
         v.reasons.push("the filters select 0 tests".to_owned());
     }

@@ -22,6 +22,8 @@ pub struct ProjectConfig {
     pub gates: BTreeMap<String, Gate>,
     #[serde(default)]
     pub isolation: Isolation,
+    #[serde(default)]
+    pub signing: Signing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -193,6 +195,15 @@ pub struct Isolation {
     /// Allowed values per entitlement, e.g.
     /// "com.apple.developer.icloud-container-environment" = ["Development"].
     pub entitlements: BTreeMap<String, Vec<String>>,
+}
+
+/// What a build signed for a real device must be signed with (signing readback before
+/// it is installed).
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Signing {
+    /// The Apple Developer Team ID the app must be signed by, e.g. "K4AXH95DCF".
+    pub team: Option<String>,
 }
 
 /// Default hard timeout of a scenario or suite.

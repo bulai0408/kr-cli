@@ -56,6 +56,24 @@ fn zero_selected_tests_is_a_failure_even_with_exit_zero() {
 }
 
 #[test]
+fn an_enumeration_error_is_the_reason_not_the_filters() {
+    // Real, on an iPad whose profile did not include it (2026-10-15).
+    let error = "KrSampleUITests-Runner encountered an error. (Underlying Error: Failed to install or launch the test runner. (Underlying Error: Failed to install embedded profile for dev.kr.KrSampleUITests.xctrunner : 0xe8008012 (This provisioning profile cannot be installed on this device.)))";
+    // The failed enumeration still lists the test target.
+    let e = Enumeration {
+        enabled: vec!["KrSampleUITests".to_owned()],
+        errors: vec![error.to_owned()],
+        ..Enumeration::default()
+    };
+    let v = judge(&e, &attempt(0, vec![]), &[]);
+    assert!(!v.passed());
+    assert_eq!(
+        v.reasons,
+        [format!("xcodebuild could not list the tests: {error}")]
+    );
+}
+
+#[test]
 fn a_swallowed_exit_code_does_not_hide_failed_tests() {
     // xcodebuild reported success, the result bundle has a failure.
     let v = judge(

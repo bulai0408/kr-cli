@@ -32,8 +32,9 @@ enum Command {
     Lock(commands::lock::LockArgs),
     /// Show who holds and who waits for each resource.
     Queue(commands::queue::QueueArgs),
-    /// Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities.
-    Doctor,
+    /// Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities,
+    /// and with --device what a test run on that device needs.
+    Doctor(commands::doctor::DoctorArgs),
     /// Pre-check before the simulator queue: generate, compile with the app's settings,
     /// confirm test filters, check data isolation. Holds only a `build` slot.
     Check(commands::check::CheckArgs),
@@ -76,7 +77,7 @@ fn main() -> ExitCode {
         Command::Config => commands::config::run(&ctx),
         Command::Lock(args) => commands::lock::run(&ctx, args),
         Command::Queue(args) => commands::queue::run(&ctx, args),
-        Command::Doctor => commands::doctor::run(&ctx),
+        Command::Doctor(args) => commands::doctor::run(&ctx, args),
         Command::Plan(args) => commands::plan::run(&ctx, args),
         Command::Simulate(args) => commands::simulate::run(&ctx, args),
         Command::Rejudge(args) => commands::rejudge::run(&ctx, args),

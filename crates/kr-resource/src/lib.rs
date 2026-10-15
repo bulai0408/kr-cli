@@ -41,6 +41,9 @@ pub enum Resource {
     Sim,
     /// Light single-module tests.
     Light,
+    /// A real device, capacity 1. Each device has a pool of its own ([`Pool::device`]),
+    /// so it is not in [`Resource::ALL`].
+    Device,
 }
 
 impl Resource {
@@ -51,6 +54,7 @@ impl Resource {
             Resource::Build => "build",
             Resource::Sim => "sim",
             Resource::Light => "light",
+            Resource::Device => "device",
         }
     }
 }
@@ -98,6 +102,21 @@ pub struct Pool {
 impl Pool {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
+    }
+
+    /// The pool of one real device, by its UDID: `<root>/devices/<udid>/device/…`.
+    pub fn device(&self, udid: &str) -> Pool {
+        let name: String = udid
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        Pool::new(self.root.join("devices").join(name))
     }
 
     fn dir(&self, res: Resource) -> PathBuf {

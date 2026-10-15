@@ -36,10 +36,55 @@ pub fn take(
     res: Resource,
     task: &str,
 ) -> Result<Taken> {
-    let pool = loaded.pool();
+    let capacity = loaded.capacity(res, runner)?;
+    take_in(
+        ctx,
+        loaded,
+        runner,
+        run_id,
+        &loaded.pool(),
+        res,
+        capacity,
+        task,
+    )
+}
+
+/// Queues for the one slot of the real device `udid`, like [`take`]: a test run on a
+/// device is heavy work, so it also waits for the load and takes the old machine lock.
+pub fn take_device(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    runner: &dyn Runner,
+    run_id: RunId,
+    udid: &str,
+    task: &str,
+) -> Result<Taken> {
+    let pool = loaded.pool().device(udid);
+    take_in(
+        ctx,
+        loaded,
+        runner,
+        run_id,
+        &pool,
+        Resource::Device,
+        1,
+        task,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn take_in(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    runner: &dyn Runner,
+    run_id: RunId,
+    pool: &kr_resource::Pool,
+    res: Resource,
+    capacity: u32,
+    task: &str,
+) -> Result<Taken> {
     let log = loaded.events();
     let project = loaded.project();
-    let capacity = loaded.capacity(res, runner)?;
     let holder = Holder {
         project: project.map(str::to_owned),
         task: task.to_owned(),
@@ -66,7 +111,7 @@ pub fn take(
         }
         if !announced {
             announced = true;
-            announce_wait(ctx, loaded, res, capacity)?;
+            announce_wait(ctx, loaded, pool, res, capacity)?;
         }
         std::thread::sleep(POLL);
     };
@@ -77,7 +122,7 @@ pub fn take(
         EventKind::SlotAcquired,
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
-    let heavy = matches!(res, Resource::Build | Resource::Sim);
+    let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
     // Wait (for critical memory pressure, or high load if `[load] block`) before taking
     // the machine-wide lock, so a busy machine does not also block other projects' queue.
     if heavy {
@@ -250,8 +295,13 @@ fn wait_for_load(
     Ok(())
 }
 
-fn announce_wait(ctx: &Ctx, loaded: &Loaded, res: Resource, capacity: u32) -> Result<()> {
-    let pool = loaded.pool();
+fn announce_wait(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    pool: &kr_resource::Pool,
+    res: Resource,
+    capacity: u32,
+) -> Result<()> {
     let status = pool.status(res, capacity)?;
     let me = std::process::id();
     let position = status

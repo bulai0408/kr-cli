@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/device.rs
+expression: device_lines(&text)
+---
+doctor: OK with 2 warning(s)
+  warning device_os_newer: 蔡煜恒的 iPad Mini runs iOS 27.2, newer than the iOS 27.1 SDK of Xcode 27.1
+    fix: if installing or running tests fails, install an Xcode with the iOS 27.2 SDK and set [project].xcode in .kr.toml to it
+device    蔡煜恒的 iPad Mini · iPad mini (A17 Pro) · iOS 27.2 · paired (wired) · reachable, unlocked · Developer Mode on

@@ -27,6 +27,11 @@ pub struct CheckArgs {
     /// Check the scenarios and suites of this gate.
     #[arg(long, conflicts_with = "targets")]
     gate: Option<String>,
+
+    /// Check for a run on this real device (name, UDID or CoreDevice identifier): its
+    /// prerequisites first, then build for iOS devices and read the signing back.
+    #[arg(long, value_name = "NAME")]
+    device: Option<String>,
 }
 
 /// Where kr builds, relative to the directory xcodebuild runs in.
@@ -35,9 +40,15 @@ const GENERATE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// What to check.
+#[derive(Clone)]
 pub struct Selection {
     pub scenarios: Vec<String>,
     pub suites: Vec<String>,
+    /// Scenarios and simulator suites run on a real device: build them for iOS devices.
+    pub on_device: bool,
+    /// The UDID of that device once it is found: builds go to it, so automatic signing
+    /// makes a profile that includes it.
+    pub device: Option<String>,
 }
 
 pub fn select(
@@ -49,6 +60,8 @@ pub fn select(
         let mut sel = Selection {
             scenarios: Vec::new(),
             suites: Vec::new(),
+            on_device: false,
+            device: None,
         };
         for t in targets {
             if project.scenarios.contains_key(t) {
@@ -75,6 +88,8 @@ pub fn select(
         Some(g) => Ok(Selection {
             scenarios: project.gate_scenarios(g),
             suites: g.suites.clone(),
+            on_device: false,
+            device: None,
         }),
         None if gate.is_some() => {
             let known: Vec<&str> = project.gates.keys().map(String::as_str).collect();
@@ -86,6 +101,8 @@ pub fn select(
         None => Ok(Selection {
             scenarios: project.scenarios.keys().cloned().collect(),
             suites: project.suites.keys().cloned().collect(),
+            on_device: false,
+            device: None,
         }),
     }
 }
@@ -110,6 +127,17 @@ pub struct Filter {
     /// Key path in .kr.toml, e.g. ["scenarios", "ratings", "only"], and the index.
     pub path: Vec<String>,
     pub index: usize,
+}
+
+/// Where builds for real iOS devices go before the device is known.
+pub const DEVICE_DESTINATION: &str = "generic/platform=iOS";
+
+/// Where builds for the selected real device go.
+fn device_destination(sel: &Selection) -> String {
+    sel.device.as_deref().map_or_else(
+        || DEVICE_DESTINATION.to_owned(),
+        |udid| format!("platform=iOS,id={udid}"),
+    )
 }
 
 /// "iOS 18.6" → the generic simulator destination of its platform.
@@ -167,12 +195,17 @@ pub fn build_jobs(project: &ProjectConfig, sel: &Selection) -> Result<Vec<BuildJ
             bail!("scenarios need [project].scheme in .kr.toml");
         };
         let runtime = runtime_of(project, scenario.device.as_deref()).unwrap_or("iOS");
+        let destination = if sel.on_device {
+            device_destination(sel)
+        } else {
+            simulator_destination(runtime)
+        };
         add(
             BuildJob {
                 dir: PathBuf::new(),
                 action: "build-for-testing",
                 scheme: scheme.clone(),
-                destination: simulator_destination(runtime),
+                destination,
                 filters: filters("scenarios", name, &scenario.only, &scenario.skip),
                 scenarios: true,
             },
@@ -216,6 +249,7 @@ pub fn build_jobs(project: &ProjectConfig, sel: &Selection) -> Result<Vec<BuildJ
                 ..
             } => {
                 let destination = match destination {
+                    Destination::Simulator if sel.on_device => device_destination(sel),
                     Destination::Simulator => simulator_destination(
                         runtime_of(project, device.as_deref()).unwrap_or("iOS"),
                     ),
@@ -255,7 +289,23 @@ impl BuildJob {
                 .configuration(info.configuration.as_deref())
                 .settings(info.build_settings.clone());
         }
+        if self.for_device() {
+            // Automatic signing may need a profile that includes the device.
+            xb = xb.args(["-allowProvisioningUpdates"]);
+        }
         xb.command().current_dir(root.join(&self.dir))
+    }
+
+    /// Test products for real iOS devices, signed with a developer certificate.
+    pub fn for_device(&self) -> bool {
+        self.action == "build-for-testing"
+            && (self.destination == DEVICE_DESTINATION
+                || self.destination.starts_with("platform=iOS,id="))
+    }
+
+    /// The `.xctestrun` this job wrote.
+    pub fn xctestrun(&self, root: &Path) -> Result<PathBuf> {
+        XcTestRun::find_for(&self.products(root), &self.scheme, self.for_device())
     }
 
     /// Records the input hash of the last successful build of this job.
@@ -369,10 +419,16 @@ fn file_name(step: &str) -> String {
 pub fn run(ctx: &Ctx, args: CheckArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
-    let sel = select(project, &args.targets, args.gate.as_deref())?;
+    let mut sel = select(project, &args.targets, args.gate.as_deref())?;
+    sel.on_device = args.device.is_some();
     super::remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
-    let jobs = build_jobs(project, &sel)?;
     let runner = ctx.runner()?;
+    if let Some(name) = &args.device {
+        let inspected = super::device::inspect(ctx, &loaded, runner.as_ref(), name)?;
+        inspected.require()?;
+        sel.device = inspected.device.udid;
+    }
+    let jobs = build_jobs(project, &sel)?;
     let run_id = RunId::new();
     let developer_dir = loaded.developer_dir(ctx)?;
     let task = format!("check {}", describe(&sel));
@@ -525,13 +581,37 @@ pub fn verify(
         return Ok(false);
     }
     let iso = &project.isolation;
-    if iso.bundle_ids.is_empty() && iso.entitlements.is_empty() {
+    if !(iso.bundle_ids.is_empty() && iso.entitlements.is_empty()) {
+        let started = Instant::now();
+        let mut problems = Vec::new();
+        for job in jobs.iter().filter(|j| j.scenarios) {
+            problems.extend(check_isolation(
+                project,
+                job,
+                root,
+                runner,
+                developer_dir,
+                project_file,
+            )?);
+        }
+        if !steps.finish(
+            "isolation",
+            started,
+            problems.is_empty(),
+            first_three(&problems),
+            None,
+        )? {
+            return Ok(false);
+        }
+    }
+    if !jobs.iter().any(BuildJob::for_device) {
         return Ok(true);
     }
+    // Before anything is installed on a device: what the build is signed with.
     let started = Instant::now();
     let mut problems = Vec::new();
-    for job in jobs.iter().filter(|j| j.scenarios) {
-        problems.extend(check_isolation(
+    for job in jobs.iter().filter(|j| j.for_device()) {
+        problems.extend(check_signing(
             project,
             job,
             root,
@@ -541,12 +621,132 @@ pub fn verify(
         )?);
     }
     steps.finish(
-        "isolation",
+        "signing",
         started,
         problems.is_empty(),
         first_three(&problems),
         None,
     )
+}
+
+const ICLOUD_ENVIRONMENT: &str = "com.apple.developer.icloud-container-environment";
+
+/// Reads back what a device build's apps are signed with (pitfalls P4): the team
+/// ([signing].team), the entitlements ([isolation].entitlements) and, for an app with
+/// iCloud entitlements, the iCloud container environment (Development unless
+/// [isolation].entitlements allows otherwise).
+fn check_signing(
+    project: &ProjectConfig,
+    job: &BuildJob,
+    root: &Path,
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    project_file: Option<&Path>,
+) -> Result<Vec<String>> {
+    let products = job.products(root);
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
+    let mut apps: Vec<&Path> = run
+        .targets
+        .iter()
+        .filter_map(|t| t.app.as_deref())
+        .collect();
+    apps.sort();
+    apps.dedup();
+    let expected = project.signing.team.as_deref();
+    let at_team = at(project_file, &["signing".into(), "team".into()], None);
+    let mut problems = Vec::new();
+    for app in apps {
+        let name = app.display();
+        let run_codesign =
+            |cmd: Command| runner.run(&with_xcode(cmd, developer_dir).current_dir(&products));
+        let details = run_codesign(kr_xcode::signature_command(app))?;
+        let team = kr_xcode::team_identifier(&format!("{}{}", details.stdout, details.stderr));
+        match (team.as_deref(), expected) {
+            (None, _) => problems.push(format!(
+                "{name} is not signed by a team (ad hoc or unsigned), so a device will not install it; set DEVELOPMENT_TEAM{} and automatic signing for the app, then run again",
+                expected.map(|t| format!(" = {t}")).unwrap_or_default()
+            )),
+            (Some(team), None) => problems.push(format!(
+                "{name} is signed by team {team}, but .kr.toml does not say which team to expect; if {team} is right, add [signing] team = \"{team}\"{}",
+                project_file.map(|f| format!(" to {}", f.display())).unwrap_or_default()
+            )),
+            (Some(team), Some(want)) if team != want => problems.push(format!(
+                "{name} is signed by team {team}, not {want}{at_team}; set DEVELOPMENT_TEAM = {want} for the app (or in [project].build_settings), then run again"
+            )),
+            _ => {}
+        }
+        let out = run_codesign(kr_xcode::signed_entitlements_command(app))?;
+        if !out.success() {
+            problems.push(format!(
+                "cannot read the entitlements {name} is signed with: {}",
+                out.stderr.trim()
+            ));
+            continue;
+        }
+        let entitlements = kr_xcode::parse_signed_entitlements(&out.stdout)?;
+        for (key, allowed) in project
+            .isolation
+            .entitlements
+            .iter()
+            .filter(|(k, _)| *k != ICLOUD_ENVIRONMENT)
+        {
+            let Some(value) = entitlements.get(key) else {
+                continue;
+            };
+            for v in plist_strings(value).iter().filter(|v| !allowed.contains(v)) {
+                problems.push(format!(
+                    "{name} is signed with entitlement {key} = `{v}`, allowed: {allowed:?}{}",
+                    at(
+                        project_file,
+                        &["isolation".into(), "entitlements".into(), key.clone()],
+                        None
+                    )
+                ));
+            }
+        }
+        let uses_icloud = entitlements
+            .keys()
+            .any(|k| k.starts_with("com.apple.developer.icloud-") && k != ICLOUD_ENVIRONMENT);
+        if !uses_icloud {
+            continue;
+        }
+        let allowed = project
+            .isolation
+            .entitlements
+            .get(ICLOUD_ENVIRONMENT)
+            .cloned()
+            .unwrap_or_else(|| vec!["Development".to_owned()]);
+        let at_env = at(
+            project_file,
+            &[
+                "isolation".into(),
+                "entitlements".into(),
+                ICLOUD_ENVIRONMENT.into(),
+            ],
+            None,
+        );
+        match entitlements.get(ICLOUD_ENVIRONMENT).and_then(|v| v.as_string()) {
+            None => problems.push(format!(
+                "{name} has iCloud entitlements but is signed without {ICLOUD_ENVIRONMENT}, so kr cannot tell which iCloud environment it uses; add it with `Development` to the app's entitlements file, then run again"
+            )),
+            Some(env) if !allowed.iter().any(|a| a == env) => problems.push(format!(
+                "{name} is signed for the iCloud {env} environment; tests may only use {allowed:?}{at_env}; set {ICLOUD_ENVIRONMENT} to `Development` in the app's entitlements file, then run again"
+            )),
+            Some(_) => {}
+        }
+    }
+    Ok(problems)
+}
+
+fn plist_strings(value: &plist::Value) -> Vec<String> {
+    match value {
+        plist::Value::String(s) => vec![s.clone()],
+        plist::Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_string().map(str::to_owned))
+            .collect(),
+        other => vec![format!("{other:?}")],
+    }
 }
 
 /// Input hashes of the jobs: files git knows about in the job's directory (tracked and
@@ -606,7 +806,7 @@ pub fn why_stale(job: &BuildJob, root: &Path, hash: Option<&str>) -> Option<&'st
     if stored != hash {
         return Some("inputs changed since the last build");
     }
-    if job.action != "build" && XcTestRun::find(&job.products(root), &job.scheme).is_err() {
+    if job.action != "build" && job.xctestrun(root).is_err() {
         return Some("test products are missing");
     }
     None
@@ -661,7 +861,7 @@ fn check_filters(
     project_file: Option<&Path>,
 ) -> Result<Vec<String>> {
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
     let mut symbols = TestSymbols::default();
     let mut problems = Vec::new();
     let wanted: std::collections::BTreeSet<&str> = job
@@ -721,7 +921,7 @@ fn check_isolation(
 ) -> Result<Vec<String>> {
     let iso = &project.isolation;
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
     let mut apps: Vec<&Path> = run
         .targets
         .iter()
@@ -740,7 +940,8 @@ fn check_isolation(
                 at(project_file, &["isolation".into(), "bundle_ids".into()], None)
             ));
         }
-        if iso.entitlements.is_empty() {
+        // A device build's entitlements are in its signature: the signing step reads them.
+        if iso.entitlements.is_empty() || job.for_device() {
             continue;
         }
         let exe = kr_xcode::executable(&products.join(app))?;
