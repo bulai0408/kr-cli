@@ -266,8 +266,10 @@ fn with_cache(config: String) -> String {
 }
 
 /// The settings kr adds to a build when the cache is on (ADR 0013), with the cache at
-/// `cas`.
-fn cache_settings(cas: &Path) -> Vec<String> {
+/// `cas`, for the repo in `s`.
+fn cache_settings(s: &Sample, cas: &Path) -> Vec<String> {
+    // The repo root kr finds is the canonical path (/private/var/… on macOS).
+    let root = s.home.path().canonicalize().unwrap().join("repo");
     vec![
         "COMPILATION_CACHE_ENABLE_CACHING=YES".to_owned(),
         format!("COMPILATION_CACHE_CAS_PATH={}", cas.display()),
@@ -276,6 +278,8 @@ fn cache_settings(cas: &Path) -> Vec<String> {
         "SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
         "CLANG_ENABLE_PREFIX_MAPPING=YES".to_owned(),
         "CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
+        format!("SWIFT_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
+        format!("CLANG_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
     ]
 }
 
@@ -297,7 +301,7 @@ fn with_the_cache_on_every_build_of_the_project_shares_one_cache() {
     let cas = s.state().join("cache/KrSample/compilation");
     let (code, out) = s.check_edited("pass", &[], |mut r| {
         if r.program == "xcodebuild" {
-            r.args.extend(cache_settings(&cas));
+            r.args.extend(cache_settings(&s, &cas));
         }
         vec![r]
     });
@@ -339,11 +343,11 @@ fn failing_with_the_shared_cache(
             return vec![r];
         }
         let mut first = r.clone();
-        first.args.extend(cache_settings(&shared));
+        first.args.extend(cache_settings(s, &shared));
         first.status = Some(65);
         first.stdout = failure.to_owned();
         let mut retry = r;
-        retry.args.extend(cache_settings(&clean));
+        retry.args.extend(cache_settings(s, &clean));
         if let Some(out) = second {
             retry.status = Some(65);
             retry.stdout = out.to_owned();
@@ -411,7 +415,7 @@ fn a_compile_error_with_the_cache_on_is_not_built_again() {
     let shared = s.state().join("cache/KrSample/compilation");
     let (code, out) = s.check_edited("compile-error", &[], |mut r| {
         if r.program == "xcodebuild" {
-            r.args.extend(cache_settings(&shared));
+            r.args.extend(cache_settings(&s, &shared));
         }
         vec![r]
     });

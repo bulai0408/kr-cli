@@ -516,7 +516,7 @@ pub fn build(
         let built = match &cache {
             Some(dir) => {
                 let clean = root.join("build/kr/CleanCompilationCache");
-                compilation_cache::build(runner, steps, &step, &cmd, dir, &clean)?
+                compilation_cache::build(runner, steps, &step, &cmd, root, dir, &clean)?
             }
             None => steps.run_logged_with(runner, &step, &cmd, |_| compilation_cache::off())?,
         };

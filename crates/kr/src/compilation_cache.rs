@@ -24,8 +24,10 @@ pub fn dir(project: &ProjectConfig, loaded: &Loaded) -> Option<PathBuf> {
 }
 
 /// Build settings that compile through the cache at `dir`. Prefix mapping makes the
-/// cache keys independent of where the worktree is.
-fn settings(dir: &Path) -> Vec<String> {
+/// cache keys independent of where the worktree `root` is. The project mapping does not
+/// cover the directory a package target compiles in (the one of the `.xcodeproj`), so
+/// the whole worktree is mapped as well.
+fn settings(root: &Path, dir: &Path) -> Vec<String> {
     vec![
         "COMPILATION_CACHE_ENABLE_CACHING=YES".to_owned(),
         format!("COMPILATION_CACHE_CAS_PATH={}", dir.display()),
@@ -34,6 +36,8 @@ fn settings(dir: &Path) -> Vec<String> {
         "SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
         "CLANG_ENABLE_PREFIX_MAPPING=YES".to_owned(),
         "CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
+        format!("SWIFT_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
+        format!("CLANG_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
     ]
 }
 
@@ -42,7 +46,7 @@ pub fn off() -> serde_json::Value {
     json!({ "compilation_cache": { "enabled": false } })
 }
 
-/// Runs one build step through the shared cache at `dir`. If it fails in a way the
+/// Runs one build step of the worktree `root` through the shared cache at `dir`. If it fails in a way the
 /// cache may cause, builds once more with an empty cache at `clean` (removed after)
 /// and lets that build decide. Both builds are recorded.
 pub fn build(
@@ -50,11 +54,12 @@ pub fn build(
     steps: &mut Steps<'_>,
     step: &str,
     cmd: &Command,
+    root: &Path,
     dir: &Path,
     clean: &Path,
 ) -> Result<bool> {
     let fields = |clean: bool| json!({ "compilation_cache": { "enabled": true, "clean": clean } });
-    let shared = cmd.clone().args(settings(dir));
+    let shared = cmd.clone().args(settings(root, dir));
     if steps.run_logged_with(runner, step, &shared, |_| fields(false))? {
         return Ok(true);
     }
@@ -64,7 +69,7 @@ pub fn build(
     };
     let first_log = first.log.clone();
     let _ = std::fs::remove_dir_all(clean);
-    let again = cmd.clone().args(settings(clean));
+    let again = cmd.clone().args(settings(root, clean));
     let retry_step = format!("{step} (clean cache)");
     let ok = steps.run_logged_with(runner, &retry_step, &again, |_| fields(true));
     let _ = std::fs::remove_dir_all(clean);
