@@ -52,3 +52,20 @@ How to judge:
 Reconciliation: the next run of the same test on the same build inputs answers the
 decision. `product` is supported if the test fails again; `flaky` and `environment` if
 it passes. kr writes a `reconciliation` event once per decision.
+
+## Merge resolutions
+
+`kr merge predict --base <ref> <branch>... --json` compares branch pairs. Same-file
+changes can need a `merge_resolution` decision even when the text merge is clean.
+Read both commits, issue references, overlap and conflicts. Missing issue references
+are marked explicitly; inspect the requirements before choosing. Ancestors come first
+in the suggested order; pairwise predictions do not guarantee cumulative compatibility.
+
+Use `kr decide <id> combine|ours|theirs|manual|reject --reason "..."`. Here ours and
+theirs mean the decision's left and right. This records a resolution; it does not
+merge code or prove correctness. Until verified, it exits 1 with verification pending.
+After applying and committing a merge containing both sides, run the affected tests,
+then `kr merge check --base <before-merge> --decision <id> --verification-run <run-id>`.
+Reconciliation requires a clean committed tree, an incremental build and a later
+nonzero test run on that tree. Zero tests, missing evidence and an old tree cannot
+support a resolution. Compilation or test failure records it as unsupported.

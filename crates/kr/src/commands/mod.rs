@@ -6,6 +6,7 @@ pub mod device;
 pub mod doctor;
 pub mod hash;
 pub mod lock;
+pub mod merge;
 pub mod plan;
 pub mod pool;
 pub mod queue;
@@ -13,6 +14,7 @@ pub mod rejudge;
 pub mod remote;
 pub mod report;
 pub mod run;
+pub mod setup;
 pub mod simulate;
 pub mod skill;
 

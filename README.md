@@ -75,10 +75,40 @@ kr report --since 7d --worktree ~/work/krill-133
 
 每个命令都支持 `--json`，给 agent 读。
 
+## 接入 agent
+
+`kr setup` 安装很小的 skill 入口和带 `<!-- kr -->` 标记的规则块。
+入口引导 agent 先运行 `kr skill`，说明正文跟随当前 kr 版本。
+
+```sh
+kr setup --project           # 当前目录：Claude Code 和 Codex
+kr setup --project --codex   # 当前目录：只装 Codex
+kr setup --claude            # 全局：只装 Claude Code
+kr setup                     # 全局：两种 agent
+kr setup --project --remove  # 删除当前目录的入口和规则块
+kr setup --remove --json     # 全局卸载，列出实际删除的文件
+```
+
+默认全局位置：Claude 使用 `~/.claude/skills/kr/SKILL.md` 和
+`~/.claude/CLAUDE.md`；Codex 使用 `~/.agents/skills/kr/SKILL.md` 和
+`~/.codex/AGENTS.md`（规则目录可用 `CODEX_HOME` 改写）。
+`--project` 在当前目录写 `.claude/skills/kr/SKILL.md`、`CLAUDE.md`、
+`.agents/skills/kr/SKILL.md`、`AGENTS.md`，不要求已有 `.kr.toml`。
+Codex 若已有非空 `AGENTS.override.md`，使用这个生效文件。
+两种 agent 一起安装，且 Claude 规则通过 `@` 导入 Codex 规则时，只在 Codex 文件写规则块，
+输出说明跳过 Claude 规则的原因。
+
+重复安装不改结果；替换和卸载保持标记外的内容逐字不变。
+已有其他内容的同名 skill 或不成对的标记会报错，并说明路径和处理方法。
+JSON 的 `written`、`removed` 是实际修改的文件，`skipped` 说明跳过原因。
+全局安装会修改个人 agent 规则，应由 owner 确认后操作。
+官方路径依据见 [agent 安装调研](docs/research/agent-setup.md) 与 ADR 0018。
+
 `kr run` / `kr gate` 怎么判定：
 - 构建一次：输入（git 知道的文件内容、xcodebuild 命令行、Xcode）没变就复用上次的测试产物，不再构建。
 - 每个场景先在租到的模拟器上真实枚举测试，0 条即失败；运行后从 xcresult 核对：实际跑的测试必须正好是枚举出的那些，xcodebuild 的退出码和测试结果必须一致。
 - 失败的测试单独重跑一次：通过记为偶发（场景仍通过，输出里列出），仍失败记为失败。
+- 高负载时，只有逐个重跑前后均测得正常负载、同一用例仍明确失败，才跳过整组重跑；高负载或负载未知时保留整组重跑。事件记录逐个重跑的负载及跳过证据。命令套件首次日志 `<name>.log`、重跑日志 `<name>.again.log` 均保留，事件列出两份路径，人读输出指向首次失败日志（ADR 0003 补充）。
 - 仍失败、而且这条测试的这种失败在过去 90 天里没见过时，kr 不替 agent 判断：跑完全部场景后不给结论，退出 4，`--json` 的 `decisions` 列出判断点（证据、选项、默认建议），人读输出单独一段写明下一步命令（ADR 0011、0015）。见过的失败照常记为失败。
 - 每个 `--json` 输出都有 `schema_version`（现为 1）和 `decisions`；字段只加不改。
 - 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。
@@ -212,3 +242,24 @@ kr run --device "蔡煜恒的 iPad Mini" launch
 ```sh
 cargo install --git https://github.com/bulai0408/kr-cli kr
 ```
+
+## 合并辅助
+
+`kr merge` 先算事实，agent 判断逻辑冲突。不会自动执行 `git merge`。
+
+```sh
+kr merge predict --base main feature-a feature-b feature-c --json
+kr decide <decision-id> combine --reason "preserve both requirements" --json
+kr merge install --json
+kr merge check --base <before-merge-commit> --json
+kr merge check --base <before-merge-commit> --decision <decision-id> --verification-run <run-id> --json
+```
+
+- `predict` 用 `git merge-tree` 两两预测，建议先祖先、后少冲突分支。同文件的两侧改动即使文本能干净合并，也产生逻辑冲突判断点（退出 4），附两边提交说明和其中的票号；缺票号时明确标记。祖先已包含于后继时不重复提问。它不保证累计合并或跨文件逻辑兼容。
+- `kr decide` 接受 `combine`、`ours`、`theirs`、`manual`、`reject`。这里 ours/theirs 指判断点的 left/right。选项只记录解法，不替你改代码；全部交回后仍退出 1 并显示 `verification: pending`，直到用合并后的编译和测试证据对账。
+- `install` 显式给当前仓库的全部已有 worktree 开启 rerere 并注册驱动，不修改 global 配置。**它会修改当前 worktree 的已跟踪文件 `.gitattributes`，请审阅并有意提交这个改动**；其他 worktree 也需包含此 attributes 提交。新 worktree 存在独立覆盖时重跑安装。移动 kr 可执行文件后也需重跑安装，以更新驱动路径。
+- `kr merge xcstrings <base> <ours> <theirs>` 是驱动入口：完整 key 条目三方合并，同 key 分歧、删除/修改、元数据分歧、重复 JSON key 都拒绝；校验成功才替换 ours。需要当前 Xcode 的 `xcrun xcstringstool print`。GitHub 服务端不运行本地驱动。
+- `check` 扫描相对 base 的已提交及工作区改动（含未忽略的未跟踪文件）：JSON 和目录、场景清单、迁移版本和重复 DROP、有限凭证模式。错误只报告文件、行号和下一步，凭证值不输出。源代码改动按已配置 build suite 目录增量编译，未知目录回退 App；没有配置就未验证。编译走资源队列，保留现有 DerivedData，不 clean；编译预算 120 秒，静态失败时不编译。秒级只指静态检查，不保证排队和编译耗时。
+- 对账还要求：干净且包含两分支提交的合并树、决定后同一 tree 的非零 `kr run/gate` 结果。缺证据不写成功，编译或测试失败写不支持；同一判断点只对账一次。跨文件逻辑冲突、全部间接依赖与真实服务仍需其他验证。
+
+设计见 [ADR 0017](docs/adr/0017-merge-assistance.md)，真实 Krill 样本、离线前后对比与验证边界见 [调研和证据](docs/research/merge-assistance.md)。

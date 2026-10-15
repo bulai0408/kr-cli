@@ -15,7 +15,7 @@ are only added, never changed.
 ## Exit codes
 - 0 passed; 1 failed, unverified, or kr failed; 2 bad arguments.
 - 4 no verdict yet: the run stopped at decision points (only `check`, `run`, `gate`,
-  `decide`). Hand them back, do not run again.
+  `decide`, `merge predict`). Hand them back, do not run again.
 - 3 only `kr plan --exit-code`: there is work to do. 128 + n: stopped by signal n.
 
 ## Decision points
@@ -43,6 +43,14 @@ each kind of judgment was right.
 - Credentials never go into code, logs, fixtures or commits.
 
 ## More
+- `kr setup --project` installs discovery entries and marked rules for Claude Code and
+  Codex in the current directory. `--claude` / `--codex` selects one agent; without
+  `--project`, installation is global. Ask the owner before changing global rules.
+  `kr setup --project --remove` removes the project entries and marked blocks.
+- Read the first failure log before running again. Command reruns preserve `<name>.log`
+  and `<name>.again.log`. Skip a high-load whole-item rerun only when the same test
+  failed again individually with normal load measured both before and after that
+  rerun. High or unknown solo-rerun load keeps the whole-item rerun. Events keep the evidence.
 - `kr skill --reference <name>`: {references}.
 - `kr <command> --help`: arguments and exit codes of each command.
 - Additions without a new kr: `.kr/skill.md` in the project repo and

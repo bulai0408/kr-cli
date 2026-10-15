@@ -28,3 +28,11 @@ Bazel remote execution、buck2 daemon、sccache（bazel-fit.md、rust-cli-prior-
 - `[load] block = true` 可恢复「高负载时等待」（阈值同为 `per_core` × 核数）。
 
 阈值暂无数据支撑，先记录后决策：Krill 第 7 批跑完后，用这些事件计算负载与失败率的关系，再决定是否开启阻塞、阈值多少。
+
+## 补充（2026-10-15，#40，协调者已确认）：确定失败不再整组重跑
+
+- 每次逐个重跑前后都采样负载，用同一个 `overloaded(per_core)` 规则判断。只有两次采样都有结果、都正常，且目标用例再次明确失败，才保留失败证据，不因原场景高负载再跑整个场景或套件。
+- 逐个重跑事件写 `load`（start/end）与 `load_state`（normal/high/unknown）。跳过整组的 `rerun` 事件写 `whole_item: true`、`skipped: true`、原因 `persistent test failure after individual rerun under normal load`，并把这次逐个重跑的用例、负载状态和采样放在 `solo_rerun` 作为证据。
+- 逐个重跑仍处于高负载或负载未知时，保守保留整组重跑。逐个重跑都通过，或没有能逐个重跑的用例（包括缺少结果、重跑过滤无效、重跑没有目标用例的结果），也保留高负载整项重跑。未运行、缺失结果、负载未知都不能证明用例在正常环境下也会失败。
+- 离线重放旧事件时，不能用整个场景的开始/结束负载替代逐个重跑的负载；旧记录没有逐个重跑的采样时，计为保留整组重跑。
+- 命令套件首次日志写 `<name>.log`，整项重跑写 `<name>.again.log`；`item_end` 和 `rerun` 记录两份路径，人读报告保留首次失败日志路径。
