@@ -77,5 +77,5 @@
   3. 图来源：`swift package dump-package` + `project.yml`；UI 层再加“场景类 → 模块”映射，输出 `-only-testing`，做到类级选择。
   4. 提供 `kr hash` 类调试命令，对应 `tuist hash selective-testing`。
   5. 覆盖率任务始终跑全量（Tuist 文档明确两者不兼容）。
-- **可选的小试点：** 只启用 Xcode 26 原生编译缓存（本地），不引入 Tuist 账号。
+- **可选的小试点：** 只启用 Xcode 26 原生编译缓存（本地），不引入 Tuist 账号。2026-10-15 已实测并做成 kr 的开关，见 ADR 0013 和 `xcode-compilation-cache.md`。
 - **何时再评估 Tuist：** 若 Krill 拆成多个 Xcode 工程/多个 UI target，或需要 CI 跨机共享二进制缓存，且愿意迁移到 `Project.swift`。

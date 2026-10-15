@@ -86,6 +86,7 @@ kr deliver --base main
    - `[suites.<名字>]`：`build` / `test` / `command` 三种，对应原来脚本里的每一步。
    - `[gates.default]`、`[gates.smoke]`：门禁由哪些套件和场景组成。
    - `[isolation]`：测试用 App 的合成 bundle id 和允许的权限环境。
+   - 可选：`[project]` 里写 `compilation_cache = true`，同一项目的各个 worktree 共用 Xcode 编译缓存（默认关）。在 Krill 上，新 worktree 的构建时间少约三分之一，第一次构建多约四分之一（ADR 0013）。worktree 不要放在 `/tmp`、`/var` 下，那里是符号链接，缓存不会命中。
    写错时 `kr config` 会指到具体行列并说明怎么改。
 3. `kr doctor`：确认 Xcode、运行时、池设备都齐；缺池设备就 `kr pool sync`（只新建，不删不改已有设备）。
 4. `kr check`：不占模拟器，确认能编过、过滤都能匹配到测试、隔离设置正确。
