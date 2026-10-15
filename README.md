@@ -71,10 +71,40 @@ kr report --since 7d --worktree ~/work/krill-133
 
 每个命令都支持 `--json`，给 agent 读。
 
+## 接入 agent
+
+`kr setup` 安装很小的 skill 入口和带 `<!-- kr -->` 标记的规则块。
+入口引导 agent 先运行 `kr skill`，说明正文跟随当前 kr 版本。
+
+```sh
+kr setup --project           # 当前目录：Claude Code 和 Codex
+kr setup --project --codex   # 当前目录：只装 Codex
+kr setup --claude            # 全局：只装 Claude Code
+kr setup                     # 全局：两种 agent
+kr setup --project --remove  # 删除当前目录的入口和规则块
+kr setup --remove --json     # 全局卸载，列出实际删除的文件
+```
+
+默认全局位置：Claude 使用 `~/.claude/skills/kr/SKILL.md` 和
+`~/.claude/CLAUDE.md`；Codex 使用 `~/.agents/skills/kr/SKILL.md` 和
+`~/.codex/AGENTS.md`（规则目录可用 `CODEX_HOME` 改写）。
+`--project` 在当前目录写 `.claude/skills/kr/SKILL.md`、`CLAUDE.md`、
+`.agents/skills/kr/SKILL.md`、`AGENTS.md`，不要求已有 `.kr.toml`。
+Codex 若已有非空 `AGENTS.override.md`，使用这个生效文件。
+两种 agent 一起安装，且 Claude 规则通过 `@` 导入 Codex 规则时，只在 Codex 文件写规则块，
+输出说明跳过 Claude 规则的原因。
+
+重复安装不改结果；替换和卸载保持标记外的内容逐字不变。
+已有其他内容的同名 skill 或不成对的标记会报错，并说明路径和处理方法。
+JSON 的 `written`、`removed` 是实际修改的文件，`skipped` 说明跳过原因。
+全局安装会修改个人 agent 规则，应由 owner 确认后操作。
+官方路径依据见 [agent 安装调研](docs/research/agent-setup.md) 与 ADR 0018。
+
 `kr run` / `kr gate` 怎么判定：
 - 构建一次：输入（git 知道的文件内容、xcodebuild 命令行、Xcode）没变就复用上次的测试产物，不再构建。
 - 每个场景先在租到的模拟器上真实枚举测试，0 条即失败；运行后从 xcresult 核对：实际跑的测试必须正好是枚举出的那些，xcodebuild 的退出码和测试结果必须一致。
 - 失败的测试单独重跑一次：通过记为偶发（场景仍通过，输出里列出），仍失败记为失败。
+- 高负载时，只有逐个重跑前后均测得正常负载、同一用例仍明确失败，才跳过整组重跑；高负载或负载未知时保留整组重跑。事件记录逐个重跑的负载及跳过证据。命令套件首次日志 `<name>.log`、重跑日志 `<name>.again.log` 均保留，事件列出两份路径，人读输出指向首次失败日志（ADR 0003 补充）。
 - 仍失败、而且这条测试的这种失败在过去 90 天里没见过时，kr 不替 agent 判断：跑完全部场景后不给结论，退出 4，`--json` 的 `decisions` 列出判断点（证据、选项、默认建议），人读输出单独一段写明下一步命令（ADR 0011、0015）。见过的失败照常记为失败。
 - 每个 `--json` 输出都有 `schema_version`（现为 1）和 `decisions`；字段只加不改。
 - 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。

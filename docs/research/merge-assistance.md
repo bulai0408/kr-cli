@@ -56,3 +56,44 @@ python3 docs/research/merge-assistance-eval.py --repo <Krill-checkout> --kr <kr-
 - 逻辑冲突只标同文件交集和文本冲突；跨文件的语义依赖仍由 agent 审查。建议顺序是两两启发式，不是累计合并成功保证。
 - 对账要求 agent 指定一次受影响测试运行；检查同树、决定后、非零、运行结论与增量编译，不替代完整选测或真实服务验收。记录决定会退出 1（未验证），不能当作 merge PASS；缺失或旧树/零测试证据不写成功对账。
 - 安装只在临时 Git 仓库验收；未修改 kr-cli 或 Krill 的真实 Git 配置，也未向真实工作区安装驱动。安装会修改当前工作区的已跟踪 `.gitattributes`，调用者必须审阅并有意提交，其他 worktree 也需要包含这次 attributes 提交。
+
+## 交付检查（2026-10-16，Asia/Taipei）
+
+1. 机器判定：新增 CLI 接缝 28/28 PASS；合并前 fmt/clippy/test 全通过（353/353 测试）；合入 `origin/p1p2/integration` 的 `03c0c70` 后三项再次全通过（362/362 测试）。主平台是这台 macOS 上的 Rust CLI，未启动 Xcode 构建或模拟器，所以没有 xcresult。
+2. 需人判断手感：0 项。本票没有新增 App UI。
+3. 未验证：真实工程编译速度、全部间接依赖、设备与服务、完整门禁；具体范围见前节。安装只作用于临时仓库，所有回归均保留，不需要无回归例外。
+
+集成时 `main.rs`、README、skill、帮助快照自动合并成功；两侧命令均保留。`run.rs` 和 `setup.rs` 与集成分支完全一致，没有手改 #40 的重跑或 setup 实现。改动文件的凭证前缀模式扫描 0 命中；不把有限扫描当作无凭证的证明。
+
+完整检查日志保存在 [检查产物](/tmp/kr31-evidence)，分为 before-integration 和 after-integration，不覆盖失败/先前证据。
+
+新增测试名（`crates/kr/tests/merge.rs`）：
+
+- `xcstrings_preserves_real_krill_entries_and_validates_before_replacing_ours`
+- `predict_reports_text_and_logical_conflicts_with_tickets_and_records_a_resolution`
+- `install_enables_rerere_in_all_worktrees_and_warns_about_tracked_attributes`
+- `quick_check_catches_constructed_batch6_duplicate_drop_before_compilation`
+- `xcstrings_same_key_delete_modify_and_metadata_disagreements_preserve_ours`
+- `xcstrings_validation_failure_never_replaces_ours_or_leaves_a_temp_file`
+- `real_history_xcstrings_text_conflict_merges_without_dropping_entries`
+- `quick_check_catches_the_original_batch6_duplicate_drop_in_upgrade_test`
+- `quick_check_allows_recreated_tables_independent_fixtures_and_commented_sql`
+- `quick_check_reports_invalid_json_and_credentials_without_printing_values`
+- `predict_orders_stacked_branches_ancestor_first_without_asking_about_shared_commits`
+- `resolution_is_reconciled_only_against_compiled_and_tested_merged_tree`
+- `resolution_rejects_tests_of_an_old_tree`
+- `resolution_rejects_a_zero_test_run`
+- `resolution_failed_tests_are_recorded_as_unsupported`
+- `quick_check_matches_registered_test_classes_without_requiring_a_name_suffix`
+- `quick_check_detects_scenario_drift_and_migration_order`
+- `clean_json_and_credential_references_pass_without_a_native_build`
+- `clean_text_merge_of_same_file_still_needs_a_logical_decision`
+- `predict_suggests_clean_branch_before_a_conflicting_pair_and_rejects_invalid_refs`
+- `git_driver_keeps_a_real_same_key_conflict_unmerged`
+- `quick_check_allows_idempotent_drop_if_exists`
+- `xcstrings_rejects_duplicate_keys_instead_of_losing_a_translation`
+- `quick_check_incrementally_builds_the_changed_module_with_recorded_xcode_output`
+- `incremental_build_failure_is_not_a_pass`
+- `incremental_build_timeout_is_not_a_pass`
+- `changed_native_headers_also_require_incremental_compilation`
+- `real_same_key_conflict_is_refused_without_changing_ours`
