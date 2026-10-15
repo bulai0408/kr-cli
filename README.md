@@ -37,6 +37,10 @@ kr queue
 
 # 5. 拿到一个 build 槽位后执行任意命令，结束立即归还，退出码原样返回
 kr lock build -- xcodebuild build-for-testing …
+
+# 6. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
+#    改动里的 schema（待部署）、Artboard（手感）、法律文本（owner 复核）自动列入
+kr deliver --base main
 ```
 
 每个命令都支持 `--json`，给 agent 读。

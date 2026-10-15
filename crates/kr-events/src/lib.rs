@@ -67,6 +67,11 @@ pub enum EventKind {
     ItemStart,
     /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
     /// tests (counts per outcome), flaky.
+    ///
+    /// The outcome "unverified" (the device or host was lost during the run) is written
+    /// as an `unverified` count in `tests`, next to passed / failed / flaky / skipped,
+    /// with the reason in `unverified_reason` (a string, may be missing). An item with
+    /// unverified tests does not count as passed. `kr deliver` reads this.
     ItemEnd,
     /// A failed test was run again on its own. Fields: item, test, passed, filter
     /// (`-only-testing:…`), `filter_invalid` (the filter selected no test, so it did not

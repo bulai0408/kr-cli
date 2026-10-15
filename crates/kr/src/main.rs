@@ -44,6 +44,9 @@ enum Command {
     Gate(commands::run::GateArgs),
     /// The project's simulator pool: status, sync, lease.
     Pool(commands::pool::PoolArgs),
+    /// Draft the delivery report of a run: decided by machine, needs human judgment of
+    /// feel, not verified. Lists the to-dos the run and the changed files show.
+    Deliver(commands::deliver::DeliverArgs),
 }
 
 pub use ctx::{Ctx, Loaded};
@@ -66,6 +69,7 @@ fn main() -> ExitCode {
         Command::Check(args) => commands::check::run(&ctx, args),
         Command::Run(args) => commands::run::run(&ctx, args),
         Command::Gate(args) => commands::run::gate(&ctx, args),
+        Command::Deliver(args) => commands::deliver::run(&ctx, args),
     };
     match result {
         Ok(code) => code,

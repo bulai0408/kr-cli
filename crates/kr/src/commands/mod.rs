@@ -1,5 +1,6 @@
 pub mod check;
 pub mod config;
+pub mod deliver;
 pub mod doctor;
 pub mod lock;
 pub mod pool;
