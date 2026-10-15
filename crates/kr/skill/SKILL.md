@@ -15,11 +15,11 @@ are only added, never changed.
 ## Exit codes
 - 0 passed; 1 failed, unverified, or kr failed; 2 bad arguments.
 - 4 no verdict yet: the run stopped at decision points (only `check`, `run`, `gate`,
-  `decide`). Hand them back, do not run again.
+  `decide`, `merge predict`). Hand them back, do not run again.
 - 3 only `kr plan --exit-code`: there is work to do. 128 + n: stopped by signal n.
 
 ## Decision points
-When kr's rules do not cover a case, the run still runs every item, then exits 4 with
+For a conclusion decision, the run still runs every item, then exits 4 with
 `decisions`: each has an `id`, a question, options, evidence and kr's default with its
 reason. Judge from the evidence (`kr skill --reference decisions`), then:
 
@@ -28,6 +28,9 @@ reason. Judge from the evidence (`kr skill --reference decisions`), then:
 kr records who decided what and why, gives the verdict from the results it has, and
 later sets the choice against what happened (reconciliation). The owner sees how often
 each kind of judgment was right.
+
+For `affects: efficiency`, kr continues with its default and records pending review.
+For `additional_scenarios`, read `kr skill --reference decisions` before changing coverage.
 
 ## Ask the owner instead of deciding when
 - the evidence supports no option better than the others and the item gates a merge;
@@ -43,6 +46,8 @@ each kind of judgment was right.
 - Credentials never go into code, logs, fixtures or commits.
 
 ## More
+- `kr plan --changed <ref> --explain` previews required scenarios; `--also` only adds.
+  `kr hash <scenario>` explains the inputs of the existing build cache.
 - `kr setup --project` installs discovery entries and marked rules for Claude Code and
   Codex in the current directory. `--claude` / `--codex` selects one agent; without
   `--project`, installation is global. Ask the owner before changing global rules.
@@ -57,12 +62,8 @@ each kind of judgment was right.
   `~/.config/kr/skill.md` for you; kr prints them after this text.
 
 ## Scenario dependencies (ADR 0020)
-Scenarios support `prepare`: run, dir, timeout (30s), background (false), ready, cleanup, shared.
-Background commands stay in the foreground; ready is required and retried until exit 0 or timeout.
-With `shared`, all dependent scenarios and lanes use one instance; definitions must match.
-Start before the first user; clean up after the last. Failed shared dependencies are not retried.
+Scenarios support prepare: run, dir, timeout (30s), background (false), ready, cleanup, shared. Background commands stay foreground; ready retries until exit 0 or timeout.
+Shared definitions must match; one instance serves all lanes from first user to last user, with no per-scenario retry after failure. Use temporary ports and instance-aware readiness.
 Commands receive KR_RUN_ID, KR_PROJECT, KR_SCENARIO, KR_DEVICE_UDID, KR_RUN_DIR; shared scenario/UDID are empty.
-Use temporary ports and per-instance state files; readiness must identify this instance.
 Preparation/readiness/cleanup failure is unverified (exit 1). Read preparation logs and unverified_reason, fix, retry.
-kr stops owned groups on success/errors/SIGINT/SIGTERM: TERM then KILL after 5s. Cleanup runs even on interruption (5s).
-Use the existing slot; never cache test results for prepared scenarios. Build caching is valid. Suites have no prepare.
+kr stops owned groups on success/errors/SIGINT/SIGTERM: TERM then KILL after 5s; cleanup runs on interruption (5s). Use the existing slot; never cache prepared test results. Build caching is valid. Suites have no prepare.

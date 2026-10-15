@@ -2149,3 +2149,176 @@ fn preparation_unused_shared_dependency_does_not_delay_cleanup_past_slot_release
         "a scenario that never reached the shared step must not keep it alive"
     );
 }
+
+#[test]
+fn changed_run_and_gate_default_efficiency_decisions_continue_and_record_pending_review() {
+    for command in ["run", "gate"] {
+        let s = Sample::new();
+        let mut recs = recordings("gate-default");
+        for (args, stdout) in [
+            (
+                vec!["diff", "--name-only", "-z", "--no-renames", "base", "--"],
+                "App/KrSampleApp.swift\0",
+            ),
+            (vec!["ls-files", "--others", "--exclude-standard", "-z"], ""),
+        ] {
+            recs.push(kr_exec::Recording {
+                program: "git".to_owned(),
+                args: args.into_iter().map(str::to_owned).collect(),
+                status: Some(0),
+                stdout: stdout.to_owned(),
+                stderr: String::new(),
+                timed_out: false,
+                duration_ms: None,
+            });
+        }
+        let (code, out) = s.kr(
+            &recs,
+            &["--json", command, "--changed", "base", "--explain"],
+        );
+        assert_eq!(code, Some(0), "{command}: {out}");
+        let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["concluded"], true, "{v}");
+        assert_eq!(v["total"], 4, "{v}");
+        assert_eq!(v["decisions"][0]["kind"], "additional_scenarios", "{v}");
+        assert_eq!(v["decisions"][0]["affects"], "efficiency", "{v}");
+        let events = s.events();
+        let defaults: Vec<_> = events
+            .iter()
+            .filter(|e| e["type"] == "decision" && e["fields"]["kind"] == "additional_scenarios")
+            .collect();
+        assert_eq!(defaults.len(), 1, "{events:?}");
+        assert_eq!(defaults[0]["fields"]["via"], "default");
+        assert_eq!(defaults[0]["fields"]["review"], "pending");
+        assert_eq!(defaults[0]["fields"]["choice"], "add");
+    }
+}
+
+#[test]
+fn selection_defaults_are_recorded_even_when_the_build_fails() {
+    let s = Sample::new();
+    let mut recs = recordings("gate-default");
+    for r in &mut recs {
+        if r.program == "xcodebuild" && r.args.first().is_some_and(|a| a == "build-for-testing") {
+            r.status = Some(65);
+            r.stdout = "error: build failed".to_owned();
+        }
+    }
+    for (args, stdout) in [
+        (
+            vec!["diff", "--name-only", "-z", "--no-renames", "base", "--"],
+            "unknown.txt\0",
+        ),
+        (vec!["ls-files", "--others", "--exclude-standard", "-z"], ""),
+    ] {
+        recs.push(Recording {
+            program: "git".to_owned(),
+            args: args.into_iter().map(str::to_owned).collect(),
+            status: Some(0),
+            stdout: stdout.to_owned(),
+            stderr: String::new(),
+            timed_out: false,
+            duration_ms: None,
+        });
+    }
+    let (code, out) = s.kr(&recs, &["--json", "gate", "--changed", "base"]);
+    assert_eq!(code, Some(1), "{out}");
+    let events = s.events();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["type"] == "decision"
+                && e["fields"]["review"] == "pending"
+                && e["fields"]["kind"] == "additional_scenarios")
+            .count(),
+        1,
+        "{events:?}"
+    );
+    let v: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(v["decisions"][0]["kind"], "additional_scenarios");
+}
+
+#[test]
+fn explain_without_changed_describes_explicit_and_gate_scenarios() {
+    for args in [
+        vec!["--json", "run", "launch", "--explain"],
+        vec!["--json", "gate", "--explain"],
+    ] {
+        let s = Sample::new();
+        let (code, text) = s.kr(&recordings("gate-default"), &args);
+        assert_eq!(code, Some(0), "{text}");
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let launch = v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["name"] == "launch")
+            .unwrap();
+        assert!(
+            launch["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|n| n.as_str().unwrap().contains("selected")),
+            "{v}"
+        );
+    }
+}
+
+#[test]
+fn selection_review_and_a_failure_decision_have_distinct_ids_and_independent_verdicts() {
+    let s = Sample::new();
+    let mut recs = broken();
+    recs.extend(recordings("gate-default"));
+    for (args, stdout) in [
+        (
+            vec!["diff", "--name-only", "-z", "--no-renames", "base", "--"],
+            "unknown.txt\0",
+        ),
+        (vec!["ls-files", "--others", "--exclude-standard", "-z"], ""),
+    ] {
+        recs.push(Recording {
+            program: "git".to_owned(),
+            args: args.into_iter().map(str::to_owned).collect(),
+            status: Some(0),
+            stdout: stdout.to_owned(),
+            stderr: String::new(),
+            timed_out: false,
+            duration_ms: None,
+        });
+    }
+    let (code, text) = s.kr(&recs, &["--json", "run", "broken", "--changed", "base"]);
+    assert_eq!(code, Some(4), "{text}");
+    let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let decisions = v["decisions"].as_array().unwrap();
+    assert_eq!(decisions.len(), 2, "{v}");
+    assert_ne!(decisions[0]["id"], decisions[1]["id"]);
+    let failure = decisions
+        .iter()
+        .find(|d| d["kind"] == "failure_kind")
+        .unwrap();
+    let (code, text) = s.kr(
+        &[],
+        &[
+            "--json",
+            "decide",
+            failure["id"].as_str().unwrap(),
+            "product",
+            "--reason",
+            "the product assertion failed",
+        ],
+    );
+    assert_eq!(code, Some(1), "{text}");
+    let decided: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(decided["concluded"], true);
+    let (code, text) = s.kr(&[], &["--json", "report", "--since", "1h"]);
+    assert_eq!(code, Some(0), "{text}");
+    let report: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let efficiency = report["accuracy"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["kind"] == "additional_scenarios")
+        .unwrap();
+    assert_eq!(efficiency["default_pending_review"], 1, "{report}");
+}

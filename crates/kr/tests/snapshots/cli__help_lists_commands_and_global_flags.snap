@@ -1,5 +1,6 @@
 ---
 source: crates/kr/tests/cli.rs
+assertion_line: 46
 expression: "String::from_utf8_lossy(&out.stdout)"
 ---
 Kami's Apple development workflow tool: resource queues, simulator pool, pre-checks, build-once test runs and gates
@@ -7,6 +8,7 @@ Kami's Apple development workflow tool: resource queues, simulator pool, pre-che
 Usage: kr [OPTIONS] <COMMAND>
 
 Commands:
+  merge     Predict merge conflicts, install rerere and the catalog driver, or check a merge
   config    Show the merged configuration and where each layer came from
   lock      Wait for a slot of a resource, run a command, then give the slot back
   queue     Show who holds and who waits for each resource
@@ -16,6 +18,7 @@ Commands:
   gate      Run a gate from .kr.toml: its suites and scenarios, like `kr run`
   decide    Hand back a decision of a run that stopped at decision points (exit 4): kr records it and, once all are decided, gives the run's verdict from its results
   plan      Show what `kr run` / `kr gate` would do without doing it: cached builds, why each item runs, the lanes, and the expected time from history. With --exit-code, exit 3 when there is work to do
+  hash      Show build input hashes and their files, content digests, command and toolchain
   simulate  Replay recorded runs with kr's scheduler in virtual time and compare settings (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the calibration error against the measured times
   rejudge   Judge saved results again with this kr's rules and list only the verdicts that change: the items of saved `kr run` / `kr gate` runs and, with --evidence, older result bundles
   pool      The project's simulator pool: status, sync, lease

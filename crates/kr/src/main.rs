@@ -7,6 +7,8 @@ mod compilation_cache;
 mod ctx;
 mod invocations;
 mod output;
+mod selection;
+mod selection_history;
 mod slots;
 
 /// Kami's Apple development workflow tool: resource queues, simulator pool,
@@ -28,6 +30,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Predict merge conflicts, install rerere and the catalog driver, or check a merge.
+    Merge(commands::merge::MergeArgs),
     /// Show the merged configuration and where each layer came from.
     Config,
     /// Wait for a slot of a resource, run a command, then give the slot back.
@@ -52,6 +56,8 @@ enum Command {
     /// item runs, the lanes, and the expected time from history. With --exit-code, exit
     /// 3 when there is work to do.
     Plan(commands::plan::PlanArgs),
+    /// Show build input hashes and their files, content digests, command and toolchain.
+    Hash(commands::hash::HashArgs),
     /// Replay recorded runs with kr's scheduler in virtual time and compare settings
     /// (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the
     /// calibration error against the measured times.
@@ -109,11 +115,13 @@ fn main() -> ExitCode {
     slots::watch_children();
     ctx.json = cli.json;
     let result = match cli.command {
+        Command::Merge(args) => commands::merge::run(&ctx, args),
         Command::Config => commands::config::run(&ctx),
         Command::Lock(args) => commands::lock::run(&ctx, args),
         Command::Queue(args) => commands::queue::run(&ctx, args),
         Command::Doctor(args) => commands::doctor::run(&ctx, args),
         Command::Plan(args) => commands::plan::run(&ctx, args),
+        Command::Hash(args) => commands::hash::run(&ctx, args),
         Command::Simulate(args) => commands::simulate::run(&ctx, args),
         Command::Rejudge(args) => commands::rejudge::run(&ctx, args),
         Command::Pool(args) => commands::pool::run(&ctx, args),
