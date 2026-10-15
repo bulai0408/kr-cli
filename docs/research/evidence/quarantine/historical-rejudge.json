@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "method": "copied state; current Krill policy what-if; no source data writes",
+  "coverage": "11 saved items of KrSample only; 0 saved Krill items; no Krill item can be rejudged from these files",
+  "before": {
+    "changed": 0,
+    "changes": [],
+    "decision_points": [],
+    "decisions": [],
+    "evidence": null,
+    "items": 11,
+    "runs": 7,
+    "schema_version": 1,
+    "unreadable": []
+  },
+  "after": {
+    "changed": 0,
+    "changes": [],
+    "decision_points": [],
+    "decisions": [],
+    "evidence": null,
+    "items": 11,
+    "runs": 7,
+    "schema_version": 1,
+    "unreadable": []
+  }
+}

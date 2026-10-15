@@ -44,6 +44,7 @@ fn saved_with_a_flaky_test() -> Saved {
     );
     let reruns = vec![Some(attempt(0, vec![case(FLAKY, TestOutcome::Passed)]))];
     Saved {
+        quarantine: None,
         schema_version: SCHEMA_VERSION,
         item: "login".into(),
         verdict: judge(&enumeration, &first, &reruns),

@@ -26,6 +26,17 @@ pub struct Saved {
     pub first: Attempt,
     pub reruns: Vec<Option<Attempt>>,
     pub verdict: Verdict,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quarantine: Option<QuarantineState>,
+}
+
+/// The complete-run guard and gate status when the repository policy was observed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuarantineState {
+    pub item: String,
+    pub eligible: bool,
+    pub blocking: bool,
+    pub tests: Vec<String>,
 }
 
 impl Saved {

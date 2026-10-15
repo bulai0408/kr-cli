@@ -29,6 +29,7 @@ use serde_json::json;
 use super::check::{self, BuildJob, Selection, Steps, with_xcode};
 use super::decide;
 use super::human_duration;
+use super::quarantine::Quarantine;
 use super::remote;
 use crate::{Ctx, Loaded, slots};
 
@@ -159,6 +160,10 @@ pub(crate) struct ItemResult {
     pub(crate) name: String,
     kind: String,
     pub(crate) passed: bool,
+    #[serde(default)]
+    pub(crate) blocking: Option<bool>,
+    #[serde(default)]
+    pub(crate) quarantined: Vec<String>,
     duration_ms: u64,
     device: Option<String>,
     /// passed / failed / flaky / skipped counts, for test items.
@@ -205,6 +210,8 @@ impl ItemResult {
             name: name.to_owned(),
             kind: kind.to_owned(),
             passed: false,
+            blocking: None,
+            quarantined: Vec::new(),
             duration_ms: 0,
             device: None,
             tests: None,
@@ -246,6 +253,10 @@ impl ItemResult {
         self
     }
 
+    pub(crate) fn blocking(&self) -> bool {
+        self.blocking.unwrap_or(!self.passed)
+    }
+
     pub(crate) fn unverified_count(&self) -> usize {
         self.tests
             .as_ref()
@@ -269,6 +280,7 @@ pub(crate) struct WorkItem {
 }
 
 struct Shared<'a> {
+    quarantine: &'a Quarantine,
     ctx: &'a Ctx,
     loaded: &'a Loaded,
     project: &'a ProjectConfig,
@@ -302,9 +314,21 @@ fn execute(
     label: String,
     device: Option<&str>,
 ) -> Result<ExitCode> {
+    let quarantine = Quarantine::load(root)?;
     kr_exec::catch_stop_signals()?;
     let run_id = RunId::new();
-    let result = execute_run(ctx, loaded, project, root, sel, &label, run_id, device);
+    quarantine.observe(loaded, root, run_id)?;
+    let result = execute_run(
+        ctx,
+        loaded,
+        project,
+        root,
+        sel,
+        &label,
+        run_id,
+        device,
+        &quarantine,
+    );
     match (result, kr_exec::stop_signal()) {
         // Stopped before any item ran, e.g. while building.
         (Err(e), Some(signal)) => {
@@ -555,6 +579,7 @@ fn execute_run(
     label: &str,
     run_id: RunId,
     device: Option<&str>,
+    quarantine: &Quarantine,
 ) -> Result<ExitCode> {
     let started = Instant::now();
     let runner = ctx.runner()?;
@@ -639,6 +664,7 @@ fn execute_run(
     }
 
     let shared = Shared {
+        quarantine,
         ctx,
         loaded,
         project,
@@ -716,18 +742,31 @@ fn execute_run(
         return Ok(stop.exit_code());
     }
     // Where kr's rules end: failures it has not seen wait for the agent (ADR 0011).
+    for r in &mut results {
+        quarantine.apply(r);
+    }
     let history = decide::history(loaded);
-    let decisions = decide::raise(&history, run_id, &mut results);
+    let mut decisions = decide::raise(&history, run_id, &mut results);
+    let quarantine_history = super::report::history(loaded)?;
+    decisions.extend(quarantine.suggestions(
+        &quarantine_history,
+        loaded.project(),
+        run_id,
+        &results,
+        decisions.len(),
+    ));
     decide::reconcile(loaded, run_id, &history)?;
+    super::quarantine::reconcile(loaded, run_id, &quarantine_history)?;
     let pending: Vec<&Decision> = decisions
         .iter()
         .filter(|d| d.affects == Affects::Conclusion)
         .collect();
-    let ok = pending.is_empty() && results.iter().all(|r| r.passed);
+    let ok = pending.is_empty() && results.iter().all(|r| !r.blocking());
     let mut end = json!({
         "ok": ok,
         "passed": results.iter().filter(|r| r.passed).count(),
         "total": results.len(),
+        "quarantined": results.iter().map(|r| r.quarantined.len()).sum::<usize>(),
         "duration_ms": started.elapsed().as_millis() as u64,
     });
     if !pending.is_empty() {
@@ -742,7 +781,14 @@ fn execute_run(
     };
     decide::record(ctx, loaded, run_id, &summary, &results, &decisions)?;
     run_end(loaded, run_id, label, &end)?;
-    report(ctx, &summary, &results, ok, None, &pending)?;
+    report(
+        ctx,
+        &summary,
+        &results,
+        ok,
+        None,
+        &decisions.iter().collect::<Vec<_>>(),
+    )?;
     Ok(if !pending.is_empty() {
         ExitCode::from(crate::output::DECISIONS_PENDING)
     } else if ok {
@@ -1328,6 +1374,7 @@ pub(crate) fn durations(loaded: &Loaded) -> BTreeMap<String, Duration> {
 }
 
 fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
+    super::quarantine::save_state(r)?;
     s.loaded.events().append(&Event::now(
         s.run_id,
         s.loaded.project(),
@@ -1337,6 +1384,8 @@ fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
                 "item": r.name,
                 "kind": r.kind,
                 "passed": r.passed,
+                "blocking": r.blocking(),
+                "quarantined": r.quarantined,
                 "duration_ms": r.duration_ms,
                 "device": r.device,
                 "tests": r.tests,
@@ -1627,6 +1676,7 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     r.high_load = high;
     r.notes.extend(rebuilt);
     r.duration_ms = started.elapsed().as_millis() as u64;
+    s.quarantine.apply(&mut r);
     item_event(s, &r)?;
     Ok(r)
 }
@@ -1868,7 +1918,10 @@ fn run_item_once(
     let verdict = &saved.verdict;
 
     r.passed = verdict.passed();
-    r.only_test_failures = !r.passed && verdict.reasons.is_empty() && invalid.is_empty();
+    r.only_test_failures = !r.passed
+        && verdict.reasons.is_empty()
+        && invalid.is_empty()
+        && super::quarantine::complete_reruns(&saved);
     r.cases = kr_run::cases(verdict, saved.first.timed_out);
     r.summary = if r.passed {
         Vec::new()
@@ -1911,6 +1964,7 @@ fn save(
     reruns: Vec<Option<Attempt>>,
 ) -> Result<Saved> {
     let saved = Saved {
+        quarantine: None,
         schema_version: rejudge::SCHEMA_VERSION,
         item: name.to_owned(),
         verdict: judge(enumeration, &first, &reruns),
@@ -1999,6 +2053,13 @@ pub(crate) fn report(
     stopped: Option<&Stopped>,
     pending: &[&Decision],
 ) -> Result<()> {
+    let all_decisions = pending;
+    let pending_only: Vec<&Decision> = pending
+        .iter()
+        .copied()
+        .filter(|d| d.affects == Affects::Conclusion)
+        .collect();
+    let pending = pending_only.as_slice();
     let label = summary.label;
     let elapsed = summary.elapsed;
     let passed = results.iter().filter(|r| r.passed).count();
@@ -2008,12 +2069,13 @@ pub(crate) fn report(
             "label": label,
             "passed": passed,
             "total": results.len(),
+            "quarantined": results.iter().map(|r| r.quarantined.len()).sum::<usize>(),
             "build": summary.build,
             "items": results,
             "duration_ms": elapsed.as_millis() as u64,
             "aborted": stopped.map(Stopped::json),
             "concluded": pending.is_empty() && stopped.is_none(),
-            "decisions": pending,
+            "decisions": all_decisions,
         });
         crate::output::print_json(&out)?;
         return Ok(());
@@ -2052,6 +2114,17 @@ pub(crate) fn report(
                 println!("  xcresult: {}", x.display());
             } else if let Some(log) = &r.log {
                 println!("  log: {}", log.display());
+            }
+        } else if !r.blocking() && !r.quarantined.is_empty() {
+            println!(
+                "QUARANTINED: {} ({detail}; failures recorded, gate not blocked)",
+                r.name
+            );
+            for test in &r.quarantined {
+                println!("  quarantined failure: {test}");
+            }
+            for line in &r.summary {
+                println!("  {line}");
             }
         } else if r.passed {
             println!("PASS: {} ({detail})", r.name);
@@ -2098,14 +2171,27 @@ pub(crate) fn report(
         );
         return Ok(());
     }
+    for d in all_decisions
+        .iter()
+        .filter(|d| d.affects == Affects::Efficiency)
+    {
+        println!("REVIEW {}: {}", d.id, d.question);
+        println!("  evidence and exact edit: {}", d.evidence);
+    }
     let unverified = results.iter().filter(|r| r.unverified_count() > 0).count();
     let unverified = if unverified > 0 {
         format!(", {unverified} unverified")
     } else {
         String::new()
     };
+    let quarantined = results.iter().map(|r| r.quarantined.len()).sum::<usize>();
+    let quarantine_note = if quarantined > 0 {
+        format!(", {quarantined} quarantined failures (not passes)")
+    } else {
+        String::new()
+    };
     println!(
-        "{label}: {passed}/{} PASS{unverified} · {} · {}",
+        "{label}: {passed}/{} PASS{unverified}{quarantine_note} · {} · {}",
         results.len(),
         summary.build_text,
         human_duration(elapsed)

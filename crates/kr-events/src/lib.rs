@@ -149,6 +149,12 @@ pub enum EventKind {
     /// `exit_code`, `duration_ms`, error (the first line of the error, if it failed),
     /// requester {agent, worktree, `parent_pid`}. `--help` and `--version` are not logged.
     Invocation,
+    /// Repository quarantine entries observed on this worktree (ADR 0021).
+    QuarantineObserved,
+    /// An entry entered the observed repository list.
+    QuarantineEnter,
+    /// An entry left the observed repository list.
+    QuarantineExit,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

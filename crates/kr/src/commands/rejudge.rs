@@ -95,6 +95,13 @@ struct Changed {
 
 pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
+    let quarantine = loaded
+        .project_file
+        .as_deref()
+        .and_then(Path::parent)
+        .map(super::quarantine::Quarantine::load)
+        .transpose()?
+        .unwrap_or_default();
     let mut report = Report {
         schema_version: SCHEMA_VERSION,
         runs: 0,
@@ -109,6 +116,7 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
         .events()
         .read_since(Timestamp::UNIX_EPOCH)
         .unwrap_or_default();
+    let empty_quarantine = super::quarantine::Quarantine::default();
     for (run_id, dir) in saved_runs(&loaded.state_dir.join("runs"), &args.runs)? {
         report.runs += 1;
         for file in verdict_files(&dir) {
@@ -120,10 +128,27 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
                 continue;
             };
             report.items += 1;
+            let scoped = run_id.parse::<RunId>().ok().is_some_and(|id| {
+                events
+                    .iter()
+                    .any(|e| e.run_id == id && e.project.as_deref() == loaded.project())
+            });
+            let policy = if scoped {
+                &quarantine
+            } else {
+                &empty_quarantine
+            };
             if let Ok(id) = run_id.parse::<RunId>() {
-                report.decision_points.extend(points(&events, id, &saved));
+                report
+                    .decision_points
+                    .extend(points(&events, id, &saved, policy));
             }
-            if let Some(change) = saved.rejudge(&judge) {
+            let change = if scoped {
+                policy.rejudge(&saved)
+            } else {
+                saved.rejudge(&judge)
+            };
+            if let Some(change) = change {
                 report.changes.push(Changed {
                     source: "run",
                     run_id: Some(run_id.clone()),
@@ -163,9 +188,17 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
 
 /// The decision points this kr raises on one saved item, as `kr run` would have at the
 /// end of that run: failures not seen in earlier runs' events.
-fn points(events: &[Event], run_id: RunId, saved: &Saved) -> Vec<Point> {
+fn points(
+    events: &[Event],
+    run_id: RunId,
+    saved: &Saved,
+    quarantine: &super::quarantine::Quarantine,
+) -> Vec<Point> {
     let verdict = judge(&saved.enumeration, &saved.first, &saved.reruns);
-    let cases = kr_run::cases(&verdict, saved.first.timed_out);
+    let cases: Vec<_> = kr_run::cases(&verdict, saved.first.timed_out)
+        .into_iter()
+        .filter(|c| !quarantine.contains(&saved.item, &c.id))
+        .collect();
     // A failed test that was not run again (an invalid filter, a lost device) fails the
     // item by kr's rules, as in `kr run`.
     let other = !verdict.reasons.is_empty()

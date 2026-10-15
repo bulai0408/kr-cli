@@ -138,13 +138,13 @@ struct ReworkItem {
 }
 
 #[derive(Debug, Serialize)]
-struct Flaky {
+pub(crate) struct Flaky {
     /// The test, or `<item> (whole item)` when the whole item passed when run again.
-    test: String,
-    item: String,
-    flaky: usize,
+    pub(crate) test: String,
+    pub(crate) item: String,
+    pub(crate) flaky: usize,
     /// How many times the item ran in the batch.
-    item_runs: usize,
+    pub(crate) item_runs: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -245,7 +245,7 @@ pub fn run(ctx: &Ctx, args: ReportArgs) -> Result<ExitCode> {
         .project
         .clone()
         .or_else(|| loaded.project().map(str::to_owned));
-    let events = loaded.events().read_since(Timestamp::UNIX_EPOCH)?;
+    let events = history(&loaded)?;
     let calls = crate::invocations::log(&loaded.state_dir).read_since(since)?;
     let filter = Filter {
         since,
@@ -261,6 +261,11 @@ pub fn run(ctx: &Ctx, args: ReportArgs) -> Result<ExitCode> {
         print!("{}", human(&report));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Preserve run starts outside a requested window: the batch belongs to start time.
+pub(crate) fn history(loaded: &crate::Loaded) -> Result<Vec<Event>> {
+    loaded.events().read_since(Timestamp::UNIX_EPOCH)
 }
 
 /// An RFC 3339 time, or a duration back from now: `90m`, `24h`, `7d` (also `s`).
@@ -503,7 +508,7 @@ fn millis(d: SignedDuration) -> u64 {
     d.as_millis().max(0) as u64
 }
 
-fn report(filter: &Filter, events: &[Event], calls: &[Event]) -> Report {
+fn batch_runs<'a>(filter: &Filter, events: &'a [Event]) -> Vec<RunEvents<'a>> {
     let mut grouped: BTreeMap<RunId, Vec<&Event>> = BTreeMap::new();
     for e in events {
         if e.kind != EventKind::Invocation && filter.project(e.project.as_deref()) {
@@ -516,6 +521,11 @@ fn report(filter: &Filter, events: &[Event], calls: &[Event]) -> Report {
         .filter(|r| r.started() >= filter.since && r.started() < filter.until)
         .collect();
     runs.sort_by_key(RunEvents::started);
+    runs
+}
+
+fn report(filter: &Filter, events: &[Event], calls: &[Event]) -> Report {
+    let mut runs = batch_runs(filter, events);
     let runs_without_requester = runs.iter().filter(|r| r.requester().is_none()).count();
     if filter.by_requester() {
         runs.retain(|r| r.requester().is_some_and(|q| filter.requester(q)));
@@ -680,6 +690,63 @@ fn flaky(runs: &[RunEvents]) -> Vec<Flaky> {
         .collect();
     list.sort_by(|a, b| b.flaky.cmp(&a.flaky).then_with(|| a.test.cmp(&b.test)));
     list
+}
+
+/// Shared report counting, scoped by project and the run start range.
+pub(crate) fn flaky_history(
+    events: &[Event],
+    project: Option<&str>,
+    since: Timestamp,
+    until: Timestamp,
+) -> Vec<Flaky> {
+    flaky(&batch_runs(
+        &Filter {
+            since,
+            until,
+            project,
+            worktrees: &[],
+            agents: &[],
+        },
+        events,
+    ))
+}
+
+/// Complete passes and failures/flakes of an exact test, with the report's batch boundary.
+pub(crate) fn test_health(
+    events: &[Event],
+    project: Option<&str>,
+    since: Timestamp,
+    until: Timestamp,
+    item: &str,
+    test: &str,
+) -> (usize, usize) {
+    let filter = Filter {
+        since,
+        until,
+        project,
+        worktrees: &[],
+        agents: &[],
+    };
+    let runs = batch_runs(&filter, events);
+    let (mut complete, mut bad) = (0, 0);
+    for (_, e) in item_ends(&runs)
+        .into_iter()
+        .filter(|(_, e)| e.fields["item"] == item)
+    {
+        let case = e.fields["cases"]
+            .as_array()
+            .and_then(|c| c.iter().find(|c| c["id"] == test));
+        let flaky = e.fields["flaky"]
+            .as_array()
+            .is_some_and(|f| f.iter().any(|t| t == test));
+        bad += usize::from(
+            flaky || case.is_some_and(|c| c["outcome"] == "failed" || c["outcome"] == "flaky"),
+        );
+        complete += usize::from(
+            e.fields["passed"] == true && case.is_some_and(|c| c["outcome"] == "passed"),
+        );
+    }
+    (complete, bad)
 }
 
 fn usage(runs: &[RunEvents], summaries: &[Run], calls: &[&Event], all: &[Event]) -> Usage {

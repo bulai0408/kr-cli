@@ -1751,3 +1751,428 @@ fn rejudge_raises_the_decision_points_of_runs_from_before_them() {
         "{text}"
     );
 }
+
+impl Sample {
+    fn quarantine(&self, limit: usize, tests: serde_json::Value) {
+        let dir = self.home.path().join("repo/.kr");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("quarantine.json"),
+            serde_json::json!({
+                "schema_version": 1, "limit": limit,
+                "basis": "kr report: four individually flaky tests in recent Krill batches",
+                "tests": tests,
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_quarantined_failure_runs_and_stays_failed_but_does_not_block_the_gate() {
+    let s = Sample::new();
+    s.quarantine(4, serde_json::json!([{
+        "item": "broken", "test": BROKEN_TEST, "reason": "repeated flaky failure; fix tracked in PR", "added": "2026-10-16"
+    }]));
+    let config = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&config).unwrap().replace(
+        "[gates.smoke]\nscenarios = [\"launch\"]",
+        "[gates.smoke]\nscenarios = [\"broken\"]",
+    );
+    std::fs::write(config, text).unwrap();
+    let (code, out) = s.kr(&broken(), &["gate", "smoke", "--json"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let r = out["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["name"] == "broken")
+        .unwrap();
+    assert_eq!(r["passed"], false);
+    assert_eq!(r["tests"]["failed"], 1);
+    assert_eq!(r["tests"]["passed"], 0);
+    assert_eq!(r["cases"][0]["outcome"], "failed");
+    assert_eq!(r["quarantined"], serde_json::json!([BROKEN_TEST]));
+    assert_eq!(r["blocking"], false);
+    assert_eq!(out["ok"], true);
+    assert!(out["decisions"].as_array().unwrap().is_empty());
+    assert!(
+        s.events()
+            .iter()
+            .any(|e| e["type"] == "rerun" && e["fields"]["test"] == BROKEN_TEST)
+    );
+}
+
+#[test]
+fn quarantine_over_budget_is_rejected_before_execution_with_a_pr_fix() {
+    let s = Sample::new();
+    s.quarantine(0, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    let (code, out) = s.kr(&[], &["run", "broken", "--json"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("exceed quarantine limit 0"), "{out}");
+    assert!(
+        out.contains(".kr/quarantine.json") && out.contains("kr report") && out.contains("PR"),
+        "{out}"
+    );
+}
+
+#[test]
+fn repeated_flakes_suggest_a_repository_edit_without_changing_the_list() {
+    let s = Sample::new();
+    let mut events = String::new();
+    for n in 1..=2 {
+        events.push_str(&format!("{}\n", serde_json::json!({
+            "ts": jiff::Timestamp::now().to_string(), "run_id": format!("01999999-0000-7000-8000-{n:012}"),
+            "project":"KrSample", "type":"item_end", "fields":{"item":"launch","passed":true,"flaky":["KrSampleUITests/LaunchUITests/testFlakyOnce()"]}
+        })));
+    }
+    let dir = s.state().join("events");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("2026-10-16.ndjson"), events).unwrap();
+    let (code, out) = s.kr(&recordings("gate-default"), &["run", "launch", "--json"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    let d = &out["decisions"][0];
+    assert_eq!(d["kind"], "quarantine_add");
+    assert_eq!(d["affects"], "efficiency");
+    assert_eq!(d["evidence"]["flaky"], 3);
+    assert_eq!(d["evidence"]["edit"]["append_to"], "tests");
+    assert_eq!(
+        d["evidence"]["edit"]["entry"]["test"],
+        "KrSampleUITests/LaunchUITests/testFlakyOnce()"
+    );
+    assert!(!s.home.path().join("repo/.kr/quarantine.json").exists());
+    assert!(s.events().iter().any(|e| e["type"] == "decision"
+        && e["fields"]["kind"] == "quarantine_add"
+        && e["fields"]["review"] == "pending"));
+}
+
+impl Sample {
+    fn healthy_history(&self, count: usize, bad: Option<&str>) {
+        let dir = self.state().join("events");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut text = String::new();
+        for n in 0..count {
+            let outcome = if n == 0 {
+                bad.unwrap_or("passed")
+            } else {
+                "passed"
+            };
+            text.push_str(&format!("{}\n", serde_json::json!({
+                "ts":jiff::Timestamp::now().to_string(),"run_id":format!("01999999-0000-7000-8000-{n:012}"),"project":"KrSample","type":"item_end",
+                "fields":{"item":"launch","passed": outcome == "passed", "flaky":if outcome == "flaky" {vec!["KrSampleUITests/LaunchUITests/testShowsGreeting()"]} else {vec![]},
+                "cases":[{"id":"KrSampleUITests/LaunchUITests/testShowsGreeting()","outcome":outcome,"duration_s":1.0}]}
+            })));
+        }
+        std::fs::write(dir.join("2026-10-16.ndjson"), text).unwrap();
+        self.quarantine(4, serde_json::json!([{"item":"launch","test":"KrSampleUITests/LaunchUITests/testShowsGreeting()","reason":"repair","added":"2026-10-01","issue":"#35"}]));
+    }
+}
+
+#[test]
+fn ten_complete_clean_runs_suggest_removal_with_the_exact_entry() {
+    let s = Sample::new();
+    s.healthy_history(9, None);
+    let file = s.home.path().join("repo/.kr/quarantine.json");
+    let before = std::fs::read(&file).unwrap();
+    let (code, out) = s.kr(&recordings("gate-default"), &["run", "launch", "--json"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["decisions"][0]["kind"], "quarantine_remove");
+    assert_eq!(out["decisions"][0]["evidence"]["complete_runs"], 10);
+    assert_eq!(
+        out["decisions"][0]["evidence"]["edit"]["entry"]["issue"],
+        "#35"
+    );
+    assert_eq!(before, std::fs::read(file).unwrap());
+}
+
+#[test]
+fn nine_clean_runs_or_a_recent_failure_or_flake_do_not_suggest_removal() {
+    for (n, bad) in [(8, None), (10, Some("failed")), (10, Some("flaky"))] {
+        let s = Sample::new();
+        s.healthy_history(n, bad);
+        let (code, out) = s.kr(&recordings("gate-default"), &["run", "launch", "--json"]);
+        assert_eq!(code, Some(0), "{out}");
+        let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert!(
+            out["decisions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|d| d["kind"] != "quarantine_remove"),
+            "{out}"
+        );
+    }
+}
+
+#[test]
+fn rejudge_applies_the_current_list_and_preserves_failed_test_outcomes() {
+    let s = Sample::new();
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    assert_eq!(s.kr(&broken(), &["run", "broken"]).0, Some(1));
+    s.quarantine(4, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    let (code, out) = s.kr(&[], &["rejudge", "--json"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["changed"], 1, "{out}");
+    assert_eq!(out["changes"][0]["before"]["passed"], false);
+    assert_eq!(out["changes"][0]["after"]["passed"], true);
+    assert_eq!(out["changes"][0]["tests"], serde_json::json!([]));
+    assert!(out["decision_points"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn quarantine_never_unblocks_missing_results_timeouts_or_invalid_rerun_filters() {
+    for mode in ["missing", "timeout", "invalid", "rerun_missing"] {
+        let s = Sample::new();
+        s.quarantine(4, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+        let mut recs = broken();
+        for r in &mut recs {
+            if mode == "missing"
+                && r.program == "xcrun"
+                && r.args.iter().any(|a| a.contains("broken/run.xcresult"))
+            {
+                r.status = Some(1);
+                r.stdout.clear();
+            }
+            if mode == "timeout"
+                && r.program == "xcodebuild"
+                && r.args.iter().any(|a| a.contains("broken/run.xcresult"))
+            {
+                r.timed_out = true;
+            }
+            if mode == "invalid"
+                && r.args
+                    .iter()
+                    .any(|a| a == &format!("-only-testing:{}", BROKEN_TEST.trim_end_matches("()")))
+                && r.args.iter().any(|a| a == "-enumerate-tests")
+            {
+                r.stdout = r.stdout.replace("enabledTests", "disabledTests_");
+            }
+            if mode == "rerun_missing"
+                && r.program == "xcrun"
+                && r.args.iter().any(|a| a.contains("broken/rerun-1.xcresult"))
+            {
+                r.status = Some(1);
+                r.stdout.clear();
+            }
+        }
+        let (code, out) = s.kr(&recs, &["run", "broken", "--json"]);
+        assert_eq!(code, Some(1), "{mode}: {out}");
+        let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(out["ok"], false, "{mode}: {out}");
+        assert_eq!(out["items"][0]["blocking"], true, "{mode}: {out}");
+        let (code, rejudged) = s.kr(&[], &["rejudge", "--json"]);
+        assert_eq!(code, Some(0), "{rejudged}");
+        let rejudged: serde_json::Value = serde_json::from_str(&rejudged).unwrap();
+        assert_eq!(rejudged["changed"], 0, "{mode}: {rejudged}");
+    }
+}
+
+#[test]
+fn quarantine_is_scoped_to_the_item_and_observed_entries_and_exits_are_events() {
+    let s = Sample::new();
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    s.quarantine(4, serde_json::json!([{"item":"launch","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    assert_eq!(s.kr(&broken(), &["run", "broken"]).0, Some(1));
+    s.quarantine(4, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    let (code, out) = s.kr(&broken(), &["run", "broken"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.starts_with("QUARANTINED: broken"), "{out}");
+    assert!(out.contains("0/1 PASS"), "{out}");
+    let (_, out) = s.kr(&[], &["rejudge", "--json"]);
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["changed"], 1); // only the first run changes under the new list
+    std::fs::remove_file(s.home.path().join("repo/.kr/quarantine.json")).unwrap();
+    assert_eq!(s.kr(&broken(), &["run", "broken"]).0, Some(1));
+    let events = s.events();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["type"] == "quarantine_enter")
+            .count(),
+        2
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["type"] == "quarantine_exit")
+            .count(),
+        2
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["type"] == "quarantine_observed")
+            .count(),
+        3
+    );
+    let (_, out) = s.kr(&[], &["rejudge", "--json"]);
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["changed"], 1); // the once-exempt run now blocks again
+    assert_eq!(out["changes"][0]["before"]["passed"], true);
+    assert_eq!(out["changes"][0]["after"]["passed"], false);
+}
+
+#[test]
+fn a_quarantine_removal_can_be_reviewed_and_reconciled_without_kr_editing_the_file() {
+    let s = Sample::new();
+    s.healthy_history(9, None);
+    let file = s.home.path().join("repo/.kr/quarantine.json");
+    let before = std::fs::read(&file).unwrap();
+    let out = s.json(&recordings("gate-default"), &["run", "launch"]);
+    let id = out["decisions"][0]["id"].as_str().unwrap();
+    let (code, out) = s.kr(
+        &[],
+        &["decide", id, "remove", "--reason", "reviewed; prepare PR"],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    assert_eq!(before, std::fs::read(&file).unwrap());
+    s.quarantine(4, serde_json::json!([]));
+    assert_eq!(
+        s.kr(&recordings("gate-default"), &["run", "launch"]).0,
+        Some(0)
+    );
+    let events = s.events();
+    let r = events
+        .iter()
+        .find(|e| e["type"] == "reconciliation" && e["fields"]["id"] == id)
+        .expect("the next observed list reconciles the review");
+    assert_eq!(r["fields"]["kind"], "quarantine_remove");
+    assert_eq!(r["fields"]["supported"], true);
+}
+
+#[test]
+fn rejudge_does_not_apply_one_projects_quarantine_to_another_projects_saved_run() {
+    let s = Sample::new();
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    assert_eq!(s.kr(&broken(), &["run", "broken"]).0, Some(1));
+    let config = s.home.path().join("repo/.kr.toml");
+    std::fs::write(
+        &config,
+        std::fs::read_to_string(&config)
+            .unwrap()
+            .replace("name = \"KrSample\"", "name = \"AnotherProject\""),
+    )
+    .unwrap();
+    s.quarantine(4, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    let out = s.json(&[], &["rejudge"]);
+    assert_eq!(out["changed"], 0, "{out}");
+}
+
+#[test]
+fn an_unquarantined_failure_still_needs_a_decision_and_quarantined_failures_stay_failed_after_it() {
+    const OTHER: &str = "KrSampleUITests/SettingsUITests/testOtherFailure()";
+    let s = Sample::new();
+    s.quarantine(4, serde_json::json!([{"item":"broken","test":BROKEN_TEST,"reason":"repair","added":"2026-10-16"}]));
+    let mut recs = broken();
+    for r in &mut recs {
+        if r.args.iter().any(|a| a == "-enumerate-tests")
+            && r.args.iter().any(|a| a.contains("testFailsOnRequest"))
+        {
+            let start = r.stdout.find("\n{").unwrap();
+            let mut v: serde_json::Value = serde_json::from_str(&r.stdout[start..]).unwrap();
+            v["values"][0]["enabledTests"]
+                .as_array_mut()
+                .unwrap()
+                .push(serde_json::json!({"identifier":OTHER}));
+            r.stdout = v.to_string();
+        }
+        if r.program == "xcrun"
+            && r.args
+                .iter()
+                .any(|a| a == "build/kr/results/broken/run.xcresult")
+        {
+            let mut v: serde_json::Value = serde_json::from_str(&r.stdout).unwrap();
+            let nodes = v["testNodes"][0]["children"][0]["children"][0]["children"]
+                .as_array_mut()
+                .unwrap();
+            let mut other = nodes[0].clone();
+            other["name"] = serde_json::json!("testOtherFailure()");
+            other["nodeIdentifier"] = serde_json::json!("SettingsUITests/testOtherFailure()");
+            other["nodeIdentifierURL"] = serde_json::json!(
+                "test://com.apple.xcode/KrSample/KrSampleUITests/SettingsUITests/testOtherFailure"
+            );
+            nodes.push(other);
+            r.stdout = v.to_string();
+        }
+    }
+    let solo: Vec<_> = recs
+        .iter()
+        .filter(|r| r.args.iter().any(|a| a.contains("rerun-1.xcresult")))
+        .cloned()
+        .collect();
+    for mut r in solo {
+        r.args = r
+            .args
+            .iter()
+            .map(|a| {
+                a.replace("rerun-1.xcresult", "rerun-2.xcresult")
+                    .replace("testFailsOnRequest", "testOtherFailure")
+            })
+            .collect();
+        r.stdout = r.stdout.replace("testFailsOnRequest", "testOtherFailure");
+        recs.push(r);
+    }
+    let mut enumerate = recs
+        .iter()
+        .find(|r| {
+            r.args.iter().any(|a| a == "-enumerate-tests")
+                && r.args.iter().any(|a| a.contains("testFailsOnRequest"))
+        })
+        .unwrap()
+        .clone();
+    enumerate.args = enumerate
+        .args
+        .iter()
+        .map(|a| a.replace("testFailsOnRequest", "testOtherFailure"))
+        .collect();
+    let mut v: serde_json::Value = serde_json::from_str(&enumerate.stdout).unwrap();
+    v["values"][0]["enabledTests"] = serde_json::json!([{"identifier":OTHER}]);
+    enumerate.stdout = v.to_string();
+    recs.push(enumerate);
+    let (code, out) = s.kr(&recs, &["run", "broken", "--json"]);
+    assert_eq!(code, Some(4), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["decisions"].as_array().unwrap().len(), 1);
+    assert_eq!(out["decisions"][0]["test"], OTHER);
+    let id = out["decisions"][0]["id"].as_str().unwrap();
+    let (code, out) = s.kr(
+        &[],
+        &[
+            "decide",
+            id,
+            "flaky",
+            "--reason",
+            "reviewed evidence",
+            "--json",
+        ],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["items"][0]["passed"], false);
+    assert_eq!(out["items"][0]["blocking"], false);
+    assert_eq!(out["items"][0]["tests"]["failed"], 1);
+    assert_eq!(out["items"][0]["tests"]["flaky"], 1);
+}
+
+#[test]
+fn quarantine_counts_flakes_by_run_start_like_report_and_excludes_whole_item_flakes() {
+    let s = Sample::new();
+    let dir = s.state().join("events");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut starts = String::new();
+    let mut ends = String::new();
+    for n in 1..=2 {
+        let run = format!("01999999-0000-7000-8000-{n:012}");
+        starts.push_str(&format!("{}\n", serde_json::json!({"ts":(jiff::Timestamp::now()-jiff::SignedDuration::from_hours(91*24)).to_string(),"run_id":run,"project":"KrSample","type":"run_start","fields":{"label":"run"}})));
+        ends.push_str(&format!("{}\n", serde_json::json!({"ts":jiff::Timestamp::now().to_string(),"run_id":run,"project":"KrSample","type":"item_end","fields":{"item":"launch","passed":true,"flaky":["KrSampleUITests/LaunchUITests/testFlakyOnce()","launch (whole item: high load; passed when run again)"]}})));
+    }
+    std::fs::write(dir.join("2026-01-01.ndjson"), starts).unwrap();
+    std::fs::write(dir.join("2026-10-16.ndjson"), ends).unwrap();
+    let out = s.json(&recordings("gate-default"), &["run", "launch"]);
+    assert!(out["decisions"].as_array().unwrap().is_empty(), "{out}");
+}

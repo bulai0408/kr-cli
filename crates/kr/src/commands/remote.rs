@@ -371,6 +371,8 @@ impl RemoteRun<'_> {
             for key in [
                 "kind",
                 "passed",
+                "blocking",
+                "quarantined",
                 "duration_ms",
                 "device",
                 "tests",
@@ -616,10 +618,16 @@ impl RemoteRun<'_> {
                 .collect::<Vec<_>>()
                 .join(", ");
             let unverified = r["tests"]["unverified"].as_u64().unwrap_or(0) > 0;
-            let verdict = match (r["passed"] == true, unverified) {
-                (true, _) => "PASS",
-                (false, true) => "UNVERIFIED",
-                (false, false) => "FAIL",
+            let verdict = if r["blocking"] == false
+                && r["quarantined"].as_array().is_some_and(|q| !q.is_empty())
+            {
+                "QUARANTINED"
+            } else {
+                match (r["passed"] == true, unverified) {
+                    (true, _) => "PASS",
+                    (false, true) => "UNVERIFIED",
+                    (false, false) => "FAIL",
+                }
             };
             println!("{verdict}: {name} ({detail})");
             for f in r["flaky"].as_array().into_iter().flatten() {

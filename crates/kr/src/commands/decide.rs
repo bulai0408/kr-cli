@@ -125,7 +125,11 @@ fn decide(ctx: &Ctx, choices: &[(String, String)], reason: &str, via: &str) -> R
             ))
             .into());
         };
-        if let Some(made) = pending.made.get(id) {
+        if let Some(made) = pending
+            .made
+            .get(id)
+            .filter(|m| !(m.via == "default" && decision.affects == Affects::Efficiency))
+        {
             return Err(BadArguments(format!(
                 "`{id}` is decided already: {} ({}); a decision is not changed afterwards",
                 made.choice, made.reason
@@ -157,7 +161,7 @@ fn decide(ctx: &Ctx, choices: &[(String, String)], reason: &str, via: &str) -> R
         .iter()
         .filter(|d| d.affects == Affects::Conclusion && !pending.made.contains_key(&d.id))
         .collect();
-    let ok = left.is_empty() && items.iter().all(|r| r.passed);
+    let ok = left.is_empty() && items.iter().all(|r| !r.blocking());
     if left.is_empty() {
         loaded.events().append(&Event::now(
             run_id,
@@ -251,6 +255,9 @@ fn verdicts(pending: &Pending) -> Vec<ItemResult> {
         let Some(r) = items.iter_mut().find(|r| r.name == d.item) else {
             continue;
         };
+        if d.kind != FAILURE_KIND {
+            continue;
+        }
         let tests = r.tests.get_or_insert_with(BTreeMap::new);
         let mut moved = |to: &str| {
             if let Some(failed) = tests.get_mut("failed").filter(|n| **n > 0) {
@@ -283,9 +290,12 @@ fn verdicts(pending: &Pending) -> Vec<ItemResult> {
     }
     for r in items.iter_mut().filter(|r| !r.decisions.is_empty()) {
         let count = |k: &str| r.tests.as_ref().and_then(|t| t.get(k)).copied();
-        if count("failed") == Some(0) && r.unverified_count() == 0 {
-            r.passed = true;
-            r.summary.clear();
+        if count("failed").is_some_and(|n| n == r.quarantined.len()) && r.unverified_count() == 0 {
+            r.passed = count("failed") == Some(0);
+            r.blocking = Some(false);
+            if r.passed {
+                r.summary.clear();
+            }
         }
     }
     items
@@ -336,8 +346,17 @@ fn test_history(events: &[Event], run_id: RunId, test: &str) -> serde_json::Valu
 pub(crate) fn raise(events: &[Event], run_id: RunId, results: &mut [ItemResult]) -> Vec<Decision> {
     let seen = seen_before(events, run_id);
     let mut decisions = Vec::new();
-    for r in results.iter_mut().filter(|r| r.only_test_failures) {
-        for case in unseen(&r.cases, false, &seen) {
+    for r in results
+        .iter_mut()
+        .filter(|r| r.only_test_failures && r.blocking())
+    {
+        let cases: Vec<Case> = r
+            .cases
+            .iter()
+            .filter(|c| !r.quarantined.contains(&c.id))
+            .cloned()
+            .collect();
+        for case in unseen(&cases, false, &seen) {
             let d = failure_kind(
                 format!("{run_id}-{}", decisions.len() + 1),
                 &r.name,

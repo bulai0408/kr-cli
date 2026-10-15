@@ -1215,3 +1215,32 @@ fn a_build_that_fails_on_the_host_fails_the_run_and_says_why() {
     assert_eq!(end["fields"]["ok"], false);
     assert_eq!(end["fields"]["build_failed"], true);
 }
+
+#[test]
+fn remote_quarantined_failures_are_recorded_and_not_printed_as_passes() {
+    let r = Repo::new();
+    let mut run = fixture("run-localhost").remove(0);
+    run.stdout = run.stdout.replacen(
+        "\"passed\": true",
+        "\"passed\": false, \"blocking\": false, \"quarantined\": [\"KrillTests/A/one()\"]",
+        1,
+    );
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(run);
+    let out = r.kr(
+        &recs,
+        &["run", "--remote", "localhost", "source-checks", "kit-build"],
+    );
+    assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stdout.starts_with("QUARANTINED: source-checks"),
+        "{}",
+        out.stdout
+    );
+    let ended = r.events_of("item_end");
+    assert_eq!(ended[0]["fields"]["blocking"], false);
+    assert_eq!(
+        ended[0]["fields"]["quarantined"],
+        serde_json::json!(["KrillTests/A/one()"])
+    );
+}

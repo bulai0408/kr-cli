@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "source": "kr report --json on a copied event log; batch, time and flaky fields unchanged",
+  "reports": [
+    {
+      "name": "batch7",
+      "batch": {
+        "agents": [],
+        "project": "Krill",
+        "runs_without_requester": 13,
+        "since": "2026-10-14T09:40:00Z",
+        "until": "2026-10-14T10:55:00Z",
+        "worktrees": []
+      },
+      "time": {
+        "by_command": [
+          {
+            "command": "check",
+            "failed": 2,
+            "queued_ms": 209918,
+            "runs": 7,
+            "wall_ms": 1892791
+          },
+          {
+            "command": "run",
+            "failed": 4,
+            "queued_ms": 668393,
+            "runs": 6,
+            "wall_ms": 1330797
+          }
+        ],
+        "queue_share": 0.272,
+        "queued_ms": 878311,
+        "running_ms": 2345277,
+        "runs": 13,
+        "wall_ms": 3223588
+      },
+      "flaky": []
+    },
+    {
+      "name": "batch8",
+      "batch": {
+        "agents": [],
+        "project": "Krill",
+        "runs_without_requester": 88,
+        "since": "2026-10-14T10:55:00Z",
+        "until": "2026-10-14T16:20:00Z",
+        "worktrees": []
+      },
+      "time": {
+        "by_command": [
+          {
+            "command": "check",
+            "failed": 8,
+            "queued_ms": 1624745,
+            "runs": 47,
+            "wall_ms": 5385909
+          },
+          {
+            "command": "lock",
+            "failed": 0,
+            "queued_ms": 0,
+            "runs": 3,
+            "wall_ms": 4615
+          },
+          {
+            "command": "run",
+            "failed": 20,
+            "queued_ms": 3650348,
+            "runs": 38,
+            "wall_ms": 9310913
+          }
+        ],
+        "queue_share": 0.359,
+        "queued_ms": 5275093,
+        "running_ms": 9426344,
+        "runs": 88,
+        "wall_ms": 14701437
+      },
+      "flaky": [
+        {
+          "flaky": 1,
+          "item": "detail-search",
+          "item_runs": 1,
+          "test": "KrillUITests/DetailSearchUITests/testDoubanIDsDiscoveredByDetailsOfferCorrection()"
+        },
+        {
+          "flaky": 1,
+          "item": "modules",
+          "item_runs": 3,
+          "test": "KrillUITests/ModulesUITests/testStreamsMergeProviderOrderAndSwitches()"
+        },
+        {
+          "flaky": 1,
+          "item": "settings-about",
+          "item_runs": 1,
+          "test": "KrillUITests/SettingsAboutUITests/testAboutShowsAttributionPinnedLicensesAndSystemLogShareSheet()"
+        },
+        {
+          "flaky": 1,
+          "item": "preload-ipad",
+          "item_runs": 4,
+          "test": "preload-ipad (whole item)"
+        }
+      ]
+    },
+    {
+      "name": "recent",
+      "batch": {
+        "agents": [],
+        "project": "Krill",
+        "runs_without_requester": 324,
+        "since": "2026-10-14T00:00:00Z",
+        "until": "2026-10-16T00:00:00Z",
+        "worktrees": []
+      },
+      "time": {
+        "by_command": [
+          {
+            "command": "check",
+            "failed": 16,
+            "queued_ms": 6040063,
+            "runs": 83,
+            "wall_ms": 16695234
+          },
+          {
+            "command": "gate",
+            "failed": 3,
+            "queued_ms": 0,
+            "runs": 3,
+            "wall_ms": 0
+          },
+          {
+            "command": "lock",
+            "failed": 38,
+            "queued_ms": 5715276,
+            "runs": 96,
+            "wall_ms": 18946557
+          },
+          {
+            "command": "run",
+            "failed": 75,
+            "queued_ms": 17258630,
+            "runs": 142,
+            "wall_ms": 43389197
+          }
+        ],
+        "queue_share": 0.367,
+        "queued_ms": 29013969,
+        "running_ms": 50017019,
+        "runs": 324,
+        "wall_ms": 79030988
+      },
+      "flaky": [
+        {
+          "flaky": 2,
+          "item": "preload-ipad",
+          "item_runs": 6,
+          "test": "preload-ipad (whole item)"
+        },
+        {
+          "flaky": 1,
+          "item": "detail-search",
+          "item_runs": 3,
+          "test": "KrillUITests/DetailSearchUITests/testDoubanIDsDiscoveredByDetailsOfferCorrection()"
+        },
+        {
+          "flaky": 1,
+          "item": "modules",
+          "item_runs": 9,
+          "test": "KrillUITests/ModulesUITests/testStreamsMergeProviderOrderAndSwitches()"
+        },
+        {
+          "flaky": 1,
+          "item": "preload",
+          "item_runs": 4,
+          "test": "KrillUITests/PlaybackPreloadUITests/testSourceOptOutAndSharedStorageClear()"
+        },
+        {
+          "flaky": 1,
+          "item": "settings-about",
+          "item_runs": 4,
+          "test": "KrillUITests/SettingsAboutUITests/testAboutShowsAttributionPinnedLicensesAndSystemLogShareSheet()"
+        },
+        {
+          "flaky": 1,
+          "item": "modules",
+          "item_runs": 9,
+          "test": "modules (whole item)"
+        }
+      ]
+    }
+  ]
+}
