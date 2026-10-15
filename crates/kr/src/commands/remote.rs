@@ -3,8 +3,8 @@
 //! are written on both machines: the host's kr writes its own, this kr writes the
 //! items and the end of the run under its own run ID.
 //!
-//! Also the SSH-session rule: work that needs a developer certificate is refused in an
-//! SSH session, where the login keychain's signing identities are not available.
+//! Also the signing rule (ADR 0014): work that needs a developer certificate starts
+//! only if the machine that signs it can sign now, which a trial sign there tells.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use kr_config::{ProjectConfig, Remote};
 use kr_events::{Event, EventKind, RunId};
+use kr_remote::signing::TrialSign;
 use kr_remote::{Checkout, Probe, Problem};
 use serde_json::{Value, json};
 
@@ -26,47 +27,49 @@ const SCHEMA_VERSION: u32 = 1;
 /// Environment variables sshd sets in an SSH session.
 const SSH_SESSION: &[&str] = &["SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"];
 
-/// In an SSH session, refuses the selected items that need a developer certificate.
-pub fn refuse_signing_in_ssh_session(
+/// In an SSH session, signs a temporary file here when selected items need a developer
+/// certificate, and refuses them if that fails. A login session on the Mac itself can
+/// sign; there xcodebuild reports a signing problem itself.
+pub fn check_signing_in_ssh_session(
     ctx: &Ctx,
     project: &ProjectConfig,
     sel: &Selection,
 ) -> Result<()> {
-    let Some(var) = SSH_SESSION
+    if !SSH_SESSION
         .iter()
-        .find(|v| ctx.env_var(v).is_some_and(|x| !x.is_empty()))
-    else {
+        .any(|v| ctx.env_var(v).is_some_and(|x| !x.is_empty()))
+    {
         return Ok(());
-    };
-    let problems = signing_problems(
-        project,
-        sel,
-        &format!("this is an SSH session ({var} is set)"),
-        "run it in a login session on the Mac itself (a local terminal, not SSH), or leave it out of this run",
-    )?;
+    }
+    let needed = needs_signing(project, sel)?;
+    if needed.is_empty() {
+        return Ok(());
+    }
+    let out = ctx.runner()?.run(&kr_remote::signing::local_command())?;
+    let problems = TrialSign::parse(&out.stdout).problems(
+        "this Mac",
+        &needed.join(", "),
+        project.signing.team.as_deref(),
+        &out.stderr,
+    );
     if problems.is_empty() {
         return Ok(());
     }
     Err(Refused {
-        code: "kr::signing::ssh_session",
-        what: "refused: work that needs a developer certificate cannot sign in an SSH session"
+        code: "kr::signing::unavailable",
+        what: "refused: this Mac cannot sign work that needs a developer certificate in this SSH session"
             .to_owned(),
         problems,
     }
     .into())
 }
 
-/// Items that build the app for a device or for macOS: Xcode signs those with a
-/// developer certificate from the login keychain, which an SSH session cannot use.
+/// The selected items that build the app for a device or for macOS, each with where:
+/// "`launch` (platform=iOS,id=…)". Xcode signs those with a developer certificate.
 /// Simulator builds and packages built on their own (`dir`) sign without one. A
 /// project that turns signing off (`CODE_SIGNING_ALLOWED = "NO"` in
 /// `[project].build_settings`) needs no certificate.
-fn signing_problems(
-    project: &ProjectConfig,
-    sel: &Selection,
-    why: &str,
-    next: &str,
-) -> Result<Vec<Problem>> {
+fn needs_signing(project: &ProjectConfig, sel: &Selection) -> Result<Vec<String>> {
     if project
         .project
         .build_settings
@@ -90,7 +93,7 @@ fn signing_problems(
                 .iter()
                 .map(|s| (s, one(&[], std::slice::from_ref(s)))),
         );
-    let mut problems = Vec::new();
+    let mut needed = Vec::new();
     for (name, only) in items {
         let signed: Vec<String> = check::build_jobs(project, &only)?
             .into_iter()
@@ -98,17 +101,10 @@ fn signing_problems(
             .map(|j| j.destination)
             .collect();
         if !signed.is_empty() {
-            problems.push(Problem::new(
-                "needs_signing",
-                format!(
-                    "`{name}` builds the app for {}, which needs a developer certificate; {why}",
-                    signed.join(", ")
-                ),
-                next,
-            ));
+            needed.push(format!("`{name}` ({})", signed.join(", ")));
         }
     }
-    Ok(problems)
+    Ok(needed)
 }
 
 /// Runs `kr <kr_args>` on the remote machine `name` and reports its result as this
@@ -122,7 +118,11 @@ pub fn execute(
     name: &str,
     kr_args: Vec<String>,
 ) -> Result<ExitCode> {
-    let label = format!("{} on {name}", label_of(&kr_args));
+    let device = device_of(&kr_args);
+    let label = match device {
+        Some(device) => format!("run on {device} on {name}"),
+        None => format!("{} on {name}", label_of(&kr_args)),
+    };
     let Some(remote) = loaded.config.machine.remotes.get(name) else {
         let declared: Vec<&str> = loaded
             .config
@@ -163,15 +163,20 @@ pub fn execute(
     super::run::run_start(ctx, loaded, root, sel, &run.label, run.run_id)?;
     let runner = ctx.runner()?;
 
-    let mut problems = signing_problems(
-        project,
-        sel,
-        "a remote run goes through SSH, where the login keychain's signing identities are not available",
-        "run it on a Mac directly (without --remote); remote runs can do simulator work",
-    )?;
-    let (co, git_problems) = kr_remote::checkout(runner.as_ref(), root)?;
-    problems.extend(git_problems);
-    problems.extend(run.probe(runner.as_ref())?);
+    let (co, mut problems) = kr_remote::checkout(runner.as_ref(), root)?;
+    let host_problems = run.probe(runner.as_ref())?;
+    if host_problems.is_empty() {
+        // Signing happens on the host: try it there (ADR 0014).
+        let needed = needs_signing(project, sel)?;
+        if !needed.is_empty() {
+            problems.extend(run.trial_sign(
+                runner.as_ref(),
+                &needed.join(", "),
+                project.signing.team.as_deref(),
+            )?);
+        }
+    }
+    problems.extend(host_problems);
     if !problems.is_empty() {
         run.end(
             json!({ "ok": false, "error": "refused", "problems": problems }),
@@ -188,7 +193,7 @@ pub fn execute(
     for (item, kind) in &run.items {
         run.event(
             EventKind::ItemStart,
-            json!({ "item": item, "kind": kind, "device": null, "host": name }),
+            json!({ "item": item, "kind": kind, "device": device, "host": name }),
         )?;
     }
     let script = kr_remote::run_script(remote, &project.project.name, &co, &kr_args);
@@ -224,6 +229,15 @@ pub fn execute(
                 json!({ "ok": false, "error": message, "remote_error": err }),
                 &co,
             )?;
+            // The host's kr refused to start (e.g. the device is locked): its reasons.
+            if let Some(list) = err["problems"].as_array().filter(|l| !l.is_empty()) {
+                return Err(Refused {
+                    code: "kr::remote::host_refused",
+                    what: format!("{name}: {message}"),
+                    problems: list.iter().map(Problem::from_json).collect(),
+                }
+                .into());
+            }
             let help = err["help"]
                 .as_str()
                 .map(|h| format!("\n  help: {h}"))
@@ -255,6 +269,12 @@ pub fn execute(
             );
         }
     }
+}
+
+/// The real device of `kr run --device <name> …` on the host.
+fn device_of(kr_args: &[String]) -> Option<&str> {
+    let at = kr_args.iter().position(|a| a == "--device")?;
+    kr_args.get(at + 1).map(String::as_str)
 }
 
 /// "run" or "gate <name>", as a local run would be labelled.
@@ -322,6 +342,21 @@ impl RemoteRun<'_> {
         Ok(Probe::parse(&out.stdout).problems(self.name, self.remote, env!("CARGO_PKG_VERSION")))
     }
 
+    /// Signs a temporary file on the host; problems if it cannot sign `needed_by` there.
+    fn trial_sign(
+        &self,
+        runner: &dyn kr_exec::Runner,
+        needed_by: &str,
+        team: Option<&str>,
+    ) -> Result<Vec<Problem>> {
+        let out = runner.run(&kr_remote::ssh(
+            self.remote,
+            kr_remote::signing::SCRIPT,
+            false,
+        ))?;
+        Ok(TrialSign::parse(&out.stdout).problems(self.name, needed_by, team, &out.stderr))
+    }
+
     /// The host's kr gave its result: record it here and pass it on.
     fn finish(
         &self,
@@ -345,6 +380,7 @@ impl RemoteRun<'_> {
                 "unverified_reason",
                 "xcresult",
                 "cases",
+                "decisions",
             ] {
                 if let Some(v) = item.get(key) {
                     fields[key] = v.clone();
@@ -367,6 +403,13 @@ impl RemoteRun<'_> {
         });
         if failed_step.is_some() {
             fields["build_failed"] = json!(true);
+        }
+        // The host's run stopped at decision points (ADR 0015): exit 4, no verdict yet.
+        let pending = result["decisions"].as_array().map_or(0, |d| {
+            d.iter().filter(|d| d["affects"] == "conclusion").count()
+        });
+        if pending > 0 {
+            fields["decisions_pending"] = json!(pending);
         }
         self.end(fields, co)?;
         let code = match status {

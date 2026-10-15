@@ -1,6 +1,6 @@
 # 0014 能不能签名按试签结果判断，不按是不是 SSH 会话
 
-状态：提议（2026-10-15，待协调者确认）
+状态：已采纳（2026-10-15，协调者确认）
 
 ## 背景
 #32（P1-7 远程机器）加了一条规则：在 SSH 会话里，需要开发者证书签名的工作（真机构建、需要开发证书的 macOS 构建）一律在开始前拒绝；`kr run --remote` 也一律拒绝这类工作。前提是「SSH 会话里登录钥匙串锁着，签名身份不可用」。
@@ -21,15 +21,16 @@
    - `mktemp` 建一个临时文件，`trap` 保证结束时删除；
    - `security find-identity -v -p codesigning` 列出有效的签名身份，只取 `Apple Development:` 开头的（Xcode 自动签名用的就是它）；
    - 对每个身份 `codesign --force --sign <SHA-1> <临时文件>`，成功的再用 `codesign -dv` 读回团队 ID；
-   - 每个身份输出一行 `signed team=<ID>` 或 `failed <codesign 最后一行>`，最后输出身份个数。
-   kr 只读这些输出。它不解锁、不修改钥匙串，不读、不存密码或私钥；`find-identity` 只给出证书名字和指纹。
+   - 每个身份输出一行 `identity <N> <SHA-1 前 8 位> signed team=<ID>` 或 `identity <N> <SHA-1 前 8 位> failed <codesign 报错的原因部分>`，最后输出身份个数。
+   kr 只读这些输出。它不解锁、不修改钥匙串，不读、不存密码或私钥。
+   - 证书名不离开那台机器：证书名里有账号名或邮箱，所以脚本只把指纹交给 codesign，输出、事件、日志、错误信息和回放素材里只出现「identity #N」、SHA-1 前几位和团队 ID；codesign 的报错只留最后一个「: 」之后的原因（去掉临时文件路径）。
 4. **怎样判断**：
    - 有一个身份签成功，且团队等于 `[signing].team`（没写团队时任意团队都行）：通过。
    - 没有 Apple Development 身份：拒绝，`signing_no_identity`。
    - 有身份但都签不了：拒绝，`signing_unavailable`，原因写 codesign 的报错；报错是 `errSecInternalComponent` 时写明「这台机器在这个会话里钥匙串锁着」。
    - 签得了但团队都不是 `[signing].team`：拒绝，`signing_wrong_team`。
 5. **错误信息**：和 #32 的其他开始前问题一样，每条写明在哪台机器、原因、下一步，`--json` 的 `error.problems[]` 带 `code`、`message`、`next`。例：
-   - `signing_unavailable`：「work cannot sign with a developer certificate in an SSH session: errSecInternalComponent (the login keychain is locked in this session)」；下一步「on work: make the login keychain usable in SSH sessions (unlocked at SSH login), or run this in a login session on that Mac; kr does not unlock keychains」。
+   - `signing_unavailable`：「`launch` (platform=iOS,id=…) needs a developer certificate; work cannot sign in this session: identity #1 (AAAA1111): errSecInternalComponent (the login keychain is locked in this session)」；下一步「on work: make the login keychain usable in SSH sessions (unlocked at SSH login), or run this in a login session on work; kr does not unlock keychains」。
    - `signing_no_identity`：下一步「on work: add an Apple Development certificate of team K4AXH95DCF (Xcode > Settings > Accounts > Manage Certificates)」。
 6. **远程真机**：`kr run --device <名字> --remote <主机>` 可以组合。主机上的 kr 做设备检查、签名回读、掉线记「未验证」（#36），结果按 #32 的方式传回：本机为每一项写 `item_end`，带主机给的 `device`、`tests.unverified`、`unverified_reason`。主机上设备的开始前问题传回本机时，逐条列出。真机仍是容量为 1 的资源，由主机上的 kr 管。不做远程多台真机并行。
 
@@ -39,7 +40,7 @@
 - 只在 SSH 会话里试签本机：本机登录会话里的签名问题由 xcodebuild 报告，这一类问题不是 SSH 带来的，不在本条规则范围内。
 
 ## 影响
-- 替代 #32 的「SSH 会话一律拒绝签名」和「远程运行一律拒绝需要签名的工作」。错误码 `kr::signing::ssh_session` 不再使用，改为 `kr::signing::unavailable`（本机）；远程仍在 `kr::remote::preflight` 里，problem 的 `code` 由 `needs_signing` 改为上面三种。
+- 替代 #32 的「SSH 会话一律拒绝签名」和「远程运行一律拒绝需要签名的工作」。错误码 `kr::signing::ssh_session` 不再使用，改为 `kr::signing::unavailable`（本机）；远程仍在 `kr::remote::preflight` 里，problem 的 `code` 由 `needs_signing` 改为上面三种（试签没有跑完时也记 `signing_unavailable`，写明最后一行报错）。主机上的 kr 拒绝开始时（例如设备锁屏），本机用 `kr::remote::host_refused` 逐条列出主机给的问题。
 - spec 第二、三阶段第 6 条「签名检查」和用户故事 27 改为按试签结果判断。
 - 回放素材：能签名的输出是 `work` 上的真实录制；签不了的输出按 codesign 的报错格式构造（这台 iMac 的 `ssh localhost` 对当前用户没有授权，录不到），素材说明里写明。
 

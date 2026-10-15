@@ -1,0 +1,10 @@
+{
+  "program": "sh",
+  "args": [
+    "-c",
+    "f=$(mktemp \"${TMPDIR:-/tmp}/kr-trial-sign.XXXXXX\") || exit 1\ntrap 'rm -f \"$f\"' EXIT\necho kr > \"$f\"\nn=0\nfor id in $(security find-identity -v -p codesigning 2>/dev/null | awk '/\"Apple Development: /{print $2}'); do\n  n=$((n+1))\n  short=$(printf %s \"$id\" | cut -c1-8)\n  if out=$(codesign --force --sign \"$id\" \"$f\" 2>&1); then\n    echo \"identity $n $short signed team=$(codesign -dv \"$f\" 2>&1 | sed -n 's/^TeamIdentifier=//p')\"\n  else\n    echo \"identity $n $short failed $(printf %s \"${out##*: }\" | tail -n 1)\"\n  fi\ndone\necho \"identities=$n\""
+  ],
+  "status": 0,
+  "stdout": "identity 1 0001FFFF signed team=TEAMFAKE01\nidentity 2 0002FFFF signed team=TEAMFAKE02\nidentity 3 0003FFFF signed team=TEAMFAKE02\nidentity 4 0004FFFF signed team=TEAMFAKE02\nidentity 5 0005FFFF signed team=TEAMFAKE02\nidentity 6 0006FFFF signed team=K4AXH95DCF\nidentity 7 0007FFFF signed team=K4AXH95DCF\nidentities=7\n",
+  "stderr": ""
+}
