@@ -1,0 +1,18 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "work",
+    "sh -c 'echo \"os=$(uname -s)\"; echo \"xcode=$(xcodebuild -version 2>/dev/null | head -n 1)\"; echo \"kr=$(\"${SHELL:-/bin/sh}\" -lc '\\''\"$HOME\"/kr38/bin/kr --version'\\'' 2>/dev/null)\"'"
+  ],
+  "status": 0,
+  "stdout": "os=Darwin\nxcode=Xcode 27.1\nkr=kr 0.1.0\n",
+  "stderr": ""
+}

@@ -69,6 +69,11 @@ ssh = "fnos"
 
 [remotes.nowhere]
 ssh = "nowhere.invalid"
+
+[remotes.work]
+ssh = "work"
+dir = "~/kr38/remote"
+kr = "~/kr38/bin/kr"
 "#;
 
 struct Repo {
@@ -814,18 +819,12 @@ fn device_result(name: &str) -> String {
 
 #[test]
 fn a_device_on_the_host_runs_and_its_results_come_back() {
+    // Real (2026-10-15): `kr run --device "蔡煜恒的 iPad Mini" --remote work launch`
+    // from the iMac, the iPad on a cable at `work`; every call of this kr, recorded.
     let r = sample_repo();
-    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
-    recs.push(trial_sign_on_host(&work_signs()));
-    recs.push(host_run(
-        "KrSample",
-        &["run", "--device", IPAD, "launch"],
-        &device_result("device-passed"),
-        0,
-    ));
     let out = r.kr(
-        &recs,
-        &["run", "--device", IPAD, "--remote", "localhost", "launch"],
+        &fixture("device-on-work"),
+        &["run", "--device", IPAD, "--remote", "work", "launch"],
     );
     assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
     assert!(
@@ -836,7 +835,7 @@ fn a_device_on_the_host_runs_and_its_results_come_back() {
     );
     assert!(
         out.stdout
-            .contains("run on 蔡煜恒的 iPad Mini on localhost: 1/1 PASS"),
+            .contains("run on 蔡煜恒的 iPad Mini on work: 1/1 PASS"),
         "{}",
         out.stdout
     );
@@ -844,7 +843,7 @@ fn a_device_on_the_host_runs_and_its_results_come_back() {
     assert_eq!(start["fields"]["device"], IPAD, "{start}");
     let end = &r.events_of("item_end")[0];
     assert_eq!(end["fields"]["device"], IPAD, "{end}");
-    assert_eq!(end["fields"]["host"], "localhost", "{end}");
+    assert_eq!(end["fields"]["host"], "work", "{end}");
     assert_eq!(end["fields"]["tests"]["passed"], 2, "{end}");
 }
 
