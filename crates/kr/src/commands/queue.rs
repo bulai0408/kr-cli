@@ -39,10 +39,7 @@ pub fn run(ctx: &Ctx, args: QueueArgs) -> Result<ExitCode> {
     }
 
     if ctx.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({ "resources": views }))?
-        );
+        crate::output::print_json(&json!({ "resources": views }))?;
     } else {
         for v in &views {
             print_human(v);

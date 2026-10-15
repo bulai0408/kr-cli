@@ -3,18 +3,25 @@
 //! `kr run` / `kr gate` saves per item and, with `--evidence`, result bundles from
 //! before kr. The only command it runs is xcresulttool, once per new bundle, on a copy:
 //! xcresulttool writes a database into a bundle it reads.
+//!
+//! It also lists the decision points this kr's rules raise on the saved runs (ADR 0011,
+//! ADR 0015), with what was decided and how later runs reconcile it. It writes no events.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
+use jiff::Timestamp;
+use kr_events::{Event, EventKind, RunId};
 use kr_exec::Runner;
-use kr_run::judge;
+use kr_run::decision::{suggest, unseen};
 use kr_run::rejudge::{Change, Evidence, SCHEMA_VERSION, Saved, parse_enabled_tests};
+use kr_run::{Verdict, judge};
 use kr_xcode::results_command;
 use serde::Serialize;
 
+use super::decide;
 use crate::Ctx;
 
 #[derive(Debug, Args)]
@@ -41,6 +48,28 @@ struct Report {
     changes: Vec<Changed>,
     /// Saved files that cannot be read (e.g. written by a newer kr).
     unreadable: Vec<PathBuf>,
+    /// Failures of saved runs that this kr leaves to the agent: what it would ask now.
+    decision_points: Vec<Point>,
+}
+
+/// A decision point of a saved run under this kr's rules.
+#[derive(Debug, Serialize)]
+struct Point {
+    run_id: String,
+    item: String,
+    test: String,
+    signature: Option<String>,
+    category: Option<kr_run::Category>,
+    /// kr's default now.
+    default: String,
+    /// The decision point's ID if the run raised it when it ran; `None` for a run of a
+    /// kr without decision points, which judged the failure FAIL.
+    id: Option<String>,
+    /// What was decided: choice, reason, via.
+    decision: Option<serde_json::Value>,
+    /// The `reconciliation` event, or (with `recorded: false`) what the later runs in
+    /// the events say now.
+    reconciliation: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -74,7 +103,12 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
         changed: 0,
         changes: Vec::new(),
         unreadable: Vec::new(),
+        decision_points: Vec::new(),
     };
+    let events = loaded
+        .events()
+        .read_since(Timestamp::UNIX_EPOCH)
+        .unwrap_or_default();
     for (run_id, dir) in saved_runs(&loaded.state_dir.join("runs"), &args.runs)? {
         report.runs += 1;
         for file in verdict_files(&dir) {
@@ -86,6 +120,9 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
                 continue;
             };
             report.items += 1;
+            if let Ok(id) = run_id.parse::<RunId>() {
+                report.decision_points.extend(points(&events, id, &saved));
+            }
             if let Some(change) = saved.rejudge(&judge) {
                 report.changes.push(Changed {
                     source: "run",
@@ -122,6 +159,71 @@ pub fn run(ctx: &Ctx, args: RejudgeArgs) -> Result<ExitCode> {
     report.changed = report.changes.len();
     print(ctx, &report)?;
     Ok(ExitCode::SUCCESS)
+}
+
+/// The decision points this kr raises on one saved item, as `kr run` would have at the
+/// end of that run: failures not seen in earlier runs' events.
+fn points(events: &[Event], run_id: RunId, saved: &Saved) -> Vec<Point> {
+    let verdict = judge(&saved.enumeration, &saved.first, &saved.reruns);
+    let cases = kr_run::cases(&verdict, saved.first.timed_out);
+    // A failed test that was not run again (an invalid filter, a lost device) fails the
+    // item by kr's rules, as in `kr run`.
+    let other = !verdict.reasons.is_empty()
+        || saved.reruns.iter().any(Option::is_none)
+        || saved.reruns.len() < Verdict::to_rerun(&saved.first).len();
+    let seen = decide::seen_before(events, run_id);
+    unseen(&cases, other, &seen)
+        .into_iter()
+        .map(|case| {
+            let of_run = |kind: EventKind, key: &str, value: &serde_json::Value| {
+                events
+                    .iter()
+                    .find(|e| e.kind == kind && e.run_id == run_id && e.fields[key] == *value)
+            };
+            let raised = events.iter().find(|e| {
+                e.kind == EventKind::DecisionPoint
+                    && e.run_id == run_id
+                    && e.fields["item"] == saved.item
+                    && e.fields["test"] == case.id
+            });
+            let id = raised.and_then(|e| e.fields["id"].as_str().map(str::to_owned));
+            let decided = id
+                .as_ref()
+                .and_then(|id| of_run(EventKind::Decision, "id", &serde_json::json!(id)));
+            let reconciliation = id.as_ref().and_then(|id| {
+                events
+                    .iter()
+                    .find(|e| e.kind == EventKind::Reconciliation && e.fields["id"] == *id)
+                    .map(|e| {
+                        let mut r = e.fields.clone();
+                        r["recorded"] = serde_json::json!(true);
+                        r
+                    })
+                    .or_else(|| {
+                        let mut r = decide::reconciliation(events, decided?)?;
+                        r["recorded"] = serde_json::json!(false);
+                        Some(r)
+                    })
+            });
+            Point {
+                run_id: run_id.to_string(),
+                item: saved.item.clone(),
+                test: case.id.clone(),
+                signature: case.signature.clone(),
+                category: case.category,
+                default: suggest(case.category).option,
+                id,
+                decision: decided.map(|e| {
+                    serde_json::json!({
+                        "choice": e.fields["choice"],
+                        "reason": e.fields["reason"],
+                        "via": e.fields["via"],
+                    })
+                }),
+                reconciliation,
+            }
+        })
+        .collect()
 }
 
 /// Run directories with saved verdicts, oldest first (run IDs sort by time).
@@ -248,7 +350,7 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
 
 fn print(ctx: &Ctx, report: &Report) -> Result<()> {
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(report)?);
+        crate::output::print_json(report)?;
         return Ok(());
     }
     let verdict = |passed: bool| if passed { "PASS" } else { "FAIL" };
@@ -282,6 +384,48 @@ fn print(ctx: &Ctx, report: &Report) -> Result<()> {
             }
         }
     }
+    for p in &report.decision_points {
+        println!(
+            "DECISION POINT: {} {}: {}: unseen {} failure; kr suggests {}",
+            p.run_id,
+            p.item,
+            p.test,
+            p.category
+                .and_then(|c| serde_json::to_value(c).ok())
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_else(|| "unknown".to_owned()),
+            p.default
+        );
+        match (&p.id, &p.decision) {
+            (None, _) => println!(
+                "  not raised when it ran (a kr without decision points): it was FAIL then"
+            ),
+            (Some(id), None) => println!("  {id}: raised, not decided yet"),
+            (Some(id), Some(d)) => println!(
+                "  {id}: decided {} via {}: {}",
+                d["choice"].as_str().unwrap_or_default(),
+                d["via"].as_str().unwrap_or_default(),
+                d["reason"].as_str().unwrap_or_default()
+            ),
+        }
+        if let Some(r) = &p.reconciliation {
+            println!(
+                "  reconciled{} by run {}: {} → {}",
+                if r["recorded"] == true {
+                    ""
+                } else {
+                    " (not recorded yet)"
+                },
+                r["later"]["run_id"].as_str().unwrap_or_default(),
+                r["later"]["outcome"].as_str().unwrap_or_default(),
+                if r["supported"] == true {
+                    "supported"
+                } else {
+                    "not supported"
+                }
+            );
+        }
+    }
     for file in &report.unreadable {
         eprintln!("warning: cannot read {}; skipped it", file.display());
     }
@@ -303,8 +447,24 @@ fn print(ctx: &Ctx, report: &Report) -> Result<()> {
             e.read
         )
     });
+    let points = &report.decision_points;
+    let decisions = if points.is_empty() {
+        String::new()
+    } else {
+        let decided = points.iter().filter(|p| p.decision.is_some()).count();
+        let reconciled: Vec<_> = points
+            .iter()
+            .filter_map(|p| p.reconciliation.as_ref())
+            .collect();
+        let supported = reconciled.iter().filter(|r| r["supported"] == true).count();
+        format!(
+            "; {} ({decided} decided, {} reconciled, {supported} supported)",
+            plural(points.len(), "decision point", "decision points"),
+            reconciled.len()
+        )
+    };
     println!(
-        "rejudge: {} in {}{evidence}; {changed}",
+        "rejudge: {} in {}{evidence}; {changed}{decisions}",
         plural(report.items, "item", "items"),
         plural(report.runs, "run", "runs"),
     );

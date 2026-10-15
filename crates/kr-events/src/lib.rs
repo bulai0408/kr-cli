@@ -97,7 +97,8 @@ pub enum EventKind {
     SimReleased,
     /// A run (`kr run` / `kr gate`) ended without being aborted, also when kr itself
     /// failed. Fields: label, ok, passed, total, `duration_ms`, `build_failed` (if the
-    /// build failed), error (if kr failed).
+    /// build failed), error (if kr failed), `decisions_pending` (if it ended without a
+    /// verdict: the number of decision points; ok is false until [`EventKind::RunDecided`]).
     RunEnd,
     /// A run stopped on SIGINT, SIGTERM or SIGHUP. Fields: signal ("SIGTERM"),
     /// interrupted (items stopped midway), `not_started`, finished.
@@ -122,6 +123,26 @@ pub enum EventKind {
     /// and was built once more with a clean cache (ADR 0013). Fields: step, reason,
     /// `first_ok` (false), `first_log`, ok, log, `cache_caused` (the clean build passed).
     CompilationCacheRetry,
+    /// A run reached a point its rules do not cover and left it to the calling agent
+    /// (ADR 0011, ADR 0015). Fields: the decision as `--json` shows it: id, kind,
+    /// affects ("conclusion": the run ended without a verdict, exit 4; "efficiency"),
+    /// question, item, test, options [{name, means}], evidence, default {option, reason}.
+    DecisionPoint,
+    /// A decision point was decided. Fields: id, kind, item, test, choice, reason,
+    /// via ("kr decide", "kr run --decide", "kr gate --decide"; "default" for an
+    /// efficiency decision kr took itself, with `review: "pending"`), by {agent,
+    /// worktree, `parent_pid`}, evidence (what the decision point showed). Written with
+    /// the run ID of the run it decides.
+    Decision,
+    /// Every decision point of a run is decided, and the run has its verdict now,
+    /// from the results it had (nothing ran again). Fields: label, ok, passed, total,
+    /// decisions (IDs).
+    RunDecided,
+    /// A decision set against what happened later (ADR 0011 §4): a later run of the
+    /// same test on the same build inputs. Fields: id, `decided_run`, kind, item, test,
+    /// choice, later {`run_id`, outcome}, `input_hash`, supported (the outcome agrees
+    /// with the choice), rule.
+    Reconciliation,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

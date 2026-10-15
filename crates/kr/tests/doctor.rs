@@ -91,5 +91,8 @@ fn doctor_json_says_where_each_capacity_comes_from() {
     assert_eq!(cap["light"]["source"], "suggested");
     assert_eq!(json["problems"][0]["code"], "pool_incomplete");
     assert_eq!(json["xcode"]["selected"]["version"], "27.1");
+    // Every --json document is versioned and has the decision points (none here).
+    assert_eq!(json["schema_version"], 1);
+    assert_eq!(json["decisions"], serde_json::json!([]));
     insta::assert_json_snapshot!(json["capacity"]);
 }

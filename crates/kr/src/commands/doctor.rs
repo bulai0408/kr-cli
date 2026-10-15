@@ -101,7 +101,7 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
         if let Some(d) = &device {
             out["device"] = d.json()["device"].clone();
         }
-        println!("{}", serde_json::to_string_pretty(&out)?);
+        crate::output::print_json(&out)?;
     } else {
         print_human(
             &profile,

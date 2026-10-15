@@ -1027,10 +1027,7 @@ fn check_isolation(
 
 fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
     if ctx.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({ "ok": ok, "steps": steps }))?
-        );
+        crate::output::print_json(&json!({ "ok": ok, "steps": steps }))?;
         return Ok(());
     }
     let times: Vec<String> = steps

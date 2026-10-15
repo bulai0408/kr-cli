@@ -17,24 +17,36 @@ use kr_config::{
 use kr_events::{Event, EventKind, RunId};
 use kr_exec::{Command, Runner};
 use kr_resource::Resource;
+use kr_run::decision::{Affects, Decision};
 use kr_run::rejudge::{self, Saved};
 use kr_run::schedule::{self, Action, Done, Executor, LaneId, Order, WallClock};
 use kr_run::{Attempt, Final, Verdict, judge, longest_first};
 use kr_sim::{DeviceLocks, Lease, LeaseHolder, PoolDevice, Simctl};
 use kr_xcode::{Enumeration, Xcodebuild, only_testing_id, parse_test_results, results_command};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::check::{self, BuildJob, Selection, Steps, with_xcode};
+use super::decide;
 use super::human_duration;
 use super::remote;
 use crate::{Ctx, Loaded, slots};
 
 #[derive(Debug, Args)]
+#[command(after_help = EXIT_CODES)]
 pub struct RunArgs {
     /// Scenarios and suites to run.
-    #[arg(required = true)]
+    #[arg(required_unless_present = "decide")]
     targets: Vec<String>,
+
+    /// Hand back decisions of an earlier run that stopped at decision points, like
+    /// `kr decide`: kr gives that run's verdict from its results and runs nothing.
+    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["targets", "remote", "device"])]
+    decide: Vec<String>,
+
+    /// Why, for --decide.
+    #[arg(long, requires = "decide")]
+    reason: Option<String>,
 
     /// Run on this remote machine (`[remotes.<name>]` of the machine config) instead:
     /// its kr fetches the pushed branch and runs there; the result comes back here.
@@ -50,14 +62,25 @@ pub struct RunArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(after_help = EXIT_CODES)]
 pub struct GateArgs {
     /// The gate to run. Default: `default`.
     name: Option<String>,
+
+    /// Hand back decisions of an earlier run, like `kr run --decide`.
+    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["name", "remote"])]
+    decide: Vec<String>,
+
+    /// Why, for --decide.
+    #[arg(long, requires = "decide")]
+    reason: Option<String>,
 
     /// Run on this remote machine, like `kr run --remote`.
     #[arg(long, value_name = "NAME")]
     remote: Option<String>,
 }
+
+const EXIT_CODES: &str = "Exit codes: 0 every item passed; 1 an item failed or is unverified, or kr failed; 2 bad arguments; 4 no verdict yet: the run stopped at decision points (`decisions` in --json), hand them back with `kr decide`; 128 + n stopped by signal n.";
 
 /// Where results go, relative to the repo root; the latest run of each item wins.
 const RESULTS: &str = "build/kr/results";
@@ -65,6 +88,9 @@ const LEASE_POLL: Duration = Duration::from_secs(2);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 
 pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
+    if let Some(reason) = &args.reason {
+        return decide::from_flags(ctx, &args.decide, reason, "kr run --decide");
+    }
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let mut sel = check::select(project, &args.targets, None)?;
@@ -92,6 +118,9 @@ pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
 }
 
 pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
+    if let Some(reason) = &args.reason {
+        return decide::from_flags(ctx, &args.decide, reason, "kr gate --decide");
+    }
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let name = args.name.unwrap_or_else(|| "default".to_owned());
@@ -116,44 +145,54 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
     )
 }
 
-/// One scenario or suite and how it ended.
-#[derive(Debug, Clone, Serialize)]
-struct ItemResult {
-    name: String,
-    kind: &'static str,
-    passed: bool,
+/// One scenario or suite and how it ended. Saved with a run's decision points, so
+/// `kr decide` can give the verdict from it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ItemResult {
+    pub(crate) name: String,
+    kind: String,
+    pub(crate) passed: bool,
     duration_ms: u64,
     device: Option<String>,
     /// passed / failed / flaky / skipped counts, for test items.
-    tests: Option<BTreeMap<&'static str, usize>>,
-    flaky: Vec<String>,
+    pub(crate) tests: Option<BTreeMap<String, usize>>,
+    pub(crate) flaky: Vec<String>,
     /// At most three lines on failure.
-    summary: Vec<String>,
+    pub(crate) summary: Vec<String>,
     /// Notes that do not fail the item (e.g. static and real enumeration disagree).
     notes: Vec<String>,
-    xcresult: Option<PathBuf>,
-    log: Option<PathBuf>,
+    pub(crate) xcresult: Option<PathBuf>,
+    pub(crate) log: Option<PathBuf>,
     /// Load and memory pressure when the item started and ended.
-    load: Option<serde_json::Value>,
+    pub(crate) load: Option<serde_json::Value>,
     /// Set when the load was high (above `[load] per_core` × cores) during the item.
-    high_load: Option<String>,
+    pub(crate) high_load: Option<String>,
     /// The build job of a test item, for its input hash in the events.
     #[serde(skip)]
     job: Option<usize>,
-    /// Each test of a test item: outcome, time, failure signature and category.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    cases: Vec<kr_run::Case>,
-    /// Why the item is unverified (the device was lost during it), with the count in
-    /// `tests.unverified`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    unverified_reason: Option<String>,
+    /// Each test of a test item: outcome, time, failure signature and category, as kr
+    /// judged it (a decision does not change them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) cases: Vec<kr_run::Case>,
+    /// Why the item is unverified (the device was lost during it, or the agent judged a
+    /// failure an environment failure), with the count in `tests.unverified`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) unverified_reason: Option<String>,
+    /// Only failed tests fail the item: nothing else (a timeout, missing tests, an
+    /// invalid rerun filter, a lost device) does. Then classifying the failures can
+    /// change the verdict.
+    #[serde(skip)]
+    pub(crate) only_test_failures: bool,
+    /// IDs of the decision points about this item (ADR 0011).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) decisions: Vec<String>,
 }
 
 impl ItemResult {
-    fn new(name: &str, kind: &'static str) -> Self {
+    fn new(name: &str, kind: &str) -> Self {
         Self {
             name: name.to_owned(),
-            kind,
+            kind: kind.to_owned(),
             passed: false,
             duration_ms: 0,
             device: None,
@@ -168,6 +207,8 @@ impl ItemResult {
             job: None,
             cases: Vec::new(),
             unverified_reason: None,
+            only_test_failures: false,
+            decisions: Vec::new(),
         }
     }
 
@@ -176,13 +217,14 @@ impl ItemResult {
     /// item.
     fn unverified(mut self, why: String) -> Self {
         let tests = self.tests.get_or_insert_with(BTreeMap::new);
-        let failed = tests.insert("failed", 0).unwrap_or(0);
+        let failed = tests.insert("failed".to_owned(), 0).unwrap_or(0);
         let total: usize = tests.values().sum();
         tests.insert(
-            "unverified",
+            "unverified".to_owned(),
             if total == 0 { failed.max(1) } else { failed },
         );
         self.passed = false;
+        self.only_test_failures = false;
         self.summary = std::iter::once(why.clone())
             .chain(self.summary)
             .take(3)
@@ -191,7 +233,7 @@ impl ItemResult {
         self
     }
 
-    fn unverified_count(&self) -> usize {
+    pub(crate) fn unverified_count(&self) -> usize {
         self.tests
             .as_ref()
             .and_then(|t| t.get("unverified"))
@@ -420,7 +462,7 @@ impl Drop for LoadSampler {
 }
 
 /// How a stop signal left the run.
-struct Stopped {
+pub(crate) struct Stopped {
     signal: i32,
     interrupted: Vec<String>,
     not_started: Vec<String>,
@@ -477,15 +519,12 @@ impl Stopped {
     /// The report when nothing finished.
     fn report(&self, ctx: &Ctx, label: &str, results: &[ItemResult]) -> Result<()> {
         if ctx.json {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json!({
-                    "ok": false,
-                    "label": label,
-                    "items": results,
-                    "aborted": self.json(),
-                }))?
-            );
+            crate::output::print_json(&json!({
+                "ok": false,
+                "label": label,
+                "items": results,
+                "aborted": self.json(),
+            }))?;
         } else {
             println!("{}", self.line(label));
         }
@@ -647,31 +686,53 @@ fn execute_run(
             not_started,
         };
         stop.record(loaded, run_id, &results)?;
+        let (build, build_text) = build_summary(&steps);
         report(
             ctx,
-            label,
-            &steps,
+            &Summary {
+                label,
+                build: &build,
+                build_text: &build_text,
+                elapsed: started.elapsed(),
+            },
             &results,
             false,
-            started.elapsed(),
             Some(&stop),
+            &[],
         )?;
         return Ok(stop.exit_code());
     }
-    let ok = results.iter().all(|r| r.passed);
-    run_end(
-        loaded,
-        run_id,
+    // Where kr's rules end: failures it has not seen wait for the agent (ADR 0011).
+    let history = decide::history(loaded);
+    let decisions = decide::raise(&history, run_id, &mut results);
+    decide::reconcile(loaded, run_id, &history)?;
+    let pending: Vec<&Decision> = decisions
+        .iter()
+        .filter(|d| d.affects == Affects::Conclusion)
+        .collect();
+    let ok = pending.is_empty() && results.iter().all(|r| r.passed);
+    let mut end = json!({
+        "ok": ok,
+        "passed": results.iter().filter(|r| r.passed).count(),
+        "total": results.len(),
+        "duration_ms": started.elapsed().as_millis() as u64,
+    });
+    if !pending.is_empty() {
+        end["decisions_pending"] = json!(pending.len());
+    }
+    let (build, build_text) = build_summary(&steps);
+    let summary = Summary {
         label,
-        &json!({
-            "ok": ok,
-            "passed": results.iter().filter(|r| r.passed).count(),
-            "total": results.len(),
-            "duration_ms": started.elapsed().as_millis() as u64,
-        }),
-    )?;
-    report(ctx, label, &steps, &results, ok, started.elapsed(), None)?;
-    Ok(if ok {
+        build: &build,
+        build_text: &build_text,
+        elapsed: started.elapsed(),
+    };
+    decide::record(ctx, loaded, run_id, &summary, &results, &decisions)?;
+    run_end(loaded, run_id, label, &end)?;
+    report(ctx, &summary, &results, ok, None, &pending)?;
+    Ok(if !pending.is_empty() {
+        ExitCode::from(crate::output::DECISIONS_PENDING)
+    } else if ok {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
@@ -1731,6 +1792,7 @@ fn run_item_once(
     let verdict = &saved.verdict;
 
     r.passed = verdict.passed();
+    r.only_test_failures = !r.passed && verdict.reasons.is_empty() && invalid.is_empty();
     r.cases = kr_run::cases(verdict, saved.first.timed_out);
     r.summary = if r.passed {
         Vec::new()
@@ -1755,6 +1817,7 @@ fn run_item_once(
             ("skipped", verdict.count(Final::Skipped)),
         ]
         .into_iter()
+        .map(|(k, n)| (k.to_owned(), n))
         .collect(),
     );
     r.log = Some(logs);
@@ -1802,12 +1865,9 @@ fn json_tail(text: &str) -> Option<&str> {
 
 fn report_build_failure(ctx: &Ctx, label: &str, steps: &[check::StepResult]) -> Result<()> {
     if ctx.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(
-                &json!({ "ok": false, "label": label, "build": steps, "items": [] })
-            )?
-        );
+        crate::output::print_json(
+            &json!({ "ok": false, "label": label, "build": steps, "items": [] }),
+        )?;
         return Ok(());
     }
     let failed = steps
@@ -1824,17 +1884,9 @@ fn report_build_failure(ctx: &Ctx, label: &str, steps: &[check::StepResult]) -> 
     Ok(())
 }
 
-fn report(
-    ctx: &Ctx,
-    label: &str,
-    steps: &Steps<'_>,
-    results: &[ItemResult],
-    ok: bool,
-    elapsed: Duration,
-    stopped: Option<&Stopped>,
-) -> Result<()> {
-    let passed = results.iter().filter(|r| r.passed).count();
-    let build = if steps.results.iter().any(|s| s.step.starts_with("build")) {
+/// The build part of a report: `{steps, cached}` for `--json` and the human words.
+fn build_summary(steps: &Steps<'_>) -> (serde_json::Value, String) {
+    let text = if steps.results.iter().any(|s| s.step.starts_with("build")) {
         let ms: u64 = steps
             .results
             .iter()
@@ -1845,20 +1897,52 @@ fn report(
     } else {
         "build cached".to_owned()
     };
+    (
+        json!({ "steps": steps.results, "cached": steps.cached }),
+        text,
+    )
+}
+
+/// What a run report says besides its items.
+pub(crate) struct Summary<'a> {
+    pub(crate) label: &'a str,
+    /// `{steps, cached}`.
+    pub(crate) build: &'a serde_json::Value,
+    /// "built in 2m" or "build cached".
+    pub(crate) build_text: &'a str,
+    pub(crate) elapsed: Duration,
+}
+
+/// The report of a run, also of one that `kr decide` gives its verdict. `pending`: the
+/// decision points still to decide; with any, the run has no verdict.
+pub(crate) fn report(
+    ctx: &Ctx,
+    summary: &Summary<'_>,
+    results: &[ItemResult],
+    ok: bool,
+    stopped: Option<&Stopped>,
+    pending: &[&Decision],
+) -> Result<()> {
+    let label = summary.label;
+    let elapsed = summary.elapsed;
+    let passed = results.iter().filter(|r| r.passed).count();
     if ctx.json {
         let out = json!({
             "ok": ok,
             "label": label,
             "passed": passed,
             "total": results.len(),
-            "build": { "steps": steps.results, "cached": steps.cached },
+            "build": summary.build,
             "items": results,
             "duration_ms": elapsed.as_millis() as u64,
             "aborted": stopped.map(Stopped::json),
+            "concluded": pending.is_empty() && stopped.is_none(),
+            "decisions": pending,
         });
-        println!("{}", serde_json::to_string_pretty(&out)?);
+        crate::output::print_json(&out)?;
         return Ok(());
     }
+    let undecided = |r: &ItemResult| pending.iter().any(|d| r.decisions.contains(&d.id));
     for r in results {
         let dur = human_duration(Duration::from_millis(r.duration_ms));
         let counts = r.tests.as_ref().map(|t| {
@@ -1875,7 +1959,15 @@ fn report(
             (Some(c), None) => format!("{c}, {dur}"),
             (None, _) => dur,
         };
-        if r.unverified_count() > 0 {
+        if undecided(r) {
+            println!("UNDECIDED: {} ({detail})", r.name);
+            for line in r.summary.iter().take(3) {
+                println!("  {line}");
+            }
+            if let Some(x) = &r.xcresult {
+                println!("  xcresult: {}", x.display());
+            }
+        } else if r.unverified_count() > 0 {
             println!("UNVERIFIED: {} ({detail})", r.name);
             for line in r.summary.iter().take(3) {
                 println!("  {line}");
@@ -1912,6 +2004,19 @@ fn report(
         println!("{}", stop.line(label));
         return Ok(());
     }
+    if !pending.is_empty() {
+        decide::print_pending(pending);
+        println!(
+            "{label}: no verdict yet: {} · {} · {}",
+            match pending.len() {
+                1 => "1 decision pending".to_owned(),
+                n => format!("{n} decisions pending"),
+            },
+            summary.build_text,
+            human_duration(elapsed)
+        );
+        return Ok(());
+    }
     let unverified = results.iter().filter(|r| r.unverified_count() > 0).count();
     let unverified = if unverified > 0 {
         format!(", {unverified} unverified")
@@ -1919,8 +2024,9 @@ fn report(
         String::new()
     };
     println!(
-        "{label}: {passed}/{} PASS{unverified} · {build} · {}",
+        "{label}: {passed}/{} PASS{unverified} · {} · {}",
         results.len(),
+        summary.build_text,
         human_duration(elapsed)
     );
     Ok(())

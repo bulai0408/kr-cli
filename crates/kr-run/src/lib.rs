@@ -1,6 +1,7 @@
 //! Decisions of `kr run` that do not touch the machine (ADR 0005): whether a scenario
 //! passed, what the build inputs hash to, and in which order work goes to simulators.
 
+pub mod decision;
 mod failure;
 pub mod rejudge;
 pub mod schedule;

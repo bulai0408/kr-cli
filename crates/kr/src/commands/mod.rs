@@ -1,5 +1,6 @@
 pub mod check;
 pub mod config;
+pub mod decide;
 pub mod deliver;
 pub mod device;
 pub mod doctor;
@@ -11,6 +12,7 @@ pub mod rejudge;
 pub mod remote;
 pub mod run;
 pub mod simulate;
+pub mod skill;
 
 use clap::builder::TypedValueParser;
 use kr_resource::Resource;
