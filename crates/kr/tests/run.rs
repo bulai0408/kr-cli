@@ -314,6 +314,169 @@ fn sysctl_with_load(load: f64) -> Recording {
 }
 
 #[test]
+fn command_reruns_preserve_the_first_log_and_record_both_paths() {
+    for passed in [false, true] {
+        let s = Sample::new();
+        let config = s.home.path().join("repo/.kr.toml");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str("\n[suites.backend]\ntype = \"command\"\nrun = \"printf 'backend failed\\\\n'; exit 1\"\n");
+        std::fs::write(config, text).unwrap();
+        let mut recs: Vec<_> = recordings("gate-default")
+            .into_iter()
+            .filter(|r| r.program == "git")
+            .collect();
+        recs.extend(vec![sysctl_with_load(50.0); 6]);
+        let command = |status, stdout: &str| Recording {
+            program: "sh".to_owned(),
+            args: vec![
+                "-c".to_owned(),
+                "printf 'backend failed\\n'; exit 1".to_owned(),
+            ],
+            status: Some(status),
+            stdout: stdout.to_owned(),
+            stderr: String::new(),
+            ..tree()
+        };
+        recs.push(command(1, "backend failed\n"));
+        recs.push(command(if passed { 0 } else { 1 }, "second attempt\n"));
+        let (code, out) = s.kr(&recs, &["run", "backend"]);
+        assert_eq!(code, Some(if passed { 0 } else { 1 }), "{out}");
+        let events = s.events();
+        let end = events.iter().find(|e| e["type"] == "item_end").unwrap();
+        let first = PathBuf::from(end["fields"]["log"].as_str().unwrap());
+        let again = PathBuf::from(end["fields"]["again_log"].as_str().unwrap());
+        assert_eq!(first.file_name().unwrap(), "backend.log");
+        assert_eq!(again.file_name().unwrap(), "backend.again.log");
+        assert!(
+            std::fs::read_to_string(&first)
+                .unwrap()
+                .contains("backend failed")
+        );
+        assert!(
+            std::fs::read_to_string(&again)
+                .unwrap()
+                .contains("second attempt")
+        );
+        let rerun = events.iter().find(|e| e["type"] == "rerun").unwrap();
+        assert_eq!(rerun["fields"]["log"], end["fields"]["log"]);
+        assert_eq!(rerun["fields"]["again_log"], end["fields"]["again_log"]);
+        assert!(out.contains(first.to_str().unwrap()), "{out}");
+    }
+}
+
+#[test]
+fn a_persistent_solo_failure_skips_the_whole_item_rerun_under_high_load() {
+    let s = Sample::new();
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    let mut recs = vec![sysctl_with_load(50.0); 3];
+    recs.extend([
+        sysctl_with_load(2.0),
+        sysctl_with_load(2.0),
+        sysctl_with_load(50.0),
+    ]);
+    recs.extend(broken());
+    let (code, out) = s.kr(&recs, &["run", "broken"]);
+    assert_eq!(code, Some(1), "{out}");
+    let events = s.events();
+    let whole: Vec<_> = events
+        .iter()
+        .filter(|e| e["type"] == "rerun" && e["fields"]["whole_item"] == true)
+        .collect();
+    assert_eq!(whole.len(), 1);
+    assert_eq!(whole[0]["fields"]["skipped"], true);
+    assert_eq!(
+        whole[0]["fields"]["reason"],
+        "persistent test failure after individual rerun under normal load"
+    );
+    let evidence = &whole[0]["fields"]["solo_rerun"];
+    assert_eq!(evidence["test"], BROKEN_TEST);
+    assert_eq!(evidence["load_state"], "normal");
+    assert_eq!(evidence["load"]["start"]["load"]["one"], 2.0);
+    assert_eq!(evidence["load"]["end"]["load"]["one"], 2.0);
+    assert!(
+        !s.home
+            .path()
+            .join("repo/build/kr/results/broken-again")
+            .exists()
+    );
+}
+
+#[test]
+fn a_failed_solo_rerun_under_high_or_unknown_load_keeps_the_whole_item_rerun() {
+    for (before, after, state) in [
+        (Some(50.0), Some(50.0), "high"),
+        (Some(2.0), Some(50.0), "high"),
+        (Some(50.0), Some(2.0), "high"),
+        (None, Some(2.0), "unknown"),
+        (Some(2.0), None, "unknown"),
+    ] {
+        let s = Sample::new();
+        s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+        let mut recs = vec![sysctl_with_load(50.0); 3];
+        for load in [before, after] {
+            let mut sample = sysctl_with_load(load.unwrap_or(2.0));
+            if load.is_none() {
+                sample.stdout.clear();
+            }
+            recs.push(sample);
+        }
+        recs.push(sysctl_with_load(50.0));
+        recs.extend(broken());
+        let (_, out) = s.kr(&recs, &["run", "broken"]);
+        let events = s.events();
+        let solo = events
+            .iter()
+            .find(|e| e["type"] == "rerun" && e["fields"]["test"] == BROKEN_TEST)
+            .unwrap();
+        assert_eq!(solo["fields"]["load_state"], state, "{out}");
+        let whole = events
+            .iter()
+            .find(|e| e["type"] == "rerun" && e["fields"]["whole_item"] == true)
+            .unwrap();
+        assert_ne!(whole["fields"]["skipped"], true);
+        assert!(
+            s.home
+                .path()
+                .join("repo/build/kr/results/broken-again")
+                .exists()
+        );
+    }
+}
+
+#[test]
+fn a_timeout_with_successful_solo_reruns_still_reruns_the_whole_item() {
+    let s = Sample::new();
+    let mut recs = vec![sysctl_with_load(50.0); 8];
+    recs.extend(broken().into_iter().map(|mut r| {
+        if r.program == "xcodebuild" && r.args.iter().any(|a| a.ends_with("broken/run.xcresult")) {
+            r.timed_out = true;
+        }
+        if r.program == "xcrun"
+            && r.args
+                .iter()
+                .any(|a| a.ends_with("broken/rerun-1.xcresult"))
+        {
+            r.stdout = r.stdout.replace("\"Failed\"", "\"Passed\"");
+        }
+        r
+    }));
+    let (_, out) = s.kr(&recs, &["run", "broken"]);
+    let events = s.events();
+    assert!(
+        events.iter().any(|e| e["type"] == "rerun"
+            && e["fields"]["test"] == BROKEN_TEST
+            && e["fields"]["passed"] == true),
+        "{out}"
+    );
+    assert!(
+        events.iter().any(|e| e["type"] == "rerun"
+            && e["fields"]["whole_item"] == true
+            && e["fields"]["skipped"] != true),
+        "{out}"
+    );
+}
+
+#[test]
 fn a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky() {
     let gate = recordings("gate-default");
     let mut recs: Vec<Recording> = gate
@@ -327,8 +490,14 @@ fn a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky() {
         .collect();
     // Load 50 on 8 cores is above 4 × 8: high for the whole run.
     recs.extend((0..4).map(|_| sysctl_with_load(50.0)));
-    // First round: the recorded failing run of `broken`, including its test rerun.
-    recs.extend(recordings("broken").into_iter().skip(1));
+    // No readable first result: there is no test to rerun individually.
+    recs.extend(recordings("broken").into_iter().skip(1).map(|mut r| {
+        if r.program == "xcrun" && r.args.iter().any(|a| a.ends_with("broken/run.xcresult")) {
+            r.status = Some(1);
+            r.stdout.clear();
+        }
+        r
+    }));
     // Second round: the recorded passing run of `broken` from the gate, in broken-again.
     recs.extend(
         gate.iter()

@@ -170,6 +170,10 @@ pub(crate) struct ItemResult {
     notes: Vec<String>,
     pub(crate) xcresult: Option<PathBuf>,
     pub(crate) log: Option<PathBuf>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    again_log: Option<PathBuf>,
+    #[serde(skip)]
+    persistent_failure: Option<serde_json::Value>,
     /// Load and memory pressure when the item started and ended.
     pub(crate) load: Option<serde_json::Value>,
     /// Set when the load was high (above `[load] per_core` × cores) during the item.
@@ -209,6 +213,8 @@ impl ItemResult {
             notes: Vec::new(),
             xcresult: None,
             log: None,
+            again_log: None,
+            persistent_failure: None,
             load: None,
             high_load: None,
             job: None,
@@ -819,31 +825,42 @@ fn run_command_suite(
     dir: Option<&Path>,
     timeout: Option<&str>,
 ) -> Result<ItemResult> {
+    let started = Instant::now();
     let per_core = s.loaded.config.machine.load.per_core;
     let sample = || kr_machine::read_hardware(s.runner).ok();
     let before = sample();
-    let mut r = run_command_suite_once(s, name, run, dir, timeout)?;
+    let mut r = run_command_suite_once(s, name, run, dir, timeout, false)?;
     let after = sample();
     r.high_load = [&before, &after]
         .into_iter()
         .flatten()
         .find_map(|hw| hw.overloaded(per_core));
     if let (false, Some(reason)) = (r.passed, r.high_load.clone()) {
-        let again = run_command_suite_once(s, name, run, dir, timeout)?;
+        let again = run_command_suite_once(s, name, run, dir, timeout, true)?;
+        s.loaded.events().append(&Event::now(
+            s.run_id,
+            s.loaded.project(),
+            EventKind::Rerun,
+            json!({
+                "item": name, "whole_item": true, "attempt": 2,
+                "reason": format!("failed during high load ({reason})"),
+                "passed": again.passed, "log": r.log, "again_log": again.log,
+            }),
+        ))?;
+        r.again_log = again.log.clone();
         if again.passed {
-            r = ItemResult {
-                flaky: vec![format!(
-                    "{name} (failed during high load ({reason}); passed when run again)"
-                )],
-                high_load: Some(reason),
-                ..again
-            };
+            r.passed = true;
+            r.summary.clear();
+            r.flaky.push(format!(
+                "{name} (failed during high load ({reason}); passed when run again)"
+            ));
         } else {
             r.notes.push(format!(
                 "failed during high load ({reason}); failed again when run again"
             ));
         }
     }
+    r.duration_ms = started.elapsed().as_millis() as u64;
     item_event(s, &r)?;
     Ok(r)
 }
@@ -854,9 +871,14 @@ fn run_command_suite_once(
     run: &str,
     dir: Option<&Path>,
     timeout: Option<&str>,
+    again: bool,
 ) -> Result<ItemResult> {
     let started = Instant::now();
-    let log = s.loaded.run_dir(s.run_id).join(format!("{name}.log"));
+    let suffix = if again { ".again" } else { "" };
+    let log = s
+        .loaded
+        .run_dir(s.run_id)
+        .join(format!("{name}{suffix}.log"));
     let cmd = Command::new("sh")
         .args(["-c", run])
         .current_dir(s.root.join(dir.unwrap_or(Path::new(""))))
@@ -1322,6 +1344,8 @@ fn item_event(s: &Shared<'_>, r: &ItemResult) -> Result<()> {
                 "load": r.load,
                 "high_load": r.high_load,
                 "xcresult": r.xcresult,
+                "log": r.log,
+                "again_log": r.again_log,
                 "cases": r.cases,
                 "identity": identity_of(s, r),
             });
@@ -1496,7 +1520,8 @@ fn ensure_products(s: &Shared<'_>, item: &WorkItem) -> Result<Option<String>, St
 
 /// Runs one item, sampling the machine load before and after. A failure during high
 /// load (`[load] per_core`) is marked as such and the whole item runs once more; if it
-/// passes then, the item counts as flaky (ADR 0003).
+/// passes then, the item counts as flaky. A solo rerun that failed with normal load
+/// measured before and after it already proves a persistent failure (ADR 0003).
 fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Result<ItemResult> {
     let started = Instant::now();
     s.loaded.events().append(&Event::now(
@@ -1557,31 +1582,46 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
     };
     r.load = Some(json!({ "start": state(&before), "end": state(&after) }));
     if let (false, Some(reason)) = (r.passed, &high) {
-        let note = format!("failed during high load ({reason})");
-        s.loaded.events().append(&Event::now(
-            s.run_id,
-            s.loaded.project(),
-            EventKind::Rerun,
-            json!({
-                "item": item.name,
-                "whole_item": true,
-                "reason": note,
-                "attempt": 2,
-                "xcresult": s.root.join(&s.jobs[item.job].dir)
-                    .join(results_dir(&format!("{}-again", item.name)))
-                    .join("run.xcresult"),
-            }),
-        ))?;
-        let mut again = run_item_once(s, item, device, "again")?;
-        if again.passed {
-            again.flaky.push(format!(
-                "{} (whole item: {note}; passed when run again)",
-                item.name
-            ));
-            again.load = r.load.take();
-            r = again;
+        if let Some(evidence) = &r.persistent_failure {
+            s.loaded.events().append(&Event::now(
+                s.run_id,
+                s.loaded.project(),
+                EventKind::Rerun,
+                json!({
+                    "item": item.name,
+                    "whole_item": true,
+                    "skipped": true,
+                    "reason": "persistent test failure after individual rerun under normal load",
+                    "solo_rerun": evidence,
+                }),
+            ))?;
         } else {
-            r.notes.push(format!("{note}; failed again when run again"));
+            let note = format!("failed during high load ({reason})");
+            s.loaded.events().append(&Event::now(
+                s.run_id,
+                s.loaded.project(),
+                EventKind::Rerun,
+                json!({
+                    "item": item.name,
+                    "whole_item": true,
+                    "reason": note,
+                    "attempt": 2,
+                    "xcresult": s.root.join(&s.jobs[item.job].dir)
+                        .join(results_dir(&format!("{}-again", item.name)))
+                        .join("run.xcresult"),
+                }),
+            ))?;
+            let mut again = run_item_once(s, item, device, "again")?;
+            if again.passed {
+                again.flaky.push(format!(
+                    "{} (whole item: {note}; passed when run again)",
+                    item.name
+                ));
+                again.load = r.load.take();
+                r = again;
+            } else {
+                r.notes.push(format!("{note}; failed again when run again"));
+            }
         }
     }
     r.high_load = high;
@@ -1781,7 +1821,36 @@ fn run_item_once(
                 reruns.push(None);
                 continue;
             }
+            let per_core = s.loaded.config.machine.load.per_core;
+            let before = kr_machine::read_hardware(s.runner).ok();
             let (again, bundle) = attempt(&name, vec![filter.clone()])?;
+            let after = kr_machine::read_hardware(s.runner).ok();
+            let load_state = if [&before, &after]
+                .into_iter()
+                .flatten()
+                .any(|hw| hw.overloaded(per_core).is_some())
+            {
+                "high"
+            } else if before.is_some() && after.is_some() {
+                "normal"
+            } else {
+                "unknown"
+            };
+            let state = |hw: &Option<kr_machine::Hardware>| {
+                hw.as_ref()
+                    .map(|h| json!({ "load": h.load, "pressure": h.pressure }))
+            };
+            let load = json!({ "start": state(&before), "end": state(&after) });
+            if load_state == "normal"
+                && again
+                    .results
+                    .iter()
+                    .flatten()
+                    .any(|c| &c.id == test && c.outcome == kr_xcode::TestOutcome::Failed)
+            {
+                r.persistent_failure =
+                    Some(json!({ "test": test, "load": load, "load_state": load_state }));
+            }
             let passed = again.results.as_ref().is_some_and(|r| {
                 r.iter()
                     .any(|c| &c.id == test && c.outcome != kr_xcode::TestOutcome::Failed)
@@ -1790,7 +1859,7 @@ fn run_item_once(
                 s.run_id,
                 s.loaded.project(),
                 EventKind::Rerun,
-                json!({ "item": item.name, "test": test, "passed": passed, "filter": filter, "filter_invalid": false, "attempt": 2, "xcresult": cwd.join(bundle) }),
+                json!({ "item": item.name, "test": test, "passed": passed, "filter": filter, "filter_invalid": false, "attempt": 2, "xcresult": cwd.join(bundle), "load": load, "load_state": load_state }),
             ))?;
             reruns.push(Some(again));
         }
@@ -1991,6 +2060,11 @@ pub(crate) fn report(
             }
             for f in &r.flaky {
                 println!("  flaky: {f}");
+            }
+            if r.again_log.is_some()
+                && let Some(log) = &r.log
+            {
+                println!("  log: {}", log.display());
             }
         } else {
             println!("FAIL: {} ({detail})", r.name);
