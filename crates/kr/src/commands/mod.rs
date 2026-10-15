@@ -6,6 +6,7 @@ pub mod lock;
 pub mod pool;
 pub mod queue;
 pub mod run;
+pub mod simulate;
 
 use clap::builder::TypedValueParser;
 use kr_resource::Resource;

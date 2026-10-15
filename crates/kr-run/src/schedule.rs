@@ -252,7 +252,7 @@ pub fn drive<E: Executor>(
             Done::Taken(lane) => {
                 d.timeline.lanes[lane].granted = Some(now);
                 // Other lanes may have finished the work while this one waited.
-                if d.queues[&d.order[lane]].is_empty() || d.exec.stopped() {
+                if !d.has_work(lane) || d.exec.stopped() {
                     d.state[lane] = State::Releasing;
                     d.exec.start(Action::GiveBack(lane));
                 } else {
@@ -328,7 +328,7 @@ impl<E: Executor> Driver<'_, E> {
         while self.next < self.order.len() {
             let lane = self.next;
             self.next += 1;
-            if self.queues[&self.order[lane]].is_empty() || self.exec.stopped() {
+            if !self.has_work(lane) || self.exec.stopped() {
                 continue;
             }
             self.timeline.lanes[lane].requested = Some(self.clock.now());
@@ -337,6 +337,12 @@ impl<E: Executor> Driver<'_, E> {
             self.exec.start(Action::Take(lane));
             return;
         }
+    }
+
+    fn has_work(&self, lane: LaneId) -> bool {
+        self.queues
+            .get(&self.order[lane])
+            .is_some_and(|q| !q.is_empty())
     }
 
     /// Starts the lane's next item; releases the lane when there is none or after a

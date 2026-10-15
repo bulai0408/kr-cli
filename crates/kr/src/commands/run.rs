@@ -658,7 +658,7 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
 }
 
 /// iPad kinds' lanes queue first (ADR 0010).
-fn is_ipad(project: &ProjectConfig, kind: &str) -> bool {
+pub(crate) fn is_ipad(project: &ProjectConfig, kind: &str) -> bool {
     project
         .simulators
         .devices
@@ -866,7 +866,7 @@ fn release(s: &Shared<'_>, lane: LaneId, held: Held<'_>, ok: bool) -> Done<ItemR
 }
 
 /// Mean duration of each item's recent runs, from events of the past 14 days.
-fn durations(loaded: &Loaded) -> BTreeMap<String, Duration> {
+pub(crate) fn durations(loaded: &Loaded) -> BTreeMap<String, Duration> {
     let since = Timestamp::now() - jiff::SignedDuration::from_hours(24 * 14);
     let mut all: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for e in loaded.events().read_since(since).unwrap_or_default() {
