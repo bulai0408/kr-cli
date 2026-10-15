@@ -292,6 +292,9 @@ impl BuildJob {
         if self.for_device() {
             // Automatic signing may need a profile that includes the device.
             xb = xb.args(["-allowProvisioningUpdates"]);
+            if project.signing.register_devices {
+                xb = xb.args(["-allowProvisioningDeviceRegistration"]);
+            }
         }
         xb.command().current_dir(root.join(&self.dir))
     }

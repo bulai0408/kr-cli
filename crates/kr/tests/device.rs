@@ -188,6 +188,11 @@ struct Sample {
 
 impl Sample {
     fn new() -> Self {
+        Self::with_signing("")
+    }
+
+    /// With more lines in [signing].
+    fn with_signing(extra: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let repo = home.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -204,7 +209,7 @@ impl Sample {
         );
         std::fs::write(
             repo.join(".kr.toml"),
-            config + "\n[signing]\nteam = \"K4AXH95DCF\"\n",
+            config + "\n[signing]\nteam = \"K4AXH95DCF\"\n" + extra,
         )
         .unwrap();
         copy_dir(
@@ -280,6 +285,10 @@ fn a_test_runner_the_device_refuses_fails_with_xcodebuilds_reason() {
         "{text}"
     );
     assert!(!text.contains("selects no test on the device"), "{text}");
+    assert!(
+        text.contains("note: the provisioning profile does not include 蔡煜恒的 iPad Mini: register it in team K4AXH95DCF (Xcode > Window > Devices and Simulators), or set [signing] register_devices = true in .kr.toml"),
+        "{text}"
+    );
     assert!(
         !sample
             .events()
@@ -443,4 +452,27 @@ fn a_device_lost_during_an_item_makes_it_unverified_not_failed() {
             .starts_with("lost 蔡煜恒的 iPad Mini: "),
         "{end}"
     );
+}
+
+#[test]
+fn register_devices_lets_xcodebuild_register_the_device() {
+    let sample = Sample::with_signing("register_devices = true\n");
+    let mut recs = device_recordings("runner-not-installed");
+    for r in recs
+        .iter_mut()
+        .filter(|r| r.args.first().map(String::as_str) == Some("build-for-testing"))
+    {
+        let at = r
+            .args
+            .iter()
+            .position(|a| a == "-allowProvisioningUpdates")
+            .unwrap();
+        r.args
+            .insert(at + 1, "-allowProvisioningDeviceRegistration".to_owned());
+    }
+    let (code, text) = sample.kr(&recs, &["run", "--device", IPAD, "launch"]);
+    assert!(!text.contains("no recording"), "{text}");
+    assert_eq!(code, Some(1), "{text}");
+    // Registration was on: no advice to turn it on.
+    assert!(!text.contains("register_devices = true"), "{text}");
 }

@@ -204,6 +204,9 @@ pub struct Isolation {
 pub struct Signing {
     /// The Apple Developer Team ID the app must be signed by, e.g. "K4AXH95DCF".
     pub team: Option<String>,
+    /// Let xcodebuild register a device that is not yet in the team on the developer
+    /// website (`-allowProvisioningDeviceRegistration`). Off: it changes the team's account.
+    pub register_devices: bool,
 }
 
 /// Default hard timeout of a scenario or suite.

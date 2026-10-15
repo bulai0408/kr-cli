@@ -44,5 +44,9 @@
 
 ## 签名与描述文件
 
-- 真机测试产物用 `xcodebuild build-for-testing -destination generic/platform=iOS -allowProvisioningUpdates` 构建：自动签名需要时可以在团队账号里创建或更新描述文件（2026-10-15 owner 同意）。签名团队不由 kr 设定，kr 只回读并与 `[signing] team` 比对。
+- 真机测试产物用 `xcodebuild build-for-testing -destination 'platform=iOS,id=<UDID>' -allowProvisioningUpdates` 构建：自动签名需要时可以在团队账号里创建或更新描述文件（2026-10-15 owner 同意）。签名团队不由 kr 设定，kr 只回读并与 `[signing] team` 比对。
+- 为什么不用 `generic/platform=iOS`：2026-10-15 实测，用它构建能成功，签名回读也通过，但 UI 测试 runner（`<UITests 目标>-Runner.app`）装不上 iPad：`0xe8008012 (This provisioning profile cannot be installed on this device.)`。自动签名只为构建目标里的设备准备描述文件；目标是通用平台时，它不知道要包括哪台设备。`xcodebuild -help`：`-allowProvisioningDeviceRegistration` "Allow xcodebuild to register your destination device on the developer portal if necessary. This flag only takes effect if -allowProvisioningUpdates is also passed."
+- 设备不支持的 entitlement 在构建时就被拒：KrSample 为模拟器隔离检查写了 `com.apple.developer.icloud-container-environment = Development`，它的 App ID 没有 iCloud 能力，真机构建失败：`Provisioning profile "iOS Team Provisioning Profile: dev.kr.sample.e2e" doesn't include the com.apple.developer.icloud-container-environment entitlement.`。xcodebuild 自己写明了原因，kr 原样显示。
+- 用 `id=<UDID>` 时 xcodebuild 的输出以 `--- xcodebuild: WARNING: Using the first of multiple matching destinations:` 开头，后面几行以 `{ platform:iOS, … }` 开头；枚举还先打印一份旧式属性列表。kr 从第一个能解析成 JSON 的 `{` 读起。
+- runner 装不上时，`-enumerate-tests` 以 0 结束，JSON 的 `errors` 写明原因，`values` 里仍列出测试目标（`enabledTests: [{identifier: "KrSampleUITests"}]`）。kr 以 `errors` 为准：这一项不跑、判失败，原因写 xcodebuild 的错误。
 - 设备的 `.xctestrun` 名为 `<scheme>_iphoneos<版本>-arm64.xctestrun`，和模拟器的 `<scheme>_iphonesimulator…` 放在同一个 `Build/Products` 目录里，kr 按名字区分。

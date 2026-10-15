@@ -1462,6 +1462,11 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
                 .to_owned(),
         );
     }
+    if let Some(device) = s.device.as_ref().filter(|_| !r.passed)
+        && let Some(note) = not_in_profile(s.project, device, &r)
+    {
+        r.notes.push(note);
+    }
     let after = sample();
     let high = [&before, &after]
         .into_iter()
@@ -1516,6 +1521,23 @@ fn mentions_ui_automation(r: &ItemResult) -> bool {
         .and_then(|l| std::fs::read_to_string(l.join("run.log")).ok())
         .unwrap_or_default();
     r.summary.iter().any(|l| l.contains("kAXError")) || log.contains("kAXError")
+}
+
+/// What to do when the device refused a profile that does not include it (0xe8008012,
+/// seen on the UI test runner): register the device, or let xcodebuild do it.
+fn not_in_profile(
+    project: &ProjectConfig,
+    device: &kr_device::Device,
+    r: &ItemResult,
+) -> Option<String> {
+    let refused = r.summary.iter().any(|l| l.contains("0xe8008012"));
+    (refused && !project.signing.register_devices).then(|| {
+        format!(
+            "the provisioning profile does not include {}: register it in team {} (Xcode > Window > Devices and Simulators), or set [signing] register_devices = true in .kr.toml to let xcodebuild register it, then run again",
+            device.name,
+            project.signing.team.as_deref().unwrap_or("the app's team")
+        )
+    })
 }
 
 /// One pass of an item on a device (or this Mac): enumerate, run, read results, rerun

@@ -43,6 +43,7 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
       },
       "scenarios": {},
       "signing": {
+        "register_devices": false,
         "team": null
       },
       "simulators": {
