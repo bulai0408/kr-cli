@@ -109,6 +109,9 @@ pub trait Executor {
     fn wait(&mut self) -> Done<Self::Output>;
     /// True after a stop signal: no new item starts.
     fn stopped(&self) -> bool;
+    /// The scheduler is about to run `item` on `lane`; `queue` is its kind's queue before
+    /// the pick, `item` first. For the record only (ADR 0010).
+    fn chose(&mut self, _lane: LaneId, _queue: &VecDeque<Self::Item>) {}
 }
 
 pub trait Clock {
@@ -351,9 +354,13 @@ impl<E: Executor> Driver<'_, E> {
         let item = if self.exec.stopped() {
             None
         } else {
-            self.queues
-                .get_mut(&self.order[lane])
-                .and_then(VecDeque::pop_front)
+            let queue = self.queues.get_mut(&self.order[lane]);
+            if let Some(queue) = &queue
+                && !queue.is_empty()
+            {
+                self.exec.chose(lane, queue);
+            }
+            queue.and_then(VecDeque::pop_front)
         };
         match item {
             Some(item) => {

@@ -63,7 +63,9 @@ pub enum EventKind {
     BuildCacheHit,
     /// A step of a command finished. Fields: command, step, ok, `duration_ms`.
     StepEnd,
-    /// A scenario or suite started. Fields: item, kind, device.
+    /// A scenario or suite started. Fields: item, kind, device, concurrency (what held
+    /// the machine then: `build` and `sim` slots held by anyone, this run included, and
+    /// `legacy_holder`, the holder of the old machine-wide lock if the bridge is on).
     ItemStart,
     /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
     /// tests (counts per outcome), flaky.
@@ -72,10 +74,17 @@ pub enum EventKind {
     /// as an `unverified` count in `tests`, next to passed / failed / flaky / skipped,
     /// with the reason in `unverified_reason` (a string, may be missing). An item with
     /// unverified tests does not count as passed. `kr deliver` reads this.
+    ///
+    /// Since #29 also (ADR 0010): xcresult (the bundle the verdict came from); cases
+    /// (each test: id, outcome, `duration_s`, and for failed or flaky tests signature and
+    /// category); identity (`input_hash`, tree, xcode {version, build}, runtime,
+    /// `device_type`, `kr_version`, `config_hash`; a value kr could not find is null).
     ItemEnd,
     /// A failed test was run again on its own. Fields: item, test, passed, filter
     /// (`-only-testing:…`), `filter_invalid` (the filter selected no test, so it did not
-    /// run).
+    /// run), attempt (2: the first run was 1), xcresult (null if it did not run).
+    /// A whole item run again after a failure under high load: item, `whole_item`,
+    /// reason, attempt, xcresult.
     Rerun,
     /// A filter passed the static check but selected nothing on the device.
     FilterMismatch,
@@ -95,6 +104,17 @@ pub enum EventKind {
     ProductsMissing,
     /// The run rebuilt missing test products (once per build). Fields: item, ok.
     ProductsRebuilt,
+    /// A run started. Fields: label, targets, requester {agent (`KR_REQUESTER`, else
+    /// `AI_AGENT`), worktree (repo root), `parent_pid`}, previous (the last run from the
+    /// same worktree: `run_id`, `ended_ms_ago`, null if it has not ended; null if none).
+    RunStart,
+    /// The machine load during a run, every 15 s from its start. Fields: load {one, five,
+    /// fifteen}, pressure.
+    LoadSample,
+    /// The scheduler gave a simulator lane its next item. Fields: lane, kind (device
+    /// kind), item, `estimate_ms` (null without history), candidates (the kind's queue
+    /// before the pick: item, `estimate_ms`), rule ("longest_first").
+    ScheduleDecision,
     /// A build failed with the shared compilation cache in a way the cache may cause,
     /// and was built once more with a clean cache (ADR 0013). Fields: step, reason,
     /// `first_ok` (false), `first_log`, ok, log, `cache_caused` (the clean build passed).

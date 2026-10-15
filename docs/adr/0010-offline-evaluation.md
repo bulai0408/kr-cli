@@ -39,6 +39,20 @@ owner 要求：kr 的任何改动或设定（排程、容量、通道、缓存�
 6. 每次重跑的尝试序号和 xcresult 路径。
 7. 请求者（agent / worktree），以及它是否在等前一个结果（评估开环误差）。
 
+#29 的实现（字段只加不改，字段说明在 `crates/kr-events/src/lib.rs`）：
+
+| 项 | 写在哪里 | 说明 |
+|---|---|---|
+| 1 | 新事件 `load_sample` | 从运行开始每 15 秒一次：`load`（1/5/15 分钟）、`pressure`。直接读内核（`getloadavg`、`sysctlbyname`），不经过命令执行器，所以不影响回放测试。 |
+| 2 | `item_start.concurrency` | `build`、`sim`：所有项目当时占用的槽位数（含本运行自己）；`legacy_holder`：旧全机锁的持有者（配置了桥接时）。一个模拟器租约占一个 `sim` 槽位，所以 `sim` 就是租出的模拟器数。 |
+| 3 | `item_end.cases` | 每条测试：`id`、`outcome`、`duration_s`；失败和偶发的测试另有 `signature`（数字→`N`，`0x…`→`<addr>`，UUID 等十六进制标识→`<id>`）和 `category`。类别按失败消息里的固定短语判断，顺序是超时、基础设施、启动、崩溃、断言；整次运行超时一律记超时；没有匹配的记 `unknown`，kr 不猜（ADR 0011）。 |
+| 4 | `item_end.identity` | `input_hash`、`tree`（`git rev-parse HEAD^{tree}`）、`xcode`（`version`、`build`）、`runtime`、`device_type`、`kr_version`、`config_hash`（生效配置 JSON 的 blake3）。找不到的值写 null。 |
+| 5 | 新事件 `schedule_decision` | 调度器每给模拟器通道分一项写一条：`lane`、`kind`、`item`、`estimate_ms`、`candidates`（分配前该类型的队列及各自预估）、`rule`（`longest_first`）。预估来自最近 14 天的历史耗时，没有历史为 null。 |
+| 6 | `rerun.attempt`、`rerun.xcresult`；`item_end.xcresult` | kr 只重跑一次，所以 `attempt` 为 2（第一次运行是 1）；过滤无效、没有真正重跑时 `xcresult` 为 null。整项重跑（高负载）也写这两个字段。 |
+| 7 | 新事件 `run_start` | `requester`：`agent`（环境变量 `KR_REQUESTER`，没有时用 `AI_AGENT`）、`worktree`（仓库根目录）、`parent_pid`；`previous`：同一 worktree 上一次运行的 `run_id` 和 `ended_ms_ago`（结束到这次开始的毫秒数，还没结束为 null）。kr 不推断「是否在等前一个结果」，只记事实，由分析时判断。 |
+
+远程运行（`--remote`，#32）：本机写 `run_start`（请求来自本机），并把主机结果里每项的 `cases` 和 `xcresult`（主机上的路径）抄进本机的 `item_end`；负载采样、并发上下文、身份、调度决策、重跑和 `verdict.json` 由主机上的 kr 写在主机自己的状态目录里，本机没有副本。`kr run --json` 的每项也多了 `cases`（只加不改）。
+
 ### 负载与偶发的关系
 - 小样本证明不了「不偶发」：n 次运行 0 次失败时，失败率的 95% 上限约为 3/n。
 - 每个场景按「高负载 / 正常」两组累计，用 Beta-Binomial 给出失败率区间，用 Fisher 精确检验比较两组，不给是/否结论。
@@ -48,6 +62,13 @@ owner 要求：kr 的任何改动或设定（排程、容量、通道、缓存�
 - kr 的每个 PR 都附一节「前后对比」，数字来自上面四层，并写明用的是哪一层、校准误差多少。
 - 完整门禁只用于合入判断，由协调者统一跑，不用作评估手段。
 - 每次真实运行都开 `KR_RECORD` 的轻量版本（只保存 kr 解析过的结果和枚举，不存大日志），让第 3 层有证据可重判。
+
+  #29 的实现：轻量版不需要开关，每次 `kr run` / `kr gate` 都写。每个场景每一轮（整项重跑记为 `<场景>-again`）写一个 `~/.local/state/kr/runs/<运行 ID>/<场景>/verdict.json`：判定函数的全部输入（真实枚举、第一次运行和每次重跑解析后的测试结果、退出码、是否超时、结果包路径）和当时的结论，几 KB。完整录制的 `KR_RECORD=<目录>` 仍只给开发 kr 时录测试素材用。
+- 第 3 层的命令是 `kr rejudge`：用当前的判定规则重判，只列出结论变化（某项通过与否、某条测试的结果），理由的措辞变化不算。
+  - kr 运行：读 `verdict.json`，覆盖判定规则的改动；保存的是解析后的结果，所以解析逻辑的改动只能用下面的结果包评估。
+  - 旧结果包：`--evidence <目录>` 找出目录下所有 `*.xcresult`。xcresulttool 读一个结果包时会往里写 `database.sqlite3`，所以 kr 先把结果包复制到临时目录（APFS 上是克隆，几乎不占空间）再读，原目录不写任何东西。读到的原始 JSON 和当时的结论缓存在 `~/.local/state/kr/rejudge/evidence/`，以后只做计算，既覆盖判定规则也覆盖解析逻辑。结果包旁边的 `status` 当作退出码，`enabled-tests.txt` 当作枚举；没有枚举时把实际跑过的测试当作选中的测试，这时「选中了却没跑」查不出来。旧脚本的重跑结果没有和失败配对，所以历史结果包里不会出现偶发。
+  - 2026-10-15 对 Krill `v0-evidence` 的 427 个结果包：首次读取 98 秒（`kr lock light` 排队），之后从缓存重判 12 秒（主要是遍历 5 GB 目录）；规则不变时 0 处变化。故意去掉「0 条测试即失败」这条规则时，列出 30 个结果包 FAIL → PASS，与事先从缓存独立算出的 30 个完全一致（见 #29 的提交说明）。
+
 
 ### 已由模拟得出、建议立即采用的改动
 - 通道启动顺序固定，先 iPad 后 iPhone（现在由线程竞争决定）：按第 6 批实测耗时模拟，default 门禁从 41.3 分钟降到 37.6 分钟。这属于第 2 层能下结论的「顺序」类改动。

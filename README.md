@@ -45,7 +45,11 @@ kr plan ratings shelf-share --exit-code   # 有事要做退出 3，无事可做�
 # 7. 用 kr 自己的调度代码重放记录的运行，比较设定（容量、通道顺序、缓存），带校准误差
 kr simulate --sim 2 --sim 3 --order ipad-first --order name
 
-# 8. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
+# 8. 用当前的判定规则重判已保存的运行，只列出结论变化；--evidence 也重判旧脚本留下的结果包
+kr rejudge
+kr rejudge --evidence ~/orca/workspaces/Krill/v0-evidence
+
+# 9. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
 #    改动里的 schema（待部署）、Artboard（手感）、法律文本（owner 复核）自动列入
 kr deliver --base main
 ```
@@ -59,6 +63,7 @@ kr deliver --base main
 - 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。
 - 每个场景有硬超时（默认 20 分钟，`.kr.toml` 里 `timeout` 可改），超时终止整个进程组并判失败。
 - 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`。
+- 每个场景的判定依据（枚举、每次运行的测试结果、重跑结果）和结论存为运行目录里的 `<场景>/verdict.json`，几 KB，`kr rejudge` 用它重判。
 
 ## 它是什么、不是什么
 

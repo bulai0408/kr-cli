@@ -13,7 +13,8 @@ use serde::Serialize;
 
 pub use doctor::{Problem, Severity, diagnose};
 pub use hardware::{
-    Derived, Hardware, Load, LoadWait, Pressure, Suggestion, read_hardware, suggest, wait_for_load,
+    Derived, Hardware, Load, LoadWait, Pressure, Suggestion, read_hardware, sample_load, suggest,
+    wait_for_load,
 };
 pub use simctl::{DeviceType, Runtime, SimDevice, SimDevices, parse_runtimes};
 

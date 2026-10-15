@@ -158,6 +158,7 @@ pub fn execute(
             .collect(),
         started: Instant::now(),
     };
+    super::run::run_start(ctx, loaded, root, sel, &run.label, run.run_id)?;
     let runner = ctx.runner()?;
 
     let mut problems = signing_problems(
@@ -340,6 +341,8 @@ impl RemoteRun<'_> {
                 "load",
                 "high_load",
                 "unverified_reason",
+                "xcresult",
+                "cases",
             ] {
                 if let Some(v) = item.get(key) {
                     fields[key] = v.clone();

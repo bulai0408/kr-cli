@@ -6,6 +6,7 @@ pub mod lock;
 pub mod plan;
 pub mod pool;
 pub mod queue;
+pub mod rejudge;
 pub mod remote;
 pub mod run;
 pub mod simulate;
