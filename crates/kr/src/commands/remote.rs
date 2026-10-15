@@ -79,6 +79,7 @@ fn needs_signing(project: &ProjectConfig, sel: &Selection) -> Result<Vec<String>
         return Ok(Vec::new());
     }
     let one = |suites: &[String], scenarios: &[String]| Selection {
+        selection: None,
         suites: suites.to_vec(),
         scenarios: scenarios.to_vec(),
         on_device: sel.on_device,

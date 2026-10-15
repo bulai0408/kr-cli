@@ -442,6 +442,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
+name = "globset"
+version = "0.4.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c34a9410465b45bd9787443bc7370f37735bad04b0f0cd57ff1a3186c98988"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
+
+[[package]]
 name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -663,6 +676,7 @@ dependencies = [
  "blake3",
  "clap",
  "flate2",
+ "globset",
  "insta",
  "jiff",
  "kr-config",
@@ -691,6 +705,7 @@ name = "kr-config"
 version = "0.1.0"
 dependencies = [
  "figment",
+ "globset",
  "insta",
  "miette",
  "serde",

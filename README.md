@@ -41,6 +41,10 @@ kr lock build -- xcodebuild build-for-testing …
 # 6. 只算不跑：哪些构建命中缓存、每项为什么要跑、通道怎么分、按历史大约多久
 kr plan
 kr plan ratings shelf-share --exit-code   # 有事要做退出 3，无事可做退出 0
+kr plan --changed main --explain          # 按工作树相对 main 的改动选测（不运行）
+kr run --changed main --also settings-about --explain
+kr gate --changed main --explain
+kr hash ratings --json                   # 查看构建缓存实际使用的输入和哈希
 
 # 7. 用 kr 自己的调度代码重放记录的运行，比较设定（容量、通道顺序、缓存），带校准误差
 kr simulate --sim 2 --sim 3 --order ipad-first --order name
@@ -92,6 +96,42 @@ kr report --since 7d --worktree ~/work/krill-133
 
 - 机器级：`~/.config/kr/config.toml`（可选。不写时由 `kr doctor` 检测的机器能力推算）。
 - 项目级：仓库根目录 `.kr.toml`（Xcode 版本、平台、测试套件、UI 场景）。
+
+## 按改动选测
+
+`--changed REF` 比较 REF 和当前工作树，包括暂存、未暂存、删除及未跟踪文件。
+SwiftPM 的 `describe` 和 XcodeGen 的只读 `dump` 提供模块图；场景声明覆盖的模块。
+页面关系可以补在项目配置里，例如：
+
+```toml
+[modules.TitleDetail]
+paths = ["Krill/TitleDetail"]
+depends_on = ["Metadata", "Sources"]
+
+[modules.Favorites]
+paths = ["Krill/Favorites"]
+depends_on = ["TitleDetail"]
+
+[scenarios.favorites]
+only = ["KrillUITests/FavoritesUITests"]
+modules = ["Favorites"]
+
+[selection]
+ignore = ["docs/**", "**/*.md", ".github/**"]
+```
+
+改 Metadata 会经 TitleDetail 选中 favorites。必跑场景可以跨出当前 gate；显式目标和
+`--also` 只能加跑，不能排除必跑项。gate 的套件保持执行。没有 `--changed` 时保留原选择。
+忽略名单完全由项目声明，kr 没有内置名单；`--explain` 列出 `ignored by <pattern>`。
+
+图缺失、路径未映射、场景未声明覆盖时，kr 默认加跑所有候选场景，并输出效率类
+`additional_scenarios` 判断点。它不阻止 PASS/FAIL；运行事件记为默认继续、待复核。
+证据附过去 90 天本项目的共同失败次数、共同运行分母和偶发场景运行率。空样本比例为 null，
+不把没有记录当作没有风险。`kr plan` 只展示，不写事件；SwiftPM 描述缓存放在 kr 状态目录，
+不在项目里构建。没有 project.yml 的工程目前保守标为图不完整，可用 `[modules]` 补映射。
+
+`kr hash` 与构建缓存共用计算入口，显示文件内容摘要、缺失文件、完整命令、Xcode 路径和生成命令。
+它是现有保守构建哈希的解释，不是场景结果缓存，也不保证每个场景有独立哈希。
 
 ## 接入一个项目
 

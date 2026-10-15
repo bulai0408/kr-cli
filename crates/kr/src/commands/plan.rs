@@ -27,6 +27,8 @@ use crate::{Ctx, Loaded};
     after_help = "Exit codes: 0 the plan is computed (`has_work` in --json says whether there is work); with --exit-code, 0 nothing to do and 3 work to do; 1 kr failed; 2 bad arguments."
 )]
 pub struct PlanArgs {
+    #[command(flatten)]
+    selection: crate::selection::SelectionArgs,
     /// Scenarios and suites, as for `kr run`. Without any: the gate.
     targets: Vec<String>,
 
@@ -58,6 +60,9 @@ struct Plan {
     /// Device kind of each simulator lane, in the order they queue for a slot.
     lanes: Vec<String>,
     estimate: Estimate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selection: Option<crate::selection::SelectionReport>,
+    decisions: Vec<kr_run::decision::Decision>,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,7 +99,7 @@ struct Estimate {
 pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
-    let (sel, label, why) = if args.targets.is_empty() {
+    let (mut sel, label, why) = if args.targets.is_empty() {
         let name = args.gate.unwrap_or_else(|| "default".to_owned());
         if !project.gates.contains_key(&name) {
             let known: Vec<&str> = project.gates.keys().map(String::as_str).collect();
@@ -110,6 +115,7 @@ pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
             "named on the command line".to_owned(),
         )
     };
+    crate::selection::apply(ctx, &loaded, &mut sel, &args.targets, &args.selection)?;
     let runner = ctx.runner()?;
     let developer_dir = loaded.developer_dir(ctx)?;
     let jobs = check::build_jobs(project, &sel)?;
@@ -158,7 +164,12 @@ pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
             },
             step,
             device: None,
-            why: why.clone(),
+            why: sel
+                .selection
+                .as_ref()
+                .and_then(|s| s.reasons.get(name))
+                .map(|r| r.join("; "))
+                .unwrap_or_else(|| why.clone()),
             estimate_ms: None,
         });
     }
@@ -226,6 +237,12 @@ pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
             total_ms: without_history.is_empty().then(|| ms(total)),
             without_history,
         },
+        decisions: sel
+            .selection
+            .as_ref()
+            .map(|s| s.decisions.clone())
+            .unwrap_or_default(),
+        selection: sel.selection,
     };
     if ctx.json {
         crate::output::print_json(&plan)?;
@@ -330,6 +347,19 @@ fn human(p: &Plan) -> String {
         );
         let estimate = if i.step == "build" { "" } else { &estimate };
         out += &format!("  {} ({}, {place}): {}{estimate}\n", i.name, i.kind, i.why);
+    }
+    if let Some(s) = &p.selection {
+        if s.explain {
+            for (file, reason) in &s.ignored {
+                out += &format!("  {file}: {reason}\n");
+            }
+        }
+        for d in &s.decisions {
+            out += &format!(
+                "REVIEW: {}: {} (default: {}, pending review)\n",
+                d.kind, d.question, d.default.option
+            );
+        }
     }
     out
 }

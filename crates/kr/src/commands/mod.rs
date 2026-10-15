@@ -4,6 +4,7 @@ pub mod decide;
 pub mod deliver;
 pub mod device;
 pub mod doctor;
+pub mod hash;
 pub mod lock;
 pub mod plan;
 pub mod pool;
