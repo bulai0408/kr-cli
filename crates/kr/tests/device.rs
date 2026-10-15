@@ -90,6 +90,8 @@ fn doctor_passes_a_ready_device_and_warns_that_its_ios_is_newer_than_the_sdk() {
         &doctor_replay(&[
             "devicectl/list-devices-connected.json",
             "devicectl/lock-state-unlocked.json",
+            // Read again after connecting, for how it is connected now.
+            "devicectl/list-devices-connected.json",
         ]),
         &["--device", IPAD],
     );
@@ -120,6 +122,8 @@ fn doctor_json_has_the_device_and_says_ui_automation_cannot_be_read() {
         &doctor_replay(&[
             "devicectl/list-devices-connected.json",
             "devicectl/lock-state-unlocked.json",
+            // Read again after connecting, for how it is connected now.
+            "devicectl/list-devices-connected.json",
         ]),
         &["--device", IPAD, "--json"],
     );
@@ -193,6 +197,10 @@ impl Sample {
 
     /// With more lines in [signing].
     fn with_signing(extra: &str) -> Self {
+        Self::with(extra, "")
+    }
+
+    fn with(signing: &str, scenario: &str) -> Self {
         let home = tempfile::tempdir().unwrap();
         let repo = home.path().join("repo");
         std::fs::create_dir_all(repo.join(".git")).unwrap();
@@ -209,7 +217,7 @@ impl Sample {
         );
         std::fs::write(
             repo.join(".kr.toml"),
-            config + "\n[signing]\nteam = \"K4AXH95DCF\"\n" + extra,
+            config + "\n" + scenario + "\n[signing]\nteam = \"K4AXH95DCF\"\n" + signing,
         )
         .unwrap();
         copy_dir(
@@ -475,4 +483,49 @@ fn register_devices_lets_xcodebuild_register_the_device() {
     assert_eq!(code, Some(1), "{text}");
     // Registration was on: no advice to turn it on.
     assert!(!text.contains("register_devices = true"), "{text}");
+}
+
+#[test]
+fn a_cable_pulled_mid_run_makes_the_items_unverified_though_wifi_still_reaches_the_device() {
+    // Real (2026-10-15): the owner pulled the cable while `slow` ran. devicectl still
+    // reached the iPad over the local network, but the test runner's connection broke.
+    let sample = Sample::with(
+        "register_devices = true\n",
+        "[scenarios.slow]\nonly = [\"KrSampleUITests/SlowUITests\"]\ntimeout = \"25m\"\n",
+    );
+    let (code, text) = sample.kr(
+        &device_recordings("cable-pulled"),
+        &["run", "--device", IPAD, "slow", "launch"],
+    );
+    assert_eq!(code, Some(1), "{text}");
+    assert!(text.contains("UNVERIFIED: slow"), "{text}");
+    assert!(text.contains("UNVERIFIED: launch"), "{text}");
+    assert!(!text.contains("FAIL: "), "{text}");
+    assert!(
+        !text.contains("failed again when run again"),
+        "no rerun on a lost device: {text}"
+    );
+    let reasons: Vec<String> = sample
+        .events()
+        .iter()
+        .filter(|e| e["type"] == "item_end")
+        .map(|e| {
+            assert!(
+                e["fields"]["tests"]["unverified"].as_u64() >= Some(1),
+                "{e}"
+            );
+            e["fields"]["unverified_reason"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    let lost = "lost 蔡煜恒的 iPad Mini: it was connected over wired when the run started and is now on localNetwork";
+    assert_eq!(
+        reasons,
+        [
+            format!("{lost}; the item did not finish"),
+            format!("{lost}; the item did not start"),
+        ]
+    );
 }

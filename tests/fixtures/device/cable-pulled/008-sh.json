@@ -1,0 +1,10 @@
+{
+ "program": "sh",
+ "args": [
+  "-c",
+  "xcodegen generate --quiet"
+ ],
+ "status": 0,
+ "stdout": "",
+ "stderr": ""
+}

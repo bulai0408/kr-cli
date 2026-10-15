@@ -110,9 +110,14 @@ pub fn inspect(ctx: &Ctx, loaded: &Loaded, runner: &dyn Runner, wanted: &str) ->
         .as_ref()
         .and_then(|p| p.project.xcode.clone())
         .unwrap_or_else(|| "(xcode-select)".to_owned());
+    let mut device = device;
     let reach = (device.paired && device.developer_mode != Some(false))
         .then(|| reach(runner, &device))
         .transpose()?;
+    if reach == Some(Reach::Unlocked) {
+        // Connected now: how, not how devicectl last saw it.
+        device.transport = transport(runner, &device)?.or(device.transport);
+    }
     let missing = device.missing(reach.as_ref(), &xcode, sdk.as_deref());
     Ok(Inspected {
         device,
@@ -130,4 +135,18 @@ pub fn reach(runner: &dyn Runner, device: &Device) -> Result<Reach> {
         &out.stdout,
         &out.stderr,
     ))
+}
+
+/// How devicectl reaches the device now ("wired", "localNetwork", …); ask after [`reach`],
+/// which connects to it.
+pub fn transport(runner: &dyn Runner, device: &Device) -> Result<Option<String>> {
+    let out = runner.run(&kr_device::list_command())?;
+    if !out.success() {
+        return Ok(None);
+    }
+    let devices = kr_device::parse_list(&out.stdout)?;
+    Ok(devices
+        .into_iter()
+        .find(|d| d.identifier == device.identifier)
+        .and_then(|d| d.transport))
 }

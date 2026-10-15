@@ -961,7 +961,18 @@ fn device_lost(s: &Shared<'_>) -> Result<Option<String>> {
             why.trim_end_matches('.')
         )),
         kr_device::Reach::Locked => Some(format!("{} locked itself", device.name)),
-        kr_device::Reach::Unlocked => None,
+        // Over another transport than at the start (e.g. Wi-Fi after the cable was
+        // pulled), the test runner's connection broke even though devicectl reaches it.
+        kr_device::Reach::Unlocked => {
+            let now = super::device::transport(s.runner, device)?;
+            match (&device.transport, now) {
+                (Some(start), Some(now)) if *start != now => Some(format!(
+                    "lost {}: it was connected over {start} when the run started and is now on {now}",
+                    device.name
+                )),
+                _ => None,
+            }
+        }
     })
 }
 
