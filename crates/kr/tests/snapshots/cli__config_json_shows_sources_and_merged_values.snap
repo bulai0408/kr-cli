@@ -17,6 +17,7 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "per_core": 4.0
       },
       "machines": {},
+      "remotes": {},
       "resources": {
         "build": 1,
         "light": null,

@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "remote",
+    "get-url",
+    "origin"
+  ],
+  "status": 0,
+  "stdout": "/tmp/kr32/origin.git\n",
+  "stderr": ""
+}

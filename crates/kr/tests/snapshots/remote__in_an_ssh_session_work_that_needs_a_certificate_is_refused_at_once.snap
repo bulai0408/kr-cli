@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/remote.rs
+assertion_line: 504
+expression: out.stderr
+---
+error: refused: work that needs a developer certificate cannot sign in an SSH session
+  - `mac-tests` builds the app for generic/platform=macOS, which needs a developer certificate; this is an SSH session (SSH_CONNECTION is set)
+    next: run it in a login session on the Mac itself (a local terminal, not SSH), or leave it out of this run

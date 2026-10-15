@@ -35,7 +35,14 @@ mod span;
 pub use project::*;
 
 /// Keys that only the machine file may set.
-const MACHINE_KEYS: &[&str] = &["state_dir", "resources", "machines", "load", "legacy"];
+const MACHINE_KEYS: &[&str] = &[
+    "state_dir",
+    "resources",
+    "machines",
+    "load",
+    "legacy",
+    "remotes",
+];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
 #[derive(Debug, Default, Clone, PartialEq, Serialize)]
@@ -58,6 +65,33 @@ pub struct MachineConfig {
     pub load: LoadCheck,
     /// Bridge to the old machine-wide lock (ADR 0009). Off unless set.
     pub legacy: Legacy,
+    /// SSH hosts `kr run --remote <name>` may run on, keyed by that name. kr connects
+    /// only to these, with the system `ssh`.
+    pub remotes: BTreeMap<String, Remote>,
+}
+
+/// A remote machine: an SSH host the user declared. kr does not check the address and
+/// never stores or reads credentials; `ssh` and its own configuration handle both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Remote {
+    /// What `ssh` connects to, passed as is: a host name or a `Host` alias of
+    /// `~/.ssh/config`.
+    pub ssh: String,
+    /// Where kr keeps project clones on that host. Default: `~/kr-remote`.
+    pub dir: Option<String>,
+    /// The kr program on that host. Default: `kr` (found on the PATH of an SSH command).
+    pub kr: Option<String>,
+}
+
+impl Remote {
+    pub fn dir(&self) -> &str {
+        self.dir.as_deref().unwrap_or("~/kr-remote")
+    }
+
+    pub fn kr(&self) -> &str {
+        self.kr.as_deref().unwrap_or("kr")
+    }
 }
 
 /// The old `mkdir` lock other projects and scripts still use. When both paths are set,

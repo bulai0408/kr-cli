@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod lock;
 pub mod pool;
 pub mod queue;
+pub mod remote;
 pub mod run;
 
 use clap::builder::TypedValueParser;

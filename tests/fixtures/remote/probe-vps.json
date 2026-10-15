@@ -1,0 +1,18 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "vps",
+    "sh -c 'echo \"os=$(uname -s)\"; echo \"xcode=$(xcodebuild -version 2>/dev/null | head -n 1)\"; echo \"kr=$(kr --version 2>/dev/null)\"'"
+  ],
+  "status": 0,
+  "stdout": "os=Linux\nxcode=\nkr=\n",
+  "stderr": ""
+}

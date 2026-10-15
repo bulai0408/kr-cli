@@ -370,6 +370,7 @@ pub fn run(ctx: &Ctx, args: CheckArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let sel = select(project, &args.targets, args.gate.as_deref())?;
+    super::remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
     let jobs = build_jobs(project, &sel)?;
     let runner = ctx.runner()?;
     let run_id = RunId::new();

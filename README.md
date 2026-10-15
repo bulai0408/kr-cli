@@ -79,7 +79,32 @@ kr deliver --base main
 5. `kr gate smoke`，再 `kr gate`。逐项和原来的脚本对照一次（测试数、结果）。
 6. 在项目 AGENTS.md 里把「怎么跑测试、怎么排队」改成「用 kr」，旧脚本保留到所有人都改用 kr。
 
-机器级设置（可选）在 `~/.config/kr/config.toml`：资源容量覆盖 `[resources]`、按机器覆盖 `[machines.<LocalHostName>.resources]`、负载策略 `[load]`、旧全机锁桥接 `[legacy]`（ADR 0009）。
+机器级设置（可选）在 `~/.config/kr/config.toml`：资源容量覆盖 `[resources]`、按机器覆盖 `[machines.<LocalHostName>.resources]`、负载策略 `[load]`、旧全机锁桥接 `[legacy]`（ADR 0009）、远程机器 `[remotes.<名字>]`。
+
+## 在另一台 Mac 上运行
+
+把构建和测试放到局域网里的另一台 Mac 上，本机空出来做别的事：
+
+```toml
+# ~/.config/kr/config.toml
+[remotes.mini]
+ssh = "mini.local"        # 原样交给 ssh：主机名或 ~/.ssh/config 里的 Host 别名
+# dir = "~/kr-remote"     # 远程主机上放克隆的目录（默认）
+# kr = "kr"               # 远程主机上的 kr；ssh 命令的 PATH 很短，找不到时写全路径
+```
+
+```sh
+git push -u origin <分支>
+kr run --remote mini ratings
+kr gate --remote mini
+```
+
+- kr 只连接这里声明的主机，用系统的 `ssh`（加 `BatchMode=yes`，不弹密码提示）。地址和连接安全由主机和 owner 负责：kr 不检查地址，不保存也不读取凭证。
+- 开始前检查，有问题时一次列出全部原因和下一步，以退出码 1 结束，不连远程跑：分支没推送或推送的不是 HEAD、有未提交的改动、没有 `origin`、主机连不上、主机不是 macOS、没装 Xcode、没有 kr 或 kr 版本不一致、选中的项需要开发者证书签名。
+- 远程主机用 git 拉取已推送的分支（每个项目一个克隆，每个分支一个 worktree：`<dir>/<项目>@<分支>`），运行它自己的 `kr --json`；资源由远程 kr 自己排队。结果回传本机，输出和本机运行一样，`--json` 多了 `host` 和 `remote`。xcresult 和日志路径在远程主机上。
+- 事件两边都写：远程 kr 写它自己的，本机在自己的运行 ID 下写每项的开始和结束（带 `host`）以及 `run_end`。
+- 运行途中失联（ssh 以 255 结束、没拿到结果）：每项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。本机收到 SIGINT / SIGTERM 时 ssh 断开，远程 kr 收到 SIGHUP 后自己停下、归还资源。
+- 签名：SSH 会话拿不到登录钥匙串里的签名身份。在仓库根目录为真机或 macOS 构建 App 的项（例如 `destination = "macos"` 的测试套件、根目录的 `build` 套件）需要开发者证书，远程运行时提前拒绝；在 SSH 会话里直接运行 `kr run` / `kr gate` / `kr check` 也一样。模拟器构建和单独构建的包（`dir`）不受影响；`[project].build_settings` 里写了 `CODE_SIGNING_ALLOWED = "NO"` 的项目也不受影响。
 
 ## 状态
 

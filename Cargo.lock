@@ -648,6 +648,7 @@ dependencies = [
  "kr-events",
  "kr-exec",
  "kr-machine",
+ "kr-remote",
  "kr-resource",
  "kr-run",
  "kr-sim",
@@ -712,6 +713,17 @@ dependencies = [
  "serde",
  "serde_json",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "kr-remote"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kr-config",
+ "kr-exec",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
