@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/plan.rs
+expression: out
+---
+work to do: run · build cached · 2 items on 2 lanes (default, default) · about <n>s
+  build build-for-testing KrSample (generic/platform=iOS Simulator): cached
+  launch (scenario, default): named on the command line, ~<n>s
+  settings (scenario, default): named on the command line, ~<n>s

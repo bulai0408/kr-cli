@@ -42,6 +42,14 @@ enum Command {
     Run(commands::run::RunArgs),
     /// Run a gate from .kr.toml: its suites and scenarios, like `kr run`.
     Gate(commands::run::GateArgs),
+    /// Show what `kr run` / `kr gate` would do without doing it: cached builds, why each
+    /// item runs, the lanes, and the expected time from history. With --exit-code, exit
+    /// 3 when there is work to do.
+    Plan(commands::plan::PlanArgs),
+    /// Replay recorded runs with kr's scheduler in virtual time and compare settings
+    /// (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the
+    /// calibration error against the measured times.
+    Simulate(commands::simulate::SimulateArgs),
     /// The project's simulator pool: status, sync, lease.
     Pool(commands::pool::PoolArgs),
     /// Draft the delivery report of a run: decided by machine, needs human judgment of
@@ -65,6 +73,8 @@ fn main() -> ExitCode {
         Command::Lock(args) => commands::lock::run(&ctx, args),
         Command::Queue(args) => commands::queue::run(&ctx, args),
         Command::Doctor => commands::doctor::run(&ctx),
+        Command::Plan(args) => commands::plan::run(&ctx, args),
+        Command::Simulate(args) => commands::simulate::run(&ctx, args),
         Command::Pool(args) => commands::pool::run(&ctx, args),
         Command::Check(args) => commands::check::run(&ctx, args),
         Command::Run(args) => commands::run::run(&ctx, args),

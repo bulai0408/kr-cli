@@ -2,10 +2,10 @@
 //! suite on leased pool simulators, check the results against the enumeration, rerun
 //! failures once, and report PASS/FAIL per item.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Mutex;
+use std::sync::{Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -17,8 +17,9 @@ use kr_config::{
 use kr_events::{Event, EventKind, RunId};
 use kr_exec::{Command, Runner};
 use kr_resource::Resource;
+use kr_run::schedule::{self, Action, Done, Executor, LaneId, Order, WallClock};
 use kr_run::{Attempt, Final, Verdict, judge, longest_first};
-use kr_sim::{DeviceLocks, LeaseHolder, PoolDevice, Simctl};
+use kr_sim::{DeviceLocks, Lease, LeaseHolder, PoolDevice, Simctl};
 use kr_xcode::{
     Enumeration, XcTestRun, Xcodebuild, only_testing_id, parse_test_results, results_command,
 };
@@ -133,11 +134,11 @@ impl ItemResult {
 
 /// A test run to place on a simulator (or on this Mac).
 #[derive(Debug, Clone)]
-struct WorkItem {
-    name: String,
-    kind: &'static str,
+pub(crate) struct WorkItem {
+    pub(crate) name: String,
+    pub(crate) kind: &'static str,
     /// Pool device kind; `None` runs on this Mac.
-    device: Option<String>,
+    pub(crate) device: Option<String>,
     job: usize,
     only: Vec<String>,
     skip: Vec<String>,
@@ -450,7 +451,7 @@ fn execute_run(
     })
 }
 
-fn work_items(
+pub(crate) fn work_items(
     project: &ProjectConfig,
     sel: &Selection,
     jobs: &[BuildJob],
@@ -610,57 +611,55 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
     let simctl = Simctl::new(s.runner, s.developer_dir.map(Path::to_path_buf));
     let pool = kr_sim::plan(s.project, &simctl.runtimes()?, &simctl.devices()?)?;
     let capacity = s.loaded.capacity(Resource::Sim, s.runner)? as usize;
-    let mut by_kind: BTreeMap<String, VecDeque<WorkItem>> = BTreeMap::new();
-    for item in sim {
-        by_kind
-            .entry(item.device.clone().unwrap_or_default())
-            .or_default()
-            .push_back(item);
-    }
-    let collected = Mutex::new(Vec::new());
-    let errors: Mutex<Vec<(String, anyhow::Error)>> = Mutex::new(Vec::new());
-    // (kind, work queue, lanes); kinds without devices fail right away.
-    let mut lanes_of: Vec<(String, Mutex<VecDeque<WorkItem>>, usize)> = Vec::new();
-    for (kind, queue) in by_kind {
-        let devices = pool
+    let mut collected = Vec::new();
+    // Kinds without devices fail right away.
+    let mut devices = BTreeMap::new();
+    let mut queues = schedule::queues(sim, |i| i.device.clone().unwrap_or_default());
+    queues.retain(|kind, queue| {
+        let count = pool
             .iter()
-            .filter(|d| d.kind == kind && d.udid.is_some() && d.issue.is_none())
+            .filter(|d| d.kind == *kind && d.udid.is_some() && d.issue.is_none())
             .count();
-        if devices == 0 {
-            for item in &queue {
+        if count == 0 {
+            for item in queue.iter() {
                 let mut r = ItemResult::new(&item.name, item.kind);
                 r.summary = vec![format!(
                     "no usable `{kind}` simulator in the pool; run `kr pool sync` and `kr doctor`"
                 )];
-                collected.lock().unwrap().push(r);
-            }
-            continue;
-        }
-        let lanes = capacity.min(devices).min(queue.len()).max(1);
-        lanes_of.push((kind, Mutex::new(queue), lanes));
-    }
-    std::thread::scope(|scope| {
-        for (kind, queue, lanes) in &lanes_of {
-            for _ in 0..*lanes {
-                let (pool, collected, errors, simctl) = (&pool, &collected, &errors, &simctl);
-                scope.spawn(move || {
-                    if let Err(e) = lane(s, simctl, pool, kind, queue, collected) {
-                        errors.lock().unwrap().push((kind.clone(), e));
-                    }
-                });
+                collected.push(r);
             }
         }
+        devices.insert(kind.clone(), count);
+        count > 0
     });
-    let mut collected = collected.into_inner().unwrap();
-    let errors = errors.into_inner().unwrap();
-    for (kind, queue, _) in lanes_of {
-        let left = queue.into_inner().unwrap();
+    let lanes = schedule::lanes(queues, &devices, capacity, Order::IpadFirst, |kind| {
+        is_ipad(s.project, kind)
+    });
+    let locks = DeviceLocks::new(kr_sim::locks_dir(&s.loaded.state_dir));
+    let outcome = std::thread::scope(|scope| {
+        let (tx, rx) = mpsc::channel();
+        let mut exec = RealLanes {
+            s,
+            simctl: &simctl,
+            pool: &pool,
+            locks: &locks,
+            scope,
+            kinds: lanes.order.clone(),
+            held: lanes.order.iter().map(|_| Held::default()).collect(),
+            tx,
+            rx,
+        };
+        schedule::drive(lanes, &mut exec, &WallClock::start())
+    });
+    collected.extend(outcome.done);
+    for (kind, left) in outcome.left {
         if kr_exec::stop_signal().is_some() {
             not_started.extend(left.into_iter().map(|i| i.name));
             continue;
         }
         // Every lane of this kind failed before the queue was empty.
-        let why = errors
+        let why = outcome
+            .errors
             .iter()
             .find(|(k, _)| *k == kind)
             .map_or_else(|| "no lane ran it".to_owned(), |(_, e)| format!("{e:#}"));
@@ -671,7 +670,7 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
             collected.push(r);
         }
     }
-    for (kind, e) in &errors {
+    for (kind, e) in &outcome.errors {
         if kr_exec::stop_signal().is_none() {
             eprintln!("warning: a `{kind}` lane failed: {e:#}");
         }
@@ -680,80 +679,223 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
     Ok((results, not_started))
 }
 
-fn lane(
-    s: &Shared<'_>,
-    simctl: &Simctl<'_>,
-    pool: &[PoolDevice],
-    kind: &str,
-    queue: &Mutex<VecDeque<WorkItem>>,
-    collected: &Mutex<Vec<ItemResult>>,
-) -> Result<()> {
-    if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
-        return Ok(());
+/// iPad kinds' lanes queue first (ADR 0010).
+pub(crate) fn is_ipad(project: &ProjectConfig, kind: &str) -> bool {
+    project
+        .simulators
+        .devices
+        .get(kind)
+        .is_some_and(|k| k.device_type.contains("iPad"))
+}
+
+/// The real lanes: `sim` slots from the resource layer, leased pool simulators and
+/// [`run_item_or_fail`]. Actions that wait run on their own thread and report back.
+struct RealLanes<'scope, 'env> {
+    s: &'env Shared<'env>,
+    simctl: &'env Simctl<'env>,
+    pool: &'env [PoolDevice],
+    locks: &'env DeviceLocks,
+    scope: &'scope std::thread::Scope<'scope, 'env>,
+    kinds: Vec<String>,
+    held: Vec<Held<'env>>,
+    tx: mpsc::Sender<Report<'env>>,
+    rx: mpsc::Receiver<Report<'env>>,
+}
+
+impl<'scope, 'env> RealLanes<'scope, 'env> {
+    /// Runs `f` on its own thread and reports its end; a panic fails the lane instead
+    /// of leaving the scheduler waiting.
+    fn spawn(&self, lane: LaneId, f: impl FnOnce() -> Report<'env> + Send + 'scope) {
+        let tx = self.tx.clone();
+        self.scope.spawn(move || {
+            let report =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| {
+                    Report::done(Done::Failed(
+                        lane,
+                        anyhow::anyhow!("internal: the lane's thread panicked"),
+                    ))
+                });
+            let _ = tx.send(report);
+        });
     }
-    let task = format!("run {kind} lane");
-    let taken = slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task)?;
-    // Other lanes may have finished the work while this one waited for its slot.
-    if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
-        return slots::give_back(s.loaded, s.run_id, taken, Some(0));
-    }
-    let holder = LeaseHolder {
-        project: s.loaded.project().map(str::to_owned),
-        task: task.clone(),
-        pid: std::process::id(),
-        started: Timestamp::now(),
-    };
-    let locks = DeviceLocks::new(kr_sim::locks_dir(&s.loaded.state_dir));
-    let booting = Instant::now();
-    let lease = match kr_sim::lease(simctl, &locks, pool, kind, &holder, LEASE_POLL, None) {
-        Ok(lease) => lease,
-        Err(e) => {
-            slots::give_back(s.loaded, s.run_id, taken, None)?;
-            return Err(e);
+}
+
+/// What a lane holds between its actions.
+#[derive(Default)]
+struct Held<'a> {
+    taken: Option<slots::Taken>,
+    lease: Option<(Lease<'a>, Instant)>,
+}
+
+/// An action's end, with what the lane now holds.
+struct Report<'a> {
+    done: Done<ItemResult>,
+    taken: Option<slots::Taken>,
+    lease: Option<(Lease<'a>, Instant)>,
+}
+
+impl<'a> Report<'a> {
+    fn done(done: Done<ItemResult>) -> Self {
+        Self {
+            done,
+            taken: None,
+            lease: None,
         }
-    };
-    let (name, udid) = (lease.name().to_owned(), lease.udid().to_owned());
-    s.loaded.events().append(&Event::now(
-        s.run_id,
-        s.loaded.project(),
-        EventKind::SimLeased,
-        json!({ "device": name, "udid": udid, "task": task, "boot_ms": booting.elapsed().as_millis() as u64 }),
-    ))?;
-    let held_since = Instant::now();
-    let mut outcome = Ok(());
-    // No new item after a stop signal.
-    while kr_exec::stop_signal().is_none() {
-        let Some(item) = queue.lock().unwrap().pop_front() else {
-            break;
-        };
-        match run_item_or_fail(s, &item, Some((&name, &udid))) {
-            Ok(Some(r)) => collected.lock().unwrap().push(r),
-            Ok(None) => {}
-            Err(e) => {
-                outcome = Err(e);
-                break;
+    }
+}
+
+impl<'scope, 'env> Executor for RealLanes<'scope, 'env> {
+    type Item = WorkItem;
+    type Output = ItemResult;
+
+    fn start(&mut self, action: Action<WorkItem>) {
+        let s = self.s;
+        match action {
+            Action::Take(lane) => {
+                let task = format!("run {} lane", self.kinds[lane]);
+                self.spawn(lane, move || {
+                    match slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task) {
+                        Ok(taken) => Report {
+                            taken: Some(taken),
+                            ..Report::done(Done::Taken(lane))
+                        },
+                        Err(e) => Report::done(Done::Failed(lane, e)),
+                    }
+                });
+            }
+            Action::Lease(lane) => {
+                let taken = self.held[lane]
+                    .taken
+                    .take()
+                    .expect("a lane leases with a slot");
+                let (simctl, locks, pool) = (self.simctl, self.locks, self.pool);
+                let kind = self.kinds[lane].clone();
+                self.spawn(lane, move || {
+                    lease(s, simctl, locks, pool, &kind, lane, taken)
+                });
+            }
+            Action::Run(lane, item) => {
+                let (lease, _) = self.held[lane].lease.as_ref().expect("a lane runs leased");
+                let (name, udid) = (lease.name().to_owned(), lease.udid().to_owned());
+                self.spawn(lane, move || {
+                    Report::done(match run_item_or_fail(s, &item, Some((&name, &udid))) {
+                        Ok(r) => Done::Ran(lane, r),
+                        Err(e) => Done::Failed(lane, e),
+                    })
+                });
+            }
+            Action::Release(lane, ok) => {
+                let held = std::mem::take(&mut self.held[lane]);
+                self.spawn(lane, move || Report::done(release(s, lane, held, ok)));
+            }
+            Action::GiveBack(lane) => {
+                let taken = self.held[lane]
+                    .taken
+                    .take()
+                    .expect("a lane gives back a slot");
+                let done = match slots::give_back(s.loaded, s.run_id, taken, Some(0)) {
+                    Ok(()) => Done::Released(lane),
+                    Err(e) => Done::Failed(lane, e),
+                };
+                let _ = self.tx.send(Report::done(done));
             }
         }
     }
-    let released = lease.release();
-    s.loaded.events().append(&Event::now(
-        s.run_id,
-        s.loaded.project(),
-        EventKind::SimReleased,
-        json!({ "device": name, "udid": udid, "held_ms": held_since.elapsed().as_millis() as u64 }),
-    ))?;
-    slots::give_back(
-        s.loaded,
-        s.run_id,
-        taken,
-        Some(if outcome.is_ok() { 0 } else { 1 }),
-    )?;
-    released?;
-    outcome
+
+    fn wait(&mut self) -> Done<ItemResult> {
+        let report = self.rx.recv().expect("lane threads report back");
+        let lane = match &report.done {
+            Done::Taken(l) | Done::Leased(l) | Done::Ran(l, _) | Done::Released(l) => *l,
+            Done::Failed(l, _) => *l,
+        };
+        if report.taken.is_some() {
+            self.held[lane].taken = report.taken;
+        }
+        if report.lease.is_some() {
+            self.held[lane].lease = report.lease;
+        }
+        report.done
+    }
+
+    fn stopped(&self) -> bool {
+        kr_exec::stop_signal().is_some()
+    }
+}
+
+/// Leases and boots a device for a lane that holds `taken`; gives the slot back if
+/// that fails.
+fn lease<'a>(
+    s: &Shared<'_>,
+    simctl: &'a Simctl<'a>,
+    locks: &DeviceLocks,
+    pool: &[PoolDevice],
+    kind: &str,
+    lane: LaneId,
+    taken: slots::Taken,
+) -> Report<'a> {
+    let holder = LeaseHolder {
+        project: s.loaded.project().map(str::to_owned),
+        task: taken.task.clone(),
+        pid: std::process::id(),
+        started: Timestamp::now(),
+    };
+    let booting = Instant::now();
+    let leased = kr_sim::lease(simctl, locks, pool, kind, &holder, LEASE_POLL, None).and_then(
+        |lease| {
+            s.loaded.events().append(&Event::now(
+                s.run_id,
+                s.loaded.project(),
+                EventKind::SimLeased,
+                json!({ "device": lease.name(), "udid": lease.udid(), "task": taken.task, "boot_ms": booting.elapsed().as_millis() as u64 }),
+            ))?;
+            Ok(lease)
+        },
+    );
+    match leased {
+        Ok(lease) => Report {
+            done: Done::Leased(lane),
+            taken: Some(taken),
+            lease: Some((lease, Instant::now())),
+        },
+        Err(e) => {
+            let done = match slots::give_back(s.loaded, s.run_id, taken, None) {
+                Ok(()) => Done::Failed(lane, e),
+                Err(back) => Done::Failed(lane, back),
+            };
+            Report::done(done)
+        }
+    }
+}
+
+/// Shuts the lane's device down and gives it and the slot back.
+fn release(s: &Shared<'_>, lane: LaneId, held: Held<'_>, ok: bool) -> Done<ItemResult> {
+    let mut result = Ok(());
+    if let Some((lease, since)) = held.lease {
+        let (name, udid) = (lease.name().to_owned(), lease.udid().to_owned());
+        let released = lease.release();
+        result = s
+            .loaded
+            .events()
+            .append(&Event::now(
+                s.run_id,
+                s.loaded.project(),
+                EventKind::SimReleased,
+                json!({ "device": name, "udid": udid, "held_ms": since.elapsed().as_millis() as u64 }),
+            ))
+            .and(released);
+    }
+    if let Some(taken) = held.taken {
+        let back = slots::give_back(s.loaded, s.run_id, taken, Some(if ok { 0 } else { 1 }));
+        result = back.and(result);
+    }
+    match result {
+        Ok(()) => Done::Released(lane),
+        Err(e) => Done::Failed(lane, e),
+    }
 }
 
 /// Mean duration of each item's recent runs, from events of the past 14 days.
-fn durations(loaded: &Loaded) -> BTreeMap<String, Duration> {
+pub(crate) fn durations(loaded: &Loaded) -> BTreeMap<String, Duration> {
     let since = Timestamp::now() - jiff::SignedDuration::from_hours(24 * 14);
     let mut all: BTreeMap<String, Vec<u64>> = BTreeMap::new();
     for e in loaded.events().read_since(since).unwrap_or_default() {

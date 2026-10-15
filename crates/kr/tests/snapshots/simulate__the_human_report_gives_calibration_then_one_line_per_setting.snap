@@ -1,0 +1,10 @@
+---
+source: crates/kr/tests/simulate.rs
+expression: out
+---
+calibration: 1 run, error 0.0% (target ≤ 10%)
+  01a13972 Krill: measured 46.0 min, simulated 46.0 min (+0.0%) · sim=2 · lanes default, iPad, default
+simulated: 33 items of run 01a13972, 1 sample each, 1000 iterations
+  sim=2 order=ipad-first cache=hit: p50 43.9 min · p90 43.9 min · lower bound 43.6 min · queue 11%
+  sim=3 order=ipad-first cache=hit: p50 38.4 min · p90 38.4 min · lower bound 38.3 min · queue 0%
+    outside calibration: sim=3: the runs were recorded with sim=2; concurrency changes item durations, so this is a direction only

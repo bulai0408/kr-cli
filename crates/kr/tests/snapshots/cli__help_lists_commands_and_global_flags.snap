@@ -7,16 +7,18 @@ Kami's Apple development workflow tool: resource queues, simulator pool, pre-che
 Usage: kr [OPTIONS] <COMMAND>
 
 Commands:
-  config   Show the merged configuration and where each layer came from
-  lock     Wait for a slot of a resource, run a command, then give the slot back
-  queue    Show who holds and who waits for each resource
-  doctor   Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities
-  check    Pre-check before the simulator queue: generate, compile with the app's settings, confirm test filters, check data isolation. Holds only a `build` slot
-  run      Build once, then run scenarios and suites on pool simulators and verify the results (test counts, real exit codes, one rerun of each failure)
-  gate     Run a gate from .kr.toml: its suites and scenarios, like `kr run`
-  pool     The project's simulator pool: status, sync, lease
-  deliver  Draft the delivery report of a run: decided by machine, needs human judgment of feel, not verified. Lists the to-dos the run and the changed files show
-  help     Print this message or the help of the given subcommand(s)
+  config    Show the merged configuration and where each layer came from
+  lock      Wait for a slot of a resource, run a command, then give the slot back
+  queue     Show who holds and who waits for each resource
+  doctor    Check this Mac against the project: Xcode, runtimes, pool, disk, load, capacities
+  check     Pre-check before the simulator queue: generate, compile with the app's settings, confirm test filters, check data isolation. Holds only a `build` slot
+  run       Build once, then run scenarios and suites on pool simulators and verify the results (test counts, real exit codes, one rerun of each failure)
+  gate      Run a gate from .kr.toml: its suites and scenarios, like `kr run`
+  plan      Show what `kr run` / `kr gate` would do without doing it: cached builds, why each item runs, the lanes, and the expected time from history. With --exit-code, exit 3 when there is work to do
+  simulate  Replay recorded runs with kr's scheduler in virtual time and compare settings (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the calibration error against the measured times
+  pool      The project's simulator pool: status, sync, lease
+  deliver   Draft the delivery report of a run: decided by machine, needs human judgment of feel, not verified. Lists the to-dos the run and the changed files show
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
       --json        Print machine-readable JSON on stdout

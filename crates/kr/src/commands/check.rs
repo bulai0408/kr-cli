@@ -588,15 +588,28 @@ pub fn job_hashes(
 /// True if the job's last successful build had these inputs (and, for
 /// build-for-testing, its products are still there).
 pub fn is_fresh(job: &BuildJob, root: &Path, hash: Option<&str>) -> bool {
+    why_stale(job, root, hash).is_none()
+}
+
+/// Why the job needs building, or `None` if it is fresh.
+pub fn why_stale(job: &BuildJob, root: &Path, hash: Option<&str>) -> Option<&'static str> {
     let Some(hash) = hash else {
-        return false;
+        return Some("git cannot list the files; kr always builds then");
     };
-    let stored = std::fs::read_to_string(job.marker(root))
+    let Some(stored) = std::fs::read_to_string(job.marker(root))
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v["hash"].as_str().map(str::to_owned));
-    stored.as_deref() == Some(hash)
-        && (job.action == "build" || XcTestRun::find(&job.products(root), &job.scheme).is_ok())
+        .and_then(|v| v["hash"].as_str().map(str::to_owned))
+    else {
+        return Some("never built with kr here");
+    };
+    if stored != hash {
+        return Some("inputs changed since the last build");
+    }
+    if job.action != "build" && XcTestRun::find(&job.products(root), &job.scheme).is_err() {
+        return Some("test products are missing");
+    }
+    None
 }
 
 /// The jobs that need building; records a cache hit (once) for the others.
