@@ -800,3 +800,22 @@ fn real_linux_hosts_are_refused_as_not_macos() {
         assert!(codes.contains(&"not_macos"), "{host}: {v}");
     }
 }
+
+#[test]
+fn a_build_that_fails_on_the_host_fails_the_run_and_says_why() {
+    // Real output of the first run on the LAN Mac `work`: xcodegen was not on the PATH
+    // of the SSH command, so `generate` failed and nothing ran.
+    let r = Repo::new();
+    let out = r.kr(
+        &with(
+            fixture("git-pushed"),
+            &["probe-localhost", "run-work-build-failed"],
+        ),
+        &["run", "--remote", "localhost", "source-checks", "kit-build"],
+    );
+    assert_eq!(out.code, Some(1), "{}{}", out.stdout, out.stderr);
+    insta::assert_snapshot!(out.stdout);
+    let end = &r.events_of("run_end")[0];
+    assert_eq!(end["fields"]["ok"], false);
+    assert_eq!(end["fields"]["build_failed"], true);
+}

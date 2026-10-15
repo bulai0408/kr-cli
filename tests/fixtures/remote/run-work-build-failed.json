@@ -1,0 +1,19 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-tt",
+    "localhost",
+    "sh -c 'set -e\nexport GIT_TERMINAL_PROMPT=0\nif [ ! -d /tmp/kr-remote/Krill/.git ]; then echo '\\''kr-remote: cloning'\\''; git clone --quiet /tmp/kr32/origin.git /tmp/kr-remote/Krill; fi\necho '\\''kr-remote: fetching'\\''\ngit -C /tmp/kr-remote/Krill fetch --quiet origin v0/integration\nif [ ! -d /tmp/kr-remote/Krill@v0-integration ]; then git -C /tmp/kr-remote/Krill worktree add --quiet --detach /tmp/kr-remote/Krill@v0-integration 4ea68bc7212949937b6cb0714fdfd8a59cc6855b; fi\ncd /tmp/kr-remote/Krill@v0-integration\ngit checkout --quiet --force --detach 4ea68bc7212949937b6cb0714fdfd8a59cc6855b\necho '\\''kr-remote: starting kr'\\''\nexec \"${SHELL:-/bin/sh}\" -lc '\\''exec /tmp/kr-remote/bin/kr --json run source-checks kit-build'\\'''"
+  ],
+  "status": 1,
+  "stdout": "kr-remote: cloning\r\nkr-remote: fetching\r\nkr-remote: starting kr\r\n{\r\n  \"build\": [\r\n    {\r\n      \"duration_ms\": 55,\r\n      \"log\": \"~/.local/state/kr/runs/01a13e24-0b5c-72e2-adf4-a92e21089e76/generate.log\",\r\n      \"ok\": false,\r\n      \"step\": \"generate\",\r\n      \"summary\": [\r\n        \"sh: xcodegen: command not found\"\r\n      ]\r\n    }\r\n  ],\r\n  \"items\": [],\r\n  \"label\": \"run\",\r\n  \"ok\": false\r\n}\r\nConnection to work closed.\r\n",
+  "stderr": ""
+}

@@ -348,15 +348,22 @@ impl RemoteRun<'_> {
             self.event(EventKind::ItemEnd, fields)?;
         }
         let ok = result["ok"] == true;
-        self.end(
-            json!({
-                "ok": ok,
-                "passed": items.iter().filter(|i| i["passed"] == true).count(),
-                "total": items.len(),
-                "remote_exit": status,
-            }),
-            co,
-        )?;
+        // A failed build is reported as the list of build steps, and nothing ran.
+        let failed_step = result["build"]
+            .as_array()
+            .and_then(|steps| steps.iter().find(|s| s["ok"] == false))
+            .filter(|_| !ok)
+            .cloned();
+        let mut fields = json!({
+            "ok": ok,
+            "passed": items.iter().filter(|i| i["passed"] == true).count(),
+            "total": items.len(),
+            "remote_exit": status,
+        });
+        if failed_step.is_some() {
+            fields["build_failed"] = json!(true);
+        }
+        self.end(fields, co)?;
         let code = match status {
             Some(code @ 0..=255) => ExitCode::from(code as u8),
             _ => ExitCode::FAILURE,
@@ -373,6 +380,21 @@ impl RemoteRun<'_> {
             );
             println!("{}", serde_json::to_string_pretty(&result)?);
             return Ok(code);
+        }
+        if let Some(step) = failed_step {
+            println!(
+                "FAIL: {} · {} failed on {}; nothing ran",
+                self.label,
+                step["step"].as_str().unwrap_or("build"),
+                self.name
+            );
+            for line in step["summary"].as_array().into_iter().flatten() {
+                println!("  {}", line.as_str().unwrap_or_default());
+            }
+            if let Some(l) = step["log"].as_str() {
+                println!("  log on {}: {l}", self.name);
+            }
+            return Ok(ExitCode::FAILURE);
         }
         self.print_items(&items);
         if let Some(signal) = result["aborted"]["signal"].as_str() {

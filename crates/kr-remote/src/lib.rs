@@ -103,9 +103,16 @@ pub struct Probe {
 /// The script that prints a [`Probe`].
 pub fn probe_script(kr: &str) -> String {
     format!(
-        "echo \"os=$(uname -s)\"; echo \"xcode=$(xcodebuild -version 2>/dev/null | head -n 1)\"; echo \"kr=$({} --version 2>/dev/null)\"",
-        sh_path(kr)
+        "echo \"os=$(uname -s)\"; echo \"xcode=$(xcodebuild -version 2>/dev/null | head -n 1)\"; echo \"kr=$({} 2>/dev/null)\"",
+        in_login_shell(&format!("{} --version", sh_path(kr)))
     )
+}
+
+/// `command` run by the user's login shell on the host. An SSH command gets only a
+/// short PATH (`/usr/bin:/bin:/usr/sbin:/sbin`); a login shell has the one a terminal
+/// there has, with e.g. Homebrew's xcodegen.
+pub fn in_login_shell(command: &str) -> String {
+    format!("\"${{SHELL:-/bin/sh}}\" -lc {}", sh_quote(command))
 }
 
 impl Probe {
@@ -159,7 +166,7 @@ impl Probe {
                 "kr_missing",
                 format!("kr is not found on {name} (`{} --version` printed nothing)", remote.kr()),
                 format!(
-                    "install kr {version} on {name}, or set `kr` in [remotes.{name}] of the machine config to its path (an SSH command has a short PATH)"
+                    "install kr {version} on {name}, or set `kr` in [remotes.{name}] of the machine config to its path (kr looks for it with the PATH of your login shell there)"
                 ),
             ));
         } else if self.kr != want {
@@ -322,9 +329,12 @@ pub fn run_script(remote: &Remote, project: &str, co: &Checkout, kr_args: &[Stri
     lines.push(format!("echo '{STARTING_KR}'"));
     let args: Vec<String> = kr_args.iter().map(|a| sh_quote(a)).collect();
     lines.push(format!(
-        "exec {} --json {}",
-        sh_path(remote.kr()),
-        args.join(" ")
+        "exec {}",
+        in_login_shell(&format!(
+            "exec {} --json {}",
+            sh_path(remote.kr()),
+            args.join(" ")
+        ))
     ));
     lines.join("\n")
 }
@@ -399,6 +409,26 @@ mod tests {
             "x"
         );
         assert!(json_result("kr-remote: starting kr\n{\n  \"ok\": tr").is_none());
+    }
+
+    #[test]
+    fn kr_runs_in_the_login_shell_of_the_host() {
+        let remote = Remote {
+            ssh: "mini".into(),
+            dir: None,
+            kr: Some("~/bin/kr".into()),
+        };
+        let co = Checkout {
+            url: "https://example.com/x.git".into(),
+            branch: "main".into(),
+            commit: "abc".into(),
+            prefix: String::new(),
+        };
+        let script = run_script(&remote, "X", &co, &["run".into(), "a b".into()]);
+        assert_eq!(
+            script.lines().last().unwrap(),
+            r#"exec "${SHELL:-/bin/sh}" -lc 'exec "$HOME"/bin/kr --json run '\''a b'\'''"#
+        );
     }
 
     #[test]
