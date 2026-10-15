@@ -43,8 +43,8 @@ enum Command {
     /// Run a gate from .kr.toml: its suites and scenarios, like `kr run`.
     Gate(commands::run::GateArgs),
     /// Show what `kr run` / `kr gate` would do without doing it: cached builds, why each
-    /// item runs, the lanes, and the expected time from history. Exit 0: nothing to do;
-    /// 3: work to do.
+    /// item runs, the lanes, and the expected time from history. With --exit-code, exit
+    /// 3 when there is work to do.
     Plan(commands::plan::PlanArgs),
     /// Replay recorded runs with kr's scheduler in virtual time and compare settings
     /// (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the

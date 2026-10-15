@@ -14,7 +14,7 @@ Commands:
   check     Pre-check before the simulator queue: generate, compile with the app's settings, confirm test filters, check data isolation. Holds only a `build` slot
   run       Build once, then run scenarios and suites on pool simulators and verify the results (test counts, real exit codes, one rerun of each failure)
   gate      Run a gate from .kr.toml: its suites and scenarios, like `kr run`
-  plan      Show what `kr run` / `kr gate` would do without doing it: cached builds, why each item runs, the lanes, and the expected time from history. Exit 0: nothing to do; 3: work to do
+  plan      Show what `kr run` / `kr gate` would do without doing it: cached builds, why each item runs, the lanes, and the expected time from history. With --exit-code, exit 3 when there is work to do
   simulate  Replay recorded runs with kr's scheduler in virtual time and compare settings (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the calibration error against the measured times
   pool      The project's simulator pool: status, sync, lease
   deliver   Draft the delivery report of a run: decided by machine, needs human judgment of feel, not verified. Lists the to-dos the run and the changed files show

@@ -24,7 +24,7 @@ use crate::{Ctx, Loaded};
 
 #[derive(Debug, Args)]
 #[command(
-    after_help = "Exit codes: 0 nothing to do (no build needed, nothing to run), 3 work to do, 1 kr failed, 2 bad arguments."
+    after_help = "Exit codes: 0 the plan is computed (`has_work` in --json says whether there is work); with --exit-code, 0 nothing to do and 3 work to do; 1 kr failed; 2 bad arguments."
 )]
 pub struct PlanArgs {
     /// Scenarios and suites, as for `kr run`. Without any: the gate.
@@ -33,10 +33,15 @@ pub struct PlanArgs {
     /// The gate to plan, as for `kr gate`. Default: `default`.
     #[arg(long, conflicts_with = "targets")]
     gate: Option<String>,
+
+    /// Exit 3 when there is work to do (something to build or run), 0 when there is
+    /// none, like `git diff --exit-code`.
+    #[arg(long)]
+    exit_code: bool,
 }
 
 const SCHEMA_VERSION: u32 = 1;
-/// Exit code when there is work to do (ADR 0011 supplement).
+/// Exit code with `--exit-code` when there is work to do (ADR 0011 supplement).
 const WORK_TO_DO: u8 = 3;
 const DEFAULT_BOOT: Duration = Duration::from_secs(30);
 
@@ -45,7 +50,7 @@ struct Plan {
     schema_version: u32,
     /// "run" or "gate <name>", as `kr run` / `kr gate` would report.
     label: String,
-    /// Something to build or run; the exit code says the same (0 / 3).
+    /// Something to build or run; with `--exit-code` the exit code says the same.
     has_work: bool,
     build: Vec<Build>,
     items: Vec<Item>,
@@ -227,7 +232,7 @@ pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
     } else {
         print!("{}", human(&plan));
     }
-    Ok(if has_work {
+    Ok(if has_work && args.exit_code {
         ExitCode::from(WORK_TO_DO)
     } else {
         ExitCode::SUCCESS

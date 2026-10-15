@@ -132,7 +132,7 @@ impl Sample {
 #[test]
 fn a_fresh_checkout_needs_its_build_and_has_work_to_do() {
     let s = Sample::new();
-    let v = s.json(&git_only(), &[], 3);
+    let v = s.json(&git_only(), &[], 0);
     assert_eq!(v["schema_version"], 1);
     assert_eq!(v["label"], "gate default");
     assert_eq!(v["has_work"], true);
@@ -157,7 +157,7 @@ fn after_a_run_the_build_is_cached_and_the_estimate_comes_from_history() {
     let s = Sample::new();
     s.ran_the_gate();
     let before = s.events();
-    let v = s.json(&git_only(), &["launch", "settings"], 3);
+    let v = s.json(&git_only(), &["launch", "settings"], 0);
     assert_eq!(v["label"], "run");
     assert_eq!(v["build"][0]["cached"], true, "{v}");
     assert!(
@@ -181,15 +181,19 @@ fn a_changed_input_says_why_it_builds() {
     let app = s.home.path().join("repo/App/KrSampleApp.swift");
     std::fs::create_dir_all(app.parent().unwrap()).unwrap();
     std::fs::write(app, "let x = 2").unwrap();
-    let v = s.json(&git_only(), &["launch"], 3);
+    let v = s.json(&git_only(), &["launch"], 0);
     assert_eq!(v["build"][0]["cached"], false);
     assert_eq!(v["build"][0]["why"], "inputs changed since the last build");
 }
 
 #[test]
-fn nothing_to_build_or_run_exits_zero() {
+fn with_exit_code_work_to_do_exits_3_and_nothing_to_do_exits_0() {
+    // Like `git diff --exit-code`: only on request does the exit code say "work to do",
+    // so `kr plan && kr run` still chains.
     let s = Sample::new();
-    let v = s.json(&git_only(), &["--gate", "empty"], 0);
+    let v = s.json(&git_only(), &["--exit-code"], 3);
+    assert_eq!(v["has_work"], true);
+    let v = s.json(&git_only(), &["--gate", "empty", "--exit-code"], 0);
     assert_eq!(v["has_work"], false);
     let (code, out) = s.kr(&git_only(), &["plan", "--gate", "empty"]);
     assert_eq!(code, Some(0), "{out}");
@@ -201,7 +205,7 @@ fn the_human_plan_starts_with_the_conclusion() {
     let s = Sample::new();
     s.ran_the_gate();
     let (code, out) = s.kr(&git_only(), &["plan", "launch", "settings"]);
-    assert_eq!(code, Some(3), "{out}");
+    assert_eq!(code, Some(0), "{out}");
     let lines: Vec<&str> = out.lines().collect();
     assert!(
         lines[0].starts_with(
