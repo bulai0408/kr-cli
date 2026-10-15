@@ -127,6 +127,7 @@ kr gate --remote mini
 # .kr.toml
 [signing]
 team = "K4AXH95DCF"       # 真机构建应签的团队；kr 只回读核对，不设定
+# register_devices = true # 允许 xcodebuild 把还没登记的设备登记到团队（默认不开）
 ```
 
 ```sh
@@ -138,9 +139,9 @@ kr run --device "蔡煜恒的 iPad Mini" launch
 - 设备按名字、UDID 或 CoreDevice ID 找（`xcrun devicectl list devices` 里的）。kr 只用这一台，不抹掉、不重启、不管理设备。
 - 开始前检查，缺什么就说在设备上怎么做，以退出码 1 结束：没配对（连线、解锁、点「信任」）、开发者模式没开（设置 > 隐私与安全性 > 开发者模式，重启后点「启用」）、连不上、锁屏、设备系统的主版本比 Xcode 的 SDK 新。只新一个小版本时给警告，照常运行。
 - 「设置 > 开发者 > 启用 UI 自动化」devicectl 读不到，kr 不能事先检查；UI 测试失败且出现 `kAXError` 时，失败项下会提示去打开它。
-- 构建一次（`-destination generic/platform=iOS -allowProvisioningUpdates`），再依次在设备上跑各项。每台设备是容量为 1 的资源，同一台设备上同时只跑一个运行，后来的排队等待（`kr queue` 还不列出设备）。
+- 构建一次（`-destination 'platform=iOS,id=<UDID>' -allowProvisioningUpdates`，自动签名为这台设备准备描述文件），再依次在设备上跑各项。设备还没登记到团队时，设备会拒绝安装测试 runner（`0xe8008012`）：在 Xcode 里登记，或在 `[signing]` 写 `register_devices = true` 让 xcodebuild 登记（加 `-allowProvisioningDeviceRegistration`，会改动团队的开发者账号，所以默认不开）。每台设备是容量为 1 的资源，同一台设备上同时只跑一个运行，后来的排队等待（`kr queue` 还不列出设备）。
 - 安装前回读签名（`codesign`）：签名团队必须等于 `[signing] team`（没写时提示补上）；`[isolation]` 里配置的 entitlement 必须一致；App 带 iCloud entitlement 时，`com.apple.developer.icloud-container-environment` 必须写明，且在允许的值里（`[isolation.entitlements]` 没写时只允许 `Development`）。不对就停下，说明是哪一项、应该是什么。
-- 运行途中设备掉线或锁屏（每项开始前和失败后用 `devicectl device info lockState` 确认）：这一项和后面没跑的项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。事件和模拟器运行一样写 #29 的字段，身份里是设备的型号和系统。
+- 运行途中设备掉线或锁屏（每项开始前和失败后用 `devicectl device info lockState` 确认能否连上、是否锁屏，并比较连接方式：拔线后 devicectl 常常还能经 Wi-Fi 连上设备，但测试的连接已经断了，所以连接方式从开始时的 `wired` 变成别的也算掉线）：这一项和后面没跑的项记「未验证」（`tests.unverified`，原因在 `unverified_reason`），不算通过，退出码 1。事件和模拟器运行一样写 #29 的字段，身份里是设备的型号和系统。
 - 不支持：真机截图、性能分析、多台设备并行、CloudKit Production、注入真实服务凭证。`--device` 不能和 `--remote` 一起用。
 
 ## 状态

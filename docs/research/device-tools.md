@@ -17,6 +17,7 @@
   - `properties.state.developerModeStatus`：`{"enabled": {"mode": 1}}` 或 `{"disabled": {}}`（Apple Watch 上见到）。
 - **`list devices` 的连接状态不能说明设备是否可用。** 实测：iPad 用 USB 连着、已解锁时，`list devices` 给出 `properties.connection.state = "disconnected"`、`transportType = "wired"`；紧接着的 `device info details` 建立了连接，才显示 `connected`。`list devices` 不主动连接设备。
 - `device info lockState --device <udid>` 会连接设备，返回 `result.passcodeRequired`（`false` 表示已解锁）和 `unlockedSinceBoot`。kr 用它同时判断「现在能不能连上」和「是否锁屏」：命令成功且 `passcodeRequired = false` 才算可用；运行中每项开始前和失败后也用它判断设备是否掉线。
+- **lockState 成功不代表测试还能跑。** 2026-10-15 17:58 实测：真机测试运行中拔掉 iPad 的 USB 线，测试失败（`Encountered a problem with the test runner after launch. … The connection was invalidated.`），下一项的 runner 也起不来（`The test runner exited with code 74 before establishing connection.`），可 lockState 每次都成功：devicectl 经 Wi-Fi 连上了 iPad，`list devices` 显示 `state = connected`、`transportType = localNetwork`（拔线前是 `wired`）。所以 kr 在 lockState 之后再读一次 `list devices`，连接方式和运行开始时（连上之后读的）不同就算掉线。
 - **「启用 UI 自动化」读不到。** `list devices`、`device info details` 的完整 JSON 里都没有这一项（实测全文搜索 `automation` 无结果）。kr 不能事先检查它：`kr doctor --device` 写明这一点；真机上的测试失败且结果或日志里有 `kAXError` 时（2026-09-04 真机排障记录：开发者模式已开、UI 自动化没开时出现 kAXError），在失败项下提示去 设置 > 开发者 > 启用 UI 自动化。
 - `device info ddiServices` 显示 iOS 27.2 的开发者磁盘映像在 Xcode 27.1 下 `isUsable: true`、`contentIsCompatible: true`。所以设备系统比 Xcode 的 iOS SDK 新一个小版本时，kr 只给警告；主版本更新（例如 iOS 28 对 Xcode 27.1 的 iOS 27.1 SDK）才判为前置条件缺失。SDK 版本来自 `xcrun --sdk iphoneos --show-sdk-version`（用 kr 选定的 Xcode 的 `DEVELOPER_DIR`）。
 
