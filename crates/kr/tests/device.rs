@@ -529,3 +529,36 @@ fn a_cable_pulled_mid_run_makes_the_items_unverified_though_wifi_still_reaches_t
         ]
     );
 }
+
+#[test]
+fn a_normal_run_builds_once_takes_the_device_and_passes() {
+    // Real (2026-10-15): KrSample's launch scenario on the iPad, 2 tests.
+    let sample = Sample::with_signing("register_devices = true\n");
+    let (code, text) = sample.kr(
+        &device_recordings("launch-passed"),
+        &["run", "--device", IPAD, "launch"],
+    );
+    assert_eq!(code, Some(0), "{text}");
+    assert!(
+        text.contains("PASS: launch (2 tests, 蔡煜恒的 iPad Mini"),
+        "{text}"
+    );
+    assert!(
+        text.contains("run on 蔡煜恒的 iPad Mini: 1/1 PASS"),
+        "{text}"
+    );
+    let events = sample.events();
+    // The device is a resource of capacity 1, held while its items run.
+    let device_slot = events
+        .iter()
+        .find(|e| e["type"] == "slot_acquired" && e["fields"]["resource"] == "device")
+        .unwrap_or_else(|| panic!("no device slot in {events:#?}"));
+    assert_eq!(device_slot["fields"]["slot"], 1, "{device_slot}");
+    let end = events.iter().find(|e| e["type"] == "item_end").unwrap();
+    assert_eq!(end["fields"]["tests"]["passed"], 2, "{end}");
+    assert!(end["fields"].get("unverified_reason").is_none(), "{end}");
+    // #29: what it ran on is the real device.
+    let identity = &end["fields"]["identity"];
+    assert_eq!(identity["runtime"], "iOS 27.2", "{end}");
+    assert_eq!(identity["device_type"], "iPad mini (A17 Pro)", "{end}");
+}
