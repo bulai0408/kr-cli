@@ -1751,3 +1751,401 @@ fn rejudge_raises_the_decision_points_of_runs_from_before_them() {
         "{text}"
     );
 }
+
+#[test]
+fn preparation_success_is_reported_and_cleaned_before_the_item_ends() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(
+        "\n[[scenarios.settings.prepare]]\nrun = \"echo prepared\"\ncleanup = \"echo cleaned\"\n",
+    );
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("echo prepared", 0));
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, out) = s.kr(&recs, &["--json", "run", "settings"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["items"][0]["preparation"][0]["status"], "ready");
+    assert_eq!(out["items"][0]["preparation"][0]["cleanup"], "passed");
+    let end = s
+        .events()
+        .into_iter()
+        .find(|e| e["type"] == "item_end")
+        .unwrap();
+    assert_eq!(end["fields"]["preparation"][0]["cleanup"], "passed");
+}
+
+fn shell_recording(script: &str, status: i32) -> Recording {
+    Recording {
+        program: "sh".into(),
+        args: vec!["-c".into(), script.into()],
+        status: Some(status),
+        stdout: String::new(),
+        stderr: String::new(),
+        timed_out: false,
+        duration_ms: None,
+    }
+}
+
+#[test]
+fn preparation_failure_is_unverified_and_still_runs_cleanup() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str(
+        "\n[[scenarios.settings.prepare]]\nrun = \"exit 17\"\ncleanup = \"echo cleaned\"\n",
+    );
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("exit 17", 17));
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, out) = s.kr(&recs, &["--json", "run", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["items"][0]["tests"]["unverified"], 1);
+    assert_eq!(out["items"][0]["tests"]["failed"], 0);
+    assert_eq!(out["items"][0]["preparation"][0]["cleanup"], "passed");
+    assert!(out["decisions"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn preparation_config_errors_name_the_file_and_key_path() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str("\n[[scenarios.settings.prepare]]\nrun = \"echo ok\"\nbackground = true\n");
+    std::fs::write(path, text).unwrap();
+    let (code, out) = s.kr(&[], &["--json", "config"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains(".kr.toml"), "{out}");
+    assert!(out.contains("scenarios.settings.prepare.0.ready"), "{out}");
+    assert!(out.contains("add a readiness command"), "{out}");
+}
+
+#[test]
+fn preparation_background_waits_until_ready_and_cleans_up() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    text.push_str("\n[[scenarios.settings.prepare]]\nrun = \"python3 service.py start\"\nbackground = true\nready = \"python3 service.py ready\"\ncleanup = \"python3 service.py cleanup\"\n");
+    std::fs::write(path, text).unwrap();
+    let mut config = std::fs::read_to_string(s.home.path().join("repo/.kr.toml")).unwrap();
+    config = config.replace("scenarios = [\"launch\"]", "scenarios = [\"settings\"]");
+    std::fs::write(s.home.path().join("repo/.kr.toml"), config).unwrap();
+    let mut recs = recordings("gate-default");
+    for name in ["start", "ready", "cleanup"] {
+        recs.push(
+            kr_exec::read_recording(&root().join(format!("tests/fixtures/prepare/{name}.json")))
+                .unwrap(),
+        );
+    }
+    let (code, out) = s.kr(&recs, &["--json", "gate", "smoke"]);
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["items"][0]["preparation"][0]["ready_attempts"], 1);
+    assert_eq!(out["items"][0]["preparation"][0]["cleanup"], "passed");
+}
+
+#[test]
+fn preparation_shared_instance_is_started_once_for_two_scenarios() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    for name in ["launch", "settings"] {
+        text.push_str(&format!("\n[[scenarios.{name}.prepare]]\nshared = \"backend\"\nrun = \"echo serving\"\nbackground = true\nready = \"echo healthy\"\ncleanup = \"echo cleaned\"\n"));
+    }
+    std::fs::write(path, text).unwrap();
+    let mut recs = with_an_ipad(&s);
+    recs.push(shell_recording("echo serving", 0));
+    recs.push(shell_recording("echo healthy", 0));
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, out) = s.kr_env(
+        &recs,
+        &["--json", "run", "launch", "settings"],
+        &[("KR_RESOURCES__SIM", "2")],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    for item in out["items"].as_array().unwrap() {
+        assert_eq!(item["preparation"][0]["shared"], "backend");
+        assert_eq!(
+            item["preparation"][0]["scenarios"],
+            serde_json::json!(["launch", "settings"])
+        );
+        assert_eq!(item["preparation"][0]["cleanup"], "passed");
+    }
+    assert_ne!(out["items"][0]["device"], out["items"][1]["device"]);
+    let events = s.events();
+    let ends: Vec<_> = events
+        .iter()
+        .filter(|e| e["type"] == "preparation_end")
+        .collect();
+    assert_eq!(ends.len(), 1, "only one shared service was cleaned up");
+    assert_eq!(ends[0]["fields"]["shared"], "backend");
+    assert_eq!(
+        ends[0]["fields"]["scenarios"],
+        serde_json::json!(["launch", "settings"])
+    );
+    let cleanup = events
+        .iter()
+        .position(|e| e["type"] == "preparation_end")
+        .unwrap();
+    assert!(
+        events
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| e["type"] == "item_end")
+            .all(|(index, _)| index > cleanup)
+    );
+}
+
+#[test]
+fn preparation_shared_failure_marks_all_users_unverified_without_retry() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap();
+    for name in ["launch", "settings"] {
+        text.push_str(&format!("\n[[scenarios.{name}.prepare]]\nshared = \"backend\"\nrun = \"exit 17\"\ncleanup = \"echo cleaned\"\n"));
+    }
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("exit 17", 17));
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, out) = s.kr(&recs, &["--json", "run", "launch", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        out["items"][0]["unverified_reason"],
+        out["items"][1]["unverified_reason"]
+    );
+    for item in out["items"].as_array().unwrap() {
+        assert_eq!(item["tests"]["unverified"], 1);
+        assert_eq!(item["tests"]["failed"], 0);
+        assert_eq!(item["preparation"][0]["cleanup"], "passed");
+    }
+}
+
+#[test]
+fn preparation_shared_mismatch_names_both_scenarios() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&path).unwrap()
+        + "\n[[scenarios.launch.prepare]]\nshared = \"backend\"\nrun = \"echo first\"\n\n[[scenarios.settings.prepare]]\nshared = \"backend\"\nrun = \"echo second\"\n";
+    std::fs::write(path, text).unwrap();
+    let (code, out) = s.kr(&[], &["--json", "config"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("scenarios.launch.prepare.0"), "{out}");
+    assert!(out.contains("scenarios.settings.prepare.0"), "{out}");
+}
+
+#[test]
+fn preparation_readiness_timeout_is_unverified_and_cleaned() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&path).unwrap()
+        + "\n[[scenarios.settings.prepare]]\nrun = \"echo serving\"\nbackground = true\nready = \"false\"\ntimeout = \"1s\"\ncleanup = \"echo cleaned\"\n";
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("echo serving", 0));
+    let mut probe = shell_recording("false", 1);
+    probe.duration_ms = Some(1000);
+    recs.push(probe);
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, out) = s.kr(&recs, &["--json", "run", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert!(
+        out["items"][0]["unverified_reason"]
+            .as_str()
+            .unwrap()
+            .contains("readiness timed out")
+    );
+    assert_eq!(out["items"][0]["tests"]["unverified"], 1);
+    assert_eq!(out["items"][0]["preparation"][0]["cleanup"], "passed");
+}
+
+#[test]
+fn preparation_interruption_cleans_up_and_returns_unverified() {
+    for signal in [libc::SIGINT, libc::SIGTERM] {
+        let s = Sample::new();
+        let path = s.home.path().join("repo/.kr.toml");
+        let text = std::fs::read_to_string(&path).unwrap()
+            + "\n[[scenarios.launch.prepare]]\nrun = \"echo serving\"\nbackground = true\nready = \"echo healthy\"\ncleanup = \"echo cleaned\"\n";
+        std::fs::write(path, text).unwrap();
+        let mut recs = recordings("gate-default");
+        for r in &mut recs {
+            if r.program == "xcodebuild"
+                && r.args
+                    .iter()
+                    .any(|a| a == "build/kr/results/launch/run.xcresult")
+            {
+                r.duration_ms = Some(10_000);
+            }
+        }
+        recs.push(shell_recording("echo serving", 0));
+        recs.push(shell_recording("echo healthy", 0));
+        recs.push(shell_recording("echo cleaned", 0));
+        let child = s.spawn(&recs, &["--json", "run", "launch", "settings"]);
+        s.wait_for_event(0, |e| {
+            e["type"] == "item_start" && e["fields"]["item"] == "launch"
+        });
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        // SAFETY: only this test's own kr subprocess receives the signal.
+        unsafe {
+            libc::kill(child.id() as libc::pid_t, signal);
+        }
+        let (code, out) = wait_with_output(child);
+        assert_eq!(code, Some(128 + signal), "{out}");
+        let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(out["items"][0]["tests"]["unverified"], 1);
+        assert_eq!(out["items"][0]["preparation"][0]["cleanup"], "passed");
+        assert!(!s.pool().is_held(kr_resource::Resource::Sim, 1));
+    }
+}
+
+#[test]
+fn preparation_cleanup_failure_keeps_test_evidence_but_is_unverified() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&path).unwrap()
+        + "\n[[scenarios.settings.prepare]]\nrun = \"echo prepared\"\ncleanup = \"exit 17\"\n";
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("echo prepared", 0));
+    recs.push(shell_recording("exit 17", 17));
+    let (code, out) = s.kr(&recs, &["run", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("UNVERIFIED: settings"), "{out}");
+    let end = s
+        .events()
+        .into_iter()
+        .find(|e| e["type"] == "item_end")
+        .unwrap();
+    assert_eq!(end["fields"]["cases"][0]["outcome"], "passed");
+    assert_eq!(end["fields"]["tests"]["unverified"], 1);
+}
+
+#[test]
+fn preparation_invalid_fields_have_actionable_config_errors() {
+    for (fields, expected) in [
+        ("run = \" \"", "scenarios.settings.prepare.0.run"),
+        (
+            "run = \"true\"\ntimeout = \"never\"",
+            "scenarios.settings.prepare.0.timeout",
+        ),
+        (
+            "run = \"true\"\ndir = \"missing-directory\"",
+            "scenarios.settings.prepare.0.dir",
+        ),
+        (
+            "run = \"true\"\ndir = \"/tmp\"",
+            "scenarios.settings.prepare.0.dir",
+        ),
+        (
+            "run = \"true\"\nready = \"true\"",
+            "scenarios.settings.prepare.0.ready",
+        ),
+        (
+            "run = \"true\"\nshared = \" \"",
+            "scenarios.settings.prepare.0.shared",
+        ),
+        (
+            "run = \"true\"\ntimeout = \"18446744073709551615h\"",
+            "scenarios.settings.prepare.0.timeout",
+        ),
+        ("run = \"true\"\nreadi = \"true\"", "unknown field `readi`"),
+    ] {
+        let s = Sample::new();
+        let path = s.home.path().join("repo/.kr.toml");
+        let text = std::fs::read_to_string(&path).unwrap()
+            + "\n[[scenarios.settings.prepare]]\n"
+            + fields
+            + "\n";
+        std::fs::write(path, text).unwrap();
+        let (code, out) = s.kr(&[], &["--json", "config"]);
+        assert_eq!(code, Some(1), "{fields}: {out}");
+        assert!(out.contains(expected) && out.contains(".kr.toml"), "{out}");
+        let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(out["error"]["code"], "kr::config::file");
+        assert!(out["error"]["help"].as_str().is_some_and(|s| !s.is_empty()));
+    }
+}
+
+#[test]
+fn preparation_context_variables_are_not_machine_config_keys() {
+    let s = Sample::new();
+    let (code, out) = s.kr_env(
+        &[],
+        &["--json", "config"],
+        &[
+            ("KR_RUN_ID", "sample-run"),
+            ("KR_PROJECT", "KrSample"),
+            ("KR_SCENARIO", "settings"),
+            ("KR_DEVICE_UDID", "sample-udid"),
+            ("KR_RUN_DIR", "/tmp/sample-run"),
+        ],
+    );
+    assert_eq!(code, Some(0), "a preparation command may call kr: {out}");
+}
+
+#[test]
+fn preparation_offline_comparison_separates_environment_from_product_failure() {
+    let s = Sample::new();
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    let recs = broken();
+    let (code, before) = s.kr(&recs, &["--json", "run", "broken"]);
+    assert_eq!(code, Some(1), "{before}");
+    let before: serde_json::Value = serde_json::from_str(&before).unwrap();
+    assert_eq!(before["items"][0]["tests"]["failed"], 1);
+    let path = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&path).unwrap()
+        + "\n[[scenarios.broken.prepare]]\nrun = \"exit 17\"\ncleanup = \"echo cleaned\"\n";
+    std::fs::write(path, text).unwrap();
+    let mut recs = recs;
+    recs.push(shell_recording("exit 17", 17));
+    recs.push(shell_recording("echo cleaned", 0));
+    let (code, after) = s.kr(&recs, &["--json", "run", "broken"]);
+    assert_eq!(code, Some(1), "{after}");
+    let after: serde_json::Value = serde_json::from_str(&after).unwrap();
+    assert_eq!(after["items"][0]["tests"]["failed"], 0);
+    assert_eq!(after["items"][0]["tests"]["unverified"], 1);
+    assert!(after["items"][0].get("xcresult").unwrap().is_null());
+    println!(
+        "ADR 0010 level 3 injected environment failure: failed 1 -> 0; unverified 0 -> 1; exit 1 -> 1; exact count error 0"
+    );
+}
+
+#[test]
+fn preparation_unused_shared_dependency_does_not_delay_cleanup_past_slot_release() {
+    let s = Sample::new();
+    let path = s.home.path().join("repo/.kr.toml");
+    let mut text = std::fs::read_to_string(&path).unwrap()
+        + "\n[[scenarios.launch.prepare]]\nrun = \"exit 17\"\n";
+    for name in ["launch", "settings"] {
+        text.push_str(&format!("\n[[scenarios.{name}.prepare]]\nshared = \"backend\"\nrun = \"echo serving\"\nbackground = true\nready = \"echo healthy\"\ncleanup = \"echo cleaned\"\n"));
+    }
+    std::fs::write(path, text).unwrap();
+    let mut recs = recordings("gate-default");
+    recs.push(shell_recording("exit 17", 17));
+    for script in ["echo serving", "echo healthy", "echo cleaned"] {
+        recs.push(shell_recording(script, 0));
+    }
+    let (code, out) = s.kr(&recs, &["run", "launch", "settings"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.contains("PASS: settings"), "{out}");
+    let events = s.events();
+    let cleaned = events
+        .iter()
+        .position(|e| e["type"] == "preparation_end" && e["fields"]["shared"] == "backend")
+        .unwrap();
+    let released = events
+        .iter()
+        .position(|e| e["type"] == "sim_released")
+        .unwrap();
+    assert!(
+        cleaned < released,
+        "a scenario that never reached the shared step must not keep it alive"
+    );
+}

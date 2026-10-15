@@ -27,6 +27,8 @@ pub struct Command {
     pub env: Vec<(String, String)>,
     /// Hard limit for [`Runner::run_logged`]: the process group is terminated after it.
     pub timeout: Option<Duration>,
+    /// Cleanup must run even after kr received a stop signal.
+    pub cleanup: bool,
 }
 
 impl Command {
@@ -37,6 +39,7 @@ impl Command {
             cwd: None,
             env: Vec::new(),
             timeout: None,
+            cleanup: false,
         }
     }
 
@@ -190,6 +193,11 @@ pub const KILL_GRACE: Duration = Duration::from_secs(5);
 pub trait Runner: Send + Sync {
     fn run(&self, cmd: &Command) -> Result<Output>;
 
+    /// Starts an owned background process group, streaming its output to `log`.
+    fn start(&self, _cmd: &Command, _log: &Path) -> Result<Box<dyn Background>> {
+        bail!("this command runner does not support background processes")
+    }
+
     /// Runs a long command (e.g. xcodebuild) with stdout and stderr streamed into
     /// `log`, honouring `cmd.timeout`. Only a tail of the output is kept in memory.
     fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
@@ -201,6 +209,63 @@ pub trait Runner: Send + Sync {
             stderr: String::new(),
             ..out
         })
+    }
+}
+
+/// An owned dependency process group. Dropping it must terminate its descendants.
+pub trait Background: Send {
+    fn exited(&mut self) -> Result<bool>;
+    fn stop(&mut self) -> Result<()>;
+}
+
+struct ProcessGroup {
+    child: std::process::Child,
+    pgid: libc::pid_t,
+    stopped: bool,
+}
+
+impl Background for ProcessGroup {
+    fn exited(&mut self) -> Result<bool> {
+        Ok(self.child.try_wait()?.is_some())
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        if self.stopped {
+            return Ok(());
+        }
+        kill_group(self.pgid, libc::SIGTERM);
+        let started = Instant::now();
+        while started.elapsed() < KILL_GRACE {
+            let _ = self.child.try_wait()?;
+            // SAFETY: probe only the process group created by this instance.
+            if unsafe { libc::kill(-self.pgid, 0) } != 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        kill_group(self.pgid, libc::SIGKILL);
+        self.child.wait()?;
+        self.stopped = true;
+        Ok(())
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
+struct ReplayedBackground {
+    exited: bool,
+}
+impl Background for ReplayedBackground {
+    fn exited(&mut self) -> Result<bool> {
+        Ok(self.exited)
+    }
+    fn stop(&mut self) -> Result<()> {
+        self.exited = true;
+        Ok(())
     }
 }
 
@@ -235,6 +300,36 @@ fn kill_group(pgid: libc::pid_t, signal: libc::c_int) {
 pub struct RealRunner;
 
 impl Runner for RealRunner {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        catch_stop_signals()?;
+        if let Some(signal) = stop_signal() {
+            return Err(interrupted_err(cmd, signal, Some(log)));
+        }
+        if let Some(dir) = log.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = File::create(log)?;
+        let mut command = std::process::Command::new(&cmd.program);
+        command
+            .args(&cmd.args)
+            .envs(cmd.env.iter().cloned())
+            .stdin(Stdio::null())
+            .stdout(file.try_clone()?)
+            .stderr(file)
+            .process_group(0);
+        if let Some(dir) = &cmd.cwd {
+            command.current_dir(dir);
+        }
+        let child = command
+            .spawn()
+            .with_context(|| format!("failed to start `{cmd}`"))?;
+        let pgid = libc::pid_t::try_from(child.id())?;
+        Ok(Box::new(ProcessGroup {
+            child,
+            pgid,
+            stopped: false,
+        }))
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let mut command = std::process::Command::new(&cmd.program);
         command.args(&cmd.args).envs(cmd.env.iter().cloned());
@@ -258,7 +353,7 @@ impl Runner for RealRunner {
     /// command has stopped; after one, logged commands no longer start.
     fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
         catch_stop_signals()?;
-        if let Some(signal) = stop_signal() {
+        if let Some(signal) = stop_signal().filter(|_| !cmd.cleanup) {
             return Err(interrupted_err(cmd, signal, None));
         }
         if let Some(dir) = log.parent() {
@@ -289,13 +384,21 @@ impl Runner for RealRunner {
             if let Some(status) = child.try_wait()? {
                 break status;
             }
-            if let (None, Some(signal)) = (interrupted, stop_signal()) {
+            if let (None, Some(signal)) = (interrupted, stop_signal().filter(|_| !cmd.cleanup)) {
                 interrupted = Some(signal);
                 kill_group(pgid, signal);
+                terminated_at = Some(Instant::now());
             }
             match terminated_at {
                 None if deadline.is_some_and(|d| Instant::now() >= d) => {
-                    kill_group(pgid, libc::SIGTERM);
+                    kill_group(
+                        pgid,
+                        if cmd.cleanup {
+                            libc::SIGKILL
+                        } else {
+                            libc::SIGTERM
+                        },
+                    );
                     terminated_at = Some(Instant::now());
                 }
                 Some(at) if at.elapsed() >= KILL_GRACE => kill_group(pgid, libc::SIGKILL),
@@ -396,6 +499,12 @@ pub fn read_recording(path: &Path) -> Result<Recording> {
 }
 
 impl Runner for ReplayRunner {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        let out = self.run_logged(cmd, log)?;
+        Ok(Box::new(ReplayedBackground {
+            exited: !out.success() || out.timed_out,
+        }))
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let mut pending = self.pending.lock().unwrap();
         if let Some(i) = pending.iter().position(|r| r.matches(cmd)) {
@@ -409,7 +518,7 @@ impl Runner for ReplayRunner {
             if let Some(duration) = duration {
                 let started = Instant::now();
                 while started.elapsed() < duration {
-                    if let Some(signal) = stop_signal() {
+                    if let Some(signal) = stop_signal().filter(|_| !cmd.cleanup) {
                         return Err(interrupted_err(cmd, signal, None));
                     }
                     std::thread::sleep(Duration::from_millis(20).min(duration));
@@ -536,6 +645,20 @@ impl<R: Runner> RecordingRunner<R> {
 }
 
 impl<R: Runner> Runner for RecordingRunner<R> {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        let process = self.inner.start(cmd, log)?;
+        self.save(
+            cmd,
+            &Output {
+                status: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            },
+            None,
+        )?;
+        Ok(process)
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let out = self.inner.run(cmd)?;
         self.save(cmd, &out, None)?;

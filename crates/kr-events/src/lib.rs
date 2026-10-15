@@ -70,6 +70,10 @@ pub enum EventKind {
     /// the machine then: `build` and `sim` slots held by anyone, this run included, and
     /// `legacy_holder`, the holder of the old machine-wide lock if the bridge is on).
     ItemStart,
+    /// A dependency preparation began; fields include step, shared, scenarios and logs.
+    PreparationStart,
+    /// A dependency was cleaned up; same fields plus status, reason, cleanup and duration.
+    PreparationEnd,
     /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
     /// tests (counts per outcome), flaky.
     ///

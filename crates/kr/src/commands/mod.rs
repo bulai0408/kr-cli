@@ -7,6 +7,7 @@ pub mod doctor;
 pub mod lock;
 pub mod plan;
 pub mod pool;
+mod prepare;
 pub mod queue;
 pub mod rejudge;
 pub mod remote;

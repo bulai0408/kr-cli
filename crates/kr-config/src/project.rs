@@ -179,6 +179,22 @@ pub struct Scenario {
     /// Depends on an outside service: never served from the result cache.
     #[serde(default)]
     pub external: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub prepare: Vec<Prepare>,
+}
+
+/// A dependency prepared before a scenario and cleaned up afterwards (ADR 0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Prepare {
+    pub run: String,
+    pub cleanup: Option<String>,
+    pub dir: Option<PathBuf>,
+    pub timeout: Option<String>,
+    #[serde(default)]
+    pub background: bool,
+    pub ready: Option<String>,
+    pub shared: Option<String>,
 }
 
 /// A named set of suites and scenarios that decides whether a batch can merge.
@@ -228,12 +244,13 @@ pub fn parse_timeout(text: &str) -> Option<Duration> {
         }
         let n: u64 = number.parse().ok()?;
         number.clear();
-        total += n * match c {
+        let unit = match c {
             's' => 1,
             'm' => 60,
             'h' => 3600,
             _ => return None,
         };
+        total = total.checked_add(n.checked_mul(unit)?)?;
         seen_unit = true;
     }
     if !number.is_empty() || !seen_unit || total == 0 {
@@ -316,6 +333,86 @@ impl ProjectConfig {
             }
             check_device(&path, &scenario.device, &mut out);
             check_timeout(&path, &scenario.timeout, &mut out);
+            for (index, step) in scenario.prepare.iter().enumerate() {
+                let key = index.to_string();
+                let base = ["scenarios", name.as_str(), "prepare", key.as_str()];
+                let mut problem = |field: &str, message: &str, help: &str| {
+                    let mut path = base.to_vec();
+                    path.push(field);
+                    out.push(Problem::new(
+                        &path,
+                        format!("{}: {message}", path.join(".")),
+                        help,
+                    ));
+                };
+                for (field, value) in [
+                    ("run", Some(&step.run)),
+                    ("ready", step.ready.as_ref()),
+                    ("cleanup", step.cleanup.as_ref()),
+                    ("shared", step.shared.as_ref()),
+                ] {
+                    if value.is_some_and(|s| s.trim().is_empty()) {
+                        problem(
+                            field,
+                            "must not be empty",
+                            "write a non-empty value or remove the optional field",
+                        );
+                    }
+                }
+                if step.background && step.ready.is_none() {
+                    problem(
+                        "ready",
+                        "a background step needs a readiness check",
+                        "add a readiness command, for example ready = \"curl --fail http://127.0.0.1:8080/health\"",
+                    );
+                }
+                if !step.background && step.ready.is_some() {
+                    problem(
+                        "ready",
+                        "ready requires background = true",
+                        "set background = true or remove ready",
+                    );
+                }
+                if step.timeout.as_ref().is_some_and(|t| {
+                    parse_timeout(t)
+                        .and_then(|d| std::time::Instant::now().checked_add(d))
+                        .is_none()
+                }) {
+                    problem(
+                        "timeout",
+                        "invalid duration",
+                        "write a positive duration such as \"30s\"",
+                    );
+                }
+                if step.dir.as_ref().is_some_and(|p| {
+                    p.is_absolute() || p.components().any(|c| c == std::path::Component::ParentDir)
+                }) {
+                    problem(
+                        "dir",
+                        "must be relative to the project root",
+                        "use a project subdirectory without ..",
+                    );
+                }
+            }
+        }
+        let mut shared: BTreeMap<&str, (&str, usize, &Prepare)> = BTreeMap::new();
+        for (name, scenario) in &self.scenarios {
+            for (index, step) in scenario.prepare.iter().enumerate() {
+                if let Some(key) = step.shared.as_deref() {
+                    if let Some((previous, previous_index, definition)) = shared.get(key) {
+                        if *definition != step {
+                            let index = index.to_string();
+                            out.push(Problem::new(
+                                &["scenarios", name, "prepare", &index],
+                                format!("scenarios.{name}.prepare.{index}: shared `{key}` differs from scenarios.{previous}.prepare.{previous_index}"),
+                                "use identical run/dir/ready/cleanup/background/timeout for the same shared name",
+                            ));
+                        }
+                    } else {
+                        shared.insert(key, (name, index, step));
+                    }
+                }
+            }
         }
         for (name, suite) in &self.suites {
             let path = ["suites", name.as_str()];

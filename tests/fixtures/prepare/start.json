@@ -1,0 +1,10 @@
+{
+  "program": "sh",
+  "args": [
+    "-c",
+    "python3 service.py start"
+  ],
+  "status": 0,
+  "stdout": "",
+  "stderr": ""
+}
