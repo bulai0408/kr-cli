@@ -271,9 +271,14 @@ fn print(ctx: &Ctx, report: &Report) -> Result<()> {
         for t in &c.change.tests {
             println!("  {}: {} → {}", t.id, outcome(t.before), outcome(t.after));
         }
-        if c.change.before.passed != c.change.after.passed {
+        // Why the item passes or fails differently now.
+        if c.change.before.passed && !c.change.after.passed {
             for reason in &c.change.after.reasons {
                 println!("  now: {reason}");
+            }
+        } else if !c.change.before.passed && c.change.after.passed {
+            for reason in &c.change.before.reasons {
+                println!("  was: {reason}");
             }
         }
     }

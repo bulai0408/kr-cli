@@ -79,6 +79,10 @@ impl Home {
     }
 
     fn rejudge(&self, recordings: &[Recording]) -> serde_json::Value {
+        serde_json::from_str(&self.kr(recordings, true)).unwrap()
+    }
+
+    fn kr(&self, recordings: &[Recording], json: bool) -> String {
         let files: Vec<String> = recordings
             .iter()
             .enumerate()
@@ -94,7 +98,8 @@ impl Home {
             .env("HOME", self.0.path())
             .env("KR_REPLAY", files.join(":"))
             .current_dir(self.0.path())
-            .args(["--json", "rejudge", "--evidence"])
+            .args(json.then_some("--json"))
+            .args(["rejudge", "--evidence"])
             .arg(self.evidence())
             .output()
             .unwrap();
@@ -104,7 +109,7 @@ impl Home {
             "{text}{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        serde_json::from_str(&text).unwrap()
+        text.replace(&format!("{}/", self.evidence().display()), "")
     }
 }
 
@@ -165,5 +170,35 @@ fn a_cached_verdict_from_older_rules_is_listed_as_changed() {
             "before": "passed",
             "after": "failed",
         }])
+    );
+}
+
+#[test]
+fn a_verdict_that_now_passes_says_which_reason_went_away() {
+    let home = Home::new();
+    home.rejudge(&[
+        read(xcresult("sample-r2-tests.json")),
+        read(xcresult("sample-r1-tests.json")),
+    ]);
+    // As if an older rule had failed scenario 0 for a reason today's rules drop.
+    let cache = home.0.path().join(".local/state/kr/rejudge/evidence");
+    for entry in std::fs::read_dir(&cache).unwrap() {
+        let file = entry.unwrap().path();
+        let text = std::fs::read_to_string(&file).unwrap();
+        if text.contains("e2e-1/0/") {
+            let text = text.replace(
+                "\"reasons\":[]",
+                "\"reasons\":[\"an old rule disliked this\"]",
+            );
+            std::fs::write(&file, text).unwrap();
+        }
+    }
+    assert_eq!(
+        home.kr(&[], false).lines().collect::<Vec<_>>(),
+        [
+            "CHANGED: batch6-gate/e2e-1/0/results.xcresult: FAIL → PASS",
+            "  was: an old rule disliked this",
+            "rejudge: 0 items in 0 runs, 2 evidence bundles (0 read now); 1 verdict changed",
+        ]
     );
 }
