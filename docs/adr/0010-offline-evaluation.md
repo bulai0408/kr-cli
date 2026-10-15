@@ -51,6 +51,8 @@ owner 要求：kr 的任何改动或设定（排程、容量、通道、缓存�
 | 6 | `rerun.attempt`、`rerun.xcresult`；`item_end.xcresult` | kr 只重跑一次，所以 `attempt` 为 2（第一次运行是 1）；过滤无效、没有真正重跑时 `xcresult` 为 null。整项重跑（高负载）也写这两个字段。 |
 | 7 | 新事件 `run_start` | `requester`：`agent`（环境变量 `KR_REQUESTER`，没有时用 `AI_AGENT`）、`worktree`（仓库根目录）、`parent_pid`；`previous`：同一 worktree 上一次运行的 `run_id` 和 `ended_ms_ago`（结束到这次开始的毫秒数，还没结束为 null）。kr 不推断「是否在等前一个结果」，只记事实，由分析时判断。 |
 
+远程运行（`--remote`，#32）：本机写 `run_start`（请求来自本机），并把主机结果里每项的 `cases` 和 `xcresult`（主机上的路径）抄进本机的 `item_end`；负载采样、并发上下文、身份、调度决策、重跑和 `verdict.json` 由主机上的 kr 写在主机自己的状态目录里，本机没有副本。`kr run --json` 的每项也多了 `cases`（只加不改）。
+
 ### 负载与偶发的关系
 - 小样本证明不了「不偶发」：n 次运行 0 次失败时，失败率的 95% 上限约为 3/n。
 - 每个场景按「高负载 / 正常」两组累计，用 Beta-Binomial 给出失败率区间，用 Fisher 精确检验比较两组，不给是/否结论。

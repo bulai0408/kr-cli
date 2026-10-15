@@ -114,8 +114,8 @@ struct ItemResult {
     /// The build job of a test item, for its input hash in the events.
     #[serde(skip)]
     job: Option<usize>,
-    /// Each test, for the events.
-    #[serde(skip)]
+    /// Each test of a test item: outcome, time, failure signature and category.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     cases: Vec<kr_run::Case>,
 }
 
@@ -231,7 +231,7 @@ fn run_end(loaded: &Loaded, run_id: RunId, label: &str, fields: &serde_json::Val
 /// The first event of a run: what it runs and who asked for it (ADR 0010). `previous`
 /// is the last run from the same worktree, to tell whether this request waited for
 /// that one's result.
-fn run_start(
+pub(crate) fn run_start(
     ctx: &Ctx,
     loaded: &Loaded,
     root: &Path,

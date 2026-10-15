@@ -286,6 +286,41 @@ fn events_of_a_remote_run_are_written_here_too() {
 }
 
 #[test]
+fn a_remote_run_names_its_requester_here_and_keeps_the_hosts_tests() {
+    // #29: the request comes from this machine; the host's kr reports each test and the
+    // bundle it judged, and records the rest (load, identity, scheduling) in its events.
+    let r = Repo::new();
+    let mut run = fixture("run-localhost").remove(0);
+    run.stdout = run.stdout.replacen(
+        "\"xcresult\": null",
+        "\"cases\": [{ \"id\": \"KrillTests/A/one()\", \"outcome\": \"passed\", \"duration_s\": 1.5 }],\n      \"xcresult\": \"/tmp/kr-remote/Krill@v0-integration/build/kr/results/source-checks/run.xcresult\"",
+        1,
+    );
+    let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
+    recs.push(run);
+    let out = r.kr_env(
+        &recs,
+        &["run", "--remote", "localhost", "source-checks", "kit-build"],
+        &[("KR_REQUESTER", "worker-7")],
+    );
+    assert_eq!(out.code, Some(0), "{}{}", out.stdout, out.stderr);
+    let start = &r.events_of("run_start")[0]["fields"];
+    assert_eq!(start["label"], "run on localhost");
+    assert_eq!(start["requester"]["agent"], "worker-7");
+    assert_eq!(
+        start["targets"],
+        serde_json::json!(["source-checks", "kit-build"])
+    );
+    let end = &r.events_of("item_end")[0]["fields"];
+    assert_eq!(end["item"], "source-checks");
+    assert_eq!(end["cases"][0]["id"], "KrillTests/A/one()");
+    assert_eq!(
+        end["xcresult"],
+        "/tmp/kr-remote/Krill@v0-integration/build/kr/results/source-checks/run.xcresult"
+    );
+}
+
+#[test]
 fn a_gate_runs_remotely_by_name() {
     let r = Repo::new();
     let mut recs = with(fixture("git-pushed"), &["probe-localhost"]);
