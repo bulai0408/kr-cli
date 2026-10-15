@@ -1,0 +1,143 @@
+# 第 6 批人工影响表的模块覆盖声明；Favorites 仅经 TitleDetail 间接依赖。
+[project]
+name = "Krill"
+scheme = "KrillPlayerControls"
+xcodeproj = "Krill.xcodeproj"
+platforms = ["iOS"]
+[simulators]
+runtime = "iOS 18.6"
+[simulators.devices.default]
+device_type = "iPhone 16 Pro"
+[modules.TitleDetail]
+paths = ["Krill/TitleDetail", "Krill/Detail"]
+depends_on = ["Metadata", "Sources", "Modules"]
+[modules.Favorites]
+paths = ["Krill/Favorites"]
+depends_on = ["TitleDetail", "Domain", "UserState"]
+
+[scenarios.ratings]
+only = ["KrillUITests/Replay_ratings"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Sources", "UserState"]
+
+[scenarios.module-watchlist]
+only = ["KrillUITests/Replay_module_watchlist"]
+modules = ["Domain", "UserState"]
+
+[scenarios.official-tmdb]
+only = ["KrillUITests/Replay_official_tmdb"]
+modules = ["Domain", "Metadata", "Modules", "UserState"]
+
+[scenarios.library-groups]
+only = ["KrillUITests/Replay_library_groups"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Sources", "UserState"]
+
+[scenarios.my-stats]
+only = ["KrillUITests/Replay_my_stats"]
+modules = ["Domain", "Player", "UserState"]
+
+[scenarios.player-controls]
+only = ["KrillUITests/Replay_player_controls"]
+modules = ["Domain", "Library", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.storage-usage]
+only = ["KrillUITests/Replay_storage_usage"]
+modules = ["Domain", "Library", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.favorites]
+only = ["KrillUITests/Replay_favorites"]
+modules = ["Favorites"]
+
+[scenarios.subtitles]
+only = ["KrillUITests/Replay_subtitles"]
+modules = ["Domain", "Modules", "Player", "UserState"]
+
+[scenarios.trakt]
+only = ["KrillUITests/Replay_trakt"]
+modules = ["Domain", "Modules", "UserState"]
+
+[scenarios.viewing-environment]
+only = ["KrillUITests/Replay_viewing_environment"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Sources", "UserState"]
+
+[scenarios.media-markers]
+only = ["KrillUITests/Replay_media_markers"]
+modules = ["Domain", "Library", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.airing-calendar]
+only = ["KrillUITests/Replay_airing_calendar"]
+modules = ["Domain", "Metadata", "Modules", "UserState"]
+
+[scenarios.shelf-edit]
+only = ["KrillUITests/Replay_shelf_edit"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Sources", "UserState"]
+
+[scenarios.shelf-share]
+only = ["KrillUITests/Replay_shelf_share"]
+modules = ["Domain", "Library", "Modules", "Sources", "UserState"]
+
+[scenarios.shelf-share-ipad]
+only = ["KrillUITests/Replay_shelf_share_ipad"]
+modules = ["Domain", "UserState"]
+
+[scenarios.detail-search]
+only = ["KrillUITests/Replay_detail_search"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.modules]
+only = ["KrillUITests/Replay_modules"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.mvp-polish]
+only = ["KrillUITests/Replay_mvp_polish"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.ipad-layout]
+only = ["KrillUITests/Replay_ipad_layout"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.analytics]
+only = ["KrillUITests/Replay_analytics"]
+modules = ["Domain", "UserState"]
+
+[scenarios.settings-about]
+only = ["KrillUITests/Replay_settings_about"]
+modules = ["Domain", "Library", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.legal-privacy]
+only = ["KrillUITests/Replay_legal_privacy"]
+modules = ["Domain", "UserState"]
+
+[scenarios.search]
+only = ["KrillUITests/Replay_search"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Sources", "UserState"]
+
+[scenarios.source-management]
+only = ["KrillUITests/Replay_source_management"]
+modules = ["Domain", "Library", "Metadata", "Sources", "UserState"]
+
+[scenarios.source-view]
+only = ["KrillUITests/Replay_source_view"]
+modules = ["Domain", "Library", "Metadata", "Modules", "Player", "Sources", "UserState"]
+
+[scenarios.fnos-form]
+only = ["KrillUITests/Replay_fnos_form"]
+modules = ["Domain", "Library", "Sources", "UserState"]
+
+[scenarios.webdav-form]
+only = ["KrillUITests/Replay_webdav_form"]
+modules = ["Domain", "Library", "Sources", "UserState"]
+
+[scenarios.smb-form]
+only = ["KrillUITests/Replay_smb_form"]
+modules = ["Domain", "Library", "Sources", "UserState"]
+
+[scenarios.match-correction]
+only = ["KrillUITests/Replay_match_correction"]
+modules = ["Domain", "Library", "Metadata", "Player", "Sources", "UserState"]
+
+[scenarios.icloud-sync]
+only = ["KrillUITests/Replay_icloud_sync"]
+modules = ["Domain", "UserState"]
+
+[gates.default]
+scenarios = ["*"]

@@ -1,0 +1,735 @@
+{
+  "dependencies" : [
+    {
+      "identity" : "sqlite-data",
+      "requirement" : {
+        "exact" : [
+          "1.12.1"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/pointfreeco/sqlite-data"
+    },
+    {
+      "identity" : "grdb.swift",
+      "requirement" : {
+        "exact" : [
+          "7.11.1"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/groue/GRDB.swift"
+    },
+    {
+      "identity" : "ksplayer",
+      "requirement" : {
+        "revision" : [
+          "be7f60d3b94a0941c643fe8699113cfce4f08e83"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/kingslay/KSPlayer.git"
+    },
+    {
+      "identity" : "amsmb2",
+      "requirement" : {
+        "exact" : [
+          "4.0.3"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/amosavian/AMSMB2"
+    },
+    {
+      "identity" : "swiftsoup",
+      "requirement" : {
+        "exact" : [
+          "2.9.6"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/scinfu/SwiftSoup"
+    },
+    {
+      "identity" : "zipfoundation",
+      "requirement" : {
+        "exact" : [
+          "0.9.20"
+        ]
+      },
+      "type" : "sourceControl",
+      "url" : "https://github.com/weichsel/ZIPFoundation"
+    }
+  ],
+  "manifest_display_name" : "KrillKit",
+  "name" : "KrillKit",
+  "path" : "<repo>/KrillKit",
+  "platforms" : [
+    {
+      "name" : "ios",
+      "version" : "18.0"
+    },
+    {
+      "name" : "tvos",
+      "version" : "18.0"
+    },
+    {
+      "name" : "macos",
+      "version" : "15.0"
+    }
+  ],
+  "products" : [
+    {
+      "name" : "Domain",
+      "targets" : [
+        "Domain"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Library",
+      "targets" : [
+        "Library"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Sources",
+      "targets" : [
+        "Sources"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Metadata",
+      "targets" : [
+        "Metadata"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Player",
+      "targets" : [
+        "Player"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "UserState",
+      "targets" : [
+        "UserState"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Analytics",
+      "targets" : [
+        "Analytics"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    },
+    {
+      "name" : "Modules",
+      "targets" : [
+        "Modules"
+      ],
+      "type" : {
+        "library" : [
+          "automatic"
+        ]
+      }
+    }
+  ],
+  "targets" : [
+    {
+      "c99name" : "UserStateTests",
+      "module_type" : "SwiftTarget",
+      "name" : "UserStateTests",
+      "path" : "Tests/UserStateTests",
+      "product_dependencies" : [
+        "GRDB",
+        "SQLiteData"
+      ],
+      "sources" : [
+        "AiringNotificationTests.swift",
+        "BatchSourceProgressTests.swift",
+        "DataProviderTests.swift",
+        "DeviceProgressTests.swift",
+        "FavoriteTests.swift",
+        "FavoriteTraktTests.swift",
+        "HomeSelectionTests.swift",
+        "LibraryGroupsTests.swift",
+        "ManualMarkerTests.swift",
+        "MatchCorrectionStateTests.swift",
+        "ModuleProgressTests.swift",
+        "ModuleSynchronizationTests.swift",
+        "ModuleTitleMatchTests.swift",
+        "ModuleWatchlistTests.swift",
+        "PlaybackSessionTests.swift",
+        "ProfileIDTests.swift",
+        "ProfileTests.swift",
+        "ProgressTests.swift",
+        "ReminderStateTests.swift",
+        "SchemaTests.swift",
+        "SeriesSettingsTests.swift",
+        "ShelfDescriptionTests.swift",
+        "ShelfEditingTests.swift",
+        "ShelfShareFileTests.swift",
+        "ShelfSharePersistenceTests.swift",
+        "ShelfStateTests.swift",
+        "SourceProgressTests.swift",
+        "SourceSyncTests.swift",
+        "SyncRetryTests.swift",
+        "TraktClientTests.swift",
+        "ViewingEnvironmentTests.swift",
+        "ViewingStatsTests.swift",
+        "WatchSyncTests.swift",
+        "WatchlistTests.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources",
+        "UserState",
+        "Modules"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "UserState",
+      "module_type" : "SwiftTarget",
+      "name" : "UserState",
+      "path" : "Sources/UserState",
+      "product_dependencies" : [
+        "SQLiteData",
+        "GRDB"
+      ],
+      "product_memberships" : [
+        "Library",
+        "UserState"
+      ],
+      "sources" : [
+        "AiringReminders.swift",
+        "DataProviders.swift",
+        "DeviceProgress.swift",
+        "Favorites.swift",
+        "HomeSelectionRequest.swift",
+        "LegacyViewingStats.swift",
+        "LocalAiringNotifications.swift",
+        "ManualMarkers.swift",
+        "MatchCorrections.swift",
+        "ModuleConfigurations.swift",
+        "ModuleProgress.swift",
+        "ModuleTitleMatches.swift",
+        "ModuleTrackedSeries.swift",
+        "ModuleWatchlist.swift",
+        "ModuleWatchlistCompletion.swift",
+        "NextEpisode.swift",
+        "SeriesPlayerSettings.swift",
+        "ShelfConfigurations.swift",
+        "ShelfStateRequest.swift",
+        "SourceConfiguration.swift",
+        "SourceGroups.swift",
+        "SourceProgress.swift",
+        "TrackedSeries.swift",
+        "TraktClient.swift",
+        "TraktCredentials.swift",
+        "TraktHTTP.swift",
+        "TraktLists.swift",
+        "TraktSync.swift",
+        "UserState.swift",
+        "UserStateSync.swift",
+        "ViewingEnvironmentSession.swift",
+        "ViewingEnvironments.swift",
+        "ViewingPlaybackClock.swift",
+        "ViewingStatistics.swift",
+        "ViewingStats.swift",
+        "WatchSync.swift",
+        "WatchlistCompletion.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "SourcesTests",
+      "module_type" : "SwiftTarget",
+      "name" : "SourcesTests",
+      "path" : "Tests/SourcesTests",
+      "resources" : [
+        {
+          "path" : "<repo>/KrillKit/Tests/SourcesTests/Fixtures",
+          "rule" : {
+            "copy" : {
+
+            }
+          }
+        }
+      ],
+      "sources" : [
+        "BrowseContractTests.swift",
+        "CredentialMigrationTests.swift",
+        "EmbyContractTests.swift",
+        "FNOSContractTests.swift",
+        "JellyfinAuthenticationTests.swift",
+        "LiveBrowseTests.swift",
+        "LocalFolderSourceTests.swift",
+        "MediaFieldsTests.swift",
+        "MediaMarkerTests.swift",
+        "MediaServerContractTests.swift",
+        "PlaybackBufferTests.swift",
+        "PlaybackPreparationTests.swift",
+        "PlaybackRedirectContractTests.swift",
+        "PlexAuthenticationTests.swift",
+        "PlexContractTests.swift",
+        "ProfileCredentialTests.swift",
+        "RecordedURLProtocol.swift",
+        "SMBCancellationTests.swift",
+        "SMBContractTests.swift",
+        "SMBIOTests.swift",
+        "SourceContract.swift",
+        "SourceContractTests.swift",
+        "SourceFailureTests.swift",
+        "SourceShareAccountTests.swift",
+        "SourceTransportErrorTests.swift",
+        "TitleIndexContractTests.swift",
+        "WebDAVContractTests.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources",
+        "Player"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "Sources",
+      "module_type" : "SwiftTarget",
+      "name" : "Sources",
+      "path" : "Sources/Sources",
+      "product_dependencies" : [
+        "AMSMB2"
+      ],
+      "product_memberships" : [
+        "Library",
+        "Sources",
+        "Player",
+        "UserState"
+      ],
+      "sources" : [
+        "BufferedPlaybackReader.swift",
+        "FNOSSource.swift",
+        "FNOSWebSignature.swift",
+        "LocalFolderSource.swift",
+        "MediaServerAPI.swift",
+        "MediaServerCredentialStore.swift",
+        "MediaServerSource.swift",
+        "MediaServerTitleSource.swift",
+        "MediaServerTransportFailure.swift",
+        "PlaybackBuffer.swift",
+        "PlaybackPreparation.swift",
+        "PlaybackRangeRequest.swift",
+        "PlaybackRedirectResolver.swift",
+        "PlexAccount.swift",
+        "PlexSource.swift",
+        "SMBSource.swift",
+        "SMBTransport.swift",
+        "ServerBrowsing.swift",
+        "Source.swift",
+        "SourceChild.swift",
+        "SourceFailure.swift",
+        "SourceShareAccountStore.swift",
+        "Sources.swift",
+        "SynchronizingCredentialStore.swift",
+        "WebDAVListing.swift",
+        "WebDAVSource.swift"
+      ],
+      "target_dependencies" : [
+        "Domain"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "Player",
+      "module_type" : "SwiftTarget",
+      "name" : "Player",
+      "path" : "Sources/Player",
+      "product_dependencies" : [
+        "KSPlayer"
+      ],
+      "product_memberships" : [
+        "Player"
+      ],
+      "resources" : [
+        {
+          "path" : "<repo>/KrillKit/Sources/Player/Certificates",
+          "rule" : {
+            "copy" : {
+
+            }
+          }
+        }
+      ],
+      "sources" : [
+        "Player.swift",
+        "SourceAVIOContext.swift",
+        "SubtitleStyle.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "ModulesTests",
+      "module_type" : "SwiftTarget",
+      "name" : "ModulesTests",
+      "path" : "Tests/ModulesTests",
+      "resources" : [
+        {
+          "path" : "<repo>/KrillKit/Tests/ModulesTests/Fixtures",
+          "rule" : {
+            "copy" : {
+
+            }
+          }
+        }
+      ],
+      "sources" : [
+        "CalendarTests.swift",
+        "DetailSearchTests.swift",
+        "DirectoryConfigurationTests.swift",
+        "KrillFileTests.swift",
+        "MarkersTests.swift",
+        "ModuleAboutTests.swift",
+        "ModuleCacheStorageTests.swift",
+        "ModuleDetailRefreshTests.swift",
+        "ModuleEncryptionTests.swift",
+        "ModuleHistoryTests.swift",
+        "ModuleHostTests.swift",
+        "ModuleSettingsTests.swift",
+        "ModuleShareTests.swift",
+        "ModuleShelfBlockTests.swift",
+        "ModuleTakedownClientTests.swift",
+        "ModuleUpdateTests.swift",
+        "OfficialTMDBSocketTests.swift",
+        "OfficialTMDBTests.swift",
+        "RatingsTests.swift",
+        "ReminderPlanTests.swift",
+        "StreamsTests.swift",
+        "SubtitlesTests.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Modules"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "Modules",
+      "module_type" : "SwiftTarget",
+      "name" : "Modules",
+      "path" : "Sources/Modules",
+      "product_dependencies" : [
+        "SwiftSoup",
+        "ZIPFoundation"
+      ],
+      "product_memberships" : [
+        "Modules"
+      ],
+      "resources" : [
+        {
+          "path" : "<repo>/KrillKit/Sources/Modules/Official",
+          "rule" : {
+            "copy" : {
+
+            }
+          }
+        },
+        {
+          "path" : "<repo>/KrillKit/Sources/Modules/Runtime",
+          "rule" : {
+            "copy" : {
+
+            }
+          }
+        }
+      ],
+      "sources" : [
+        "DirectoryConfiguration.swift",
+        "JavaScriptCoreRuntime.swift",
+        "ModuleCollection.swift",
+        "ModuleDataStore.swift",
+        "ModuleEncryption.swift",
+        "ModuleHTML.swift",
+        "ModuleHTTP.swift",
+        "ModuleHTTPTransfer.swift",
+        "ModuleHistoryWire.swift",
+        "ModuleHost+Share.swift",
+        "ModuleHost.swift",
+        "ModuleParameter.swift",
+        "ModuleRating.swift",
+        "ModuleRegistry.swift",
+        "ModuleRuntime.swift",
+        "ModuleSecretStore.swift",
+        "ModuleShelfBlock.swift",
+        "ModuleStandardAPI.swift",
+        "ModuleTakedown.swift",
+        "ModuleTakedownClient.swift",
+        "ModuleWeb.swift",
+        "OfficialCalendar.swift",
+        "OfficialDirectLink.swift",
+        "OfficialModules.swift",
+        "OfficialSubtitles.swift",
+        "OfficialTMDB.swift",
+        "SubtitleZIP.swift"
+      ],
+      "target_dependencies" : [
+        "Domain"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "MetadataTests",
+      "module_type" : "SwiftTarget",
+      "name" : "MetadataTests",
+      "path" : "Tests/MetadataTests",
+      "sources" : [
+        "CacheTests.swift",
+        "DetailTests.swift",
+        "DiscoverTests.swift",
+        "MatchingTests.swift",
+        "MetadataLocaleTests.swift",
+        "ModuleTitleTests.swift",
+        "PosterTests.swift",
+        "SettingsLocaleTests.swift",
+        "StorageSizeTests.swift",
+        "StubURLProtocol.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Metadata"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "Metadata",
+      "module_type" : "SwiftTarget",
+      "name" : "Metadata",
+      "path" : "Sources/Metadata",
+      "product_memberships" : [
+        "Library",
+        "Metadata"
+      ],
+      "sources" : [
+        "DiscoverRow.swift",
+        "Metadata.swift",
+        "MetadataCache.swift",
+        "MetadataError.swift",
+        "MetadataLocale.swift",
+        "MetadataPreferences.swift",
+        "ModuleTitle.swift",
+        "TMDBClient.swift",
+        "TitleCandidate.swift",
+        "TitleDetail.swift",
+        "TitleSummary.swift"
+      ],
+      "target_dependencies" : [
+        "Domain"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "LibraryTests",
+      "module_type" : "SwiftTarget",
+      "name" : "LibraryTests",
+      "path" : "Tests/LibraryTests",
+      "product_dependencies" : [
+        "SQLiteData",
+        "GRDB"
+      ],
+      "sources" : [
+        "DiagnosticLogTests.swift",
+        "Fakes.swift",
+        "FirstScanTests.swift",
+        "FullTraversalTests.swift",
+        "LibraryHarness.swift",
+        "MatchCorrectionRealTests.swift",
+        "MatchCorrectionTests.swift",
+        "MatchingRuleTests.swift",
+        "PlexTitleIndexTests.swift",
+        "RebuildTests.swift",
+        "RescanTests.swift",
+        "SMBFileLibraryTests.swift",
+        "ScanPerformanceTests.swift",
+        "SearchPerformanceTests.swift",
+        "SearchTests.swift",
+        "ServerMetadataTests.swift",
+        "ShelfTests.swift",
+        "SourceRemovalTests.swift",
+        "SourceViewResolutionTests.swift",
+        "TitleIndexTests.swift",
+        "VersionsAndEpisodesTests.swift",
+        "ViewingEnvironmentLibraryTests.swift",
+        "WebDAVFileLibraryTests.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources",
+        "Metadata",
+        "Library",
+        "UserState"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "Library",
+      "module_type" : "SwiftTarget",
+      "name" : "Library",
+      "path" : "Sources/Library",
+      "product_dependencies" : [
+        "SQLiteData",
+        "GRDB"
+      ],
+      "product_memberships" : [
+        "Library"
+      ],
+      "sources" : [
+        "FileNameParser.swift",
+        "FileTitlesRequest.swift",
+        "Library.swift",
+        "LibraryEngine.swift",
+        "LibraryMetadata.swift",
+        "MatchCorrectionInputs.swift",
+        "MatchCorrectionSupport.swift",
+        "Matcher.swift",
+        "MergedVersionsRequest.swift",
+        "Pattern.swift",
+        "Queries.swift",
+        "RequestPacer.swift",
+        "Schema.swift",
+        "ServerQueries.swift",
+        "ShelfTitlesRequest.swift",
+        "SkippedFilesRequest.swift",
+        "SourcePlaybackTargetsRequest.swift",
+        "SourceVisibility.swift"
+      ],
+      "target_dependencies" : [
+        "Domain",
+        "Sources",
+        "Metadata",
+        "UserState"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "Domain",
+      "module_type" : "SwiftTarget",
+      "name" : "Domain",
+      "path" : "Sources/Domain",
+      "product_memberships" : [
+        "Domain",
+        "Library",
+        "Sources",
+        "Metadata",
+        "Player",
+        "UserState",
+        "Modules"
+      ],
+      "sources" : [
+        "Airing.swift",
+        "AiringReminder.swift",
+        "DataProvider.swift",
+        "DiagnosticLogRedactor.swift",
+        "DiscoverFeed.swift",
+        "Domain.swift",
+        "HomeSelection.swift",
+        "KrillFile.swift",
+        "MatchCorrection.swift",
+        "MediaMarker.swift",
+        "ModuleImage.swift",
+        "ModuleItem.swift",
+        "ModuleItemDetail.swift",
+        "ModulePersistence.swift",
+        "ModulePlaybackID.swift",
+        "ModuleStream.swift",
+        "ModuleSubtitle.swift",
+        "ModuleSyncKey.swift",
+        "PlaybackHTTPFailure.swift",
+        "ProfileID.swift",
+        "ServerPoster.swift",
+        "Shelf.swift",
+        "ShelfCandidate.swift",
+        "ShelfShareFile.swift",
+        "SourceGroups.swift",
+        "SourceID.swift",
+        "StorageSize.swift",
+        "TitleID.swift",
+        "Version.swift",
+        "ViewingEnvironment.swift",
+        "WatchSyncEntry.swift"
+      ],
+      "type" : "library"
+    },
+    {
+      "c99name" : "AnalyticsTests",
+      "module_type" : "SwiftTarget",
+      "name" : "AnalyticsTests",
+      "path" : "Tests/AnalyticsTests",
+      "sources" : [
+        "AnalyticsTests.swift",
+        "HTTPAnalyticsTests.swift"
+      ],
+      "target_dependencies" : [
+        "Analytics"
+      ],
+      "type" : "test"
+    },
+    {
+      "c99name" : "Analytics",
+      "module_type" : "SwiftTarget",
+      "name" : "Analytics",
+      "path" : "Sources/Analytics",
+      "product_memberships" : [
+        "Analytics"
+      ],
+      "sources" : [
+        "Analytics.swift",
+        "HTTPAnalyticsTransport.swift",
+        "QueuedAnalytics.swift"
+      ],
+      "type" : "library"
+    }
+  ],
+  "tools_version" : "6.4"
+}

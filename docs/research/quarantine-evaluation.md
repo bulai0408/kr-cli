@@ -4,7 +4,7 @@
 
 ## 上限依据
 
-先将本机 `~/.local/state/kr/events` 和 `runs` 复制到任务临时目录，再运行 `kr report` / `kr rejudge`。原始目录与 Krill 仓库均未写入；没有运行 Xcode、构建或模拟器。提交的证据去掉个人路径。
+先将本机 `~/.local/state/kr/events` 和 `runs` 复制到任务临时目录，再运行 `kr report` / `kr rejudge`。原始目录与 Krill 仓库均未写入；没有运行 Xcode 原生构建或模拟器。提交的证据去掉个人路径。
 
 命令（`KR_STATE_DIR` 指向副本）：
 
@@ -80,3 +80,5 @@ kr report --project Krill --since 2026-10-14T00:00:00Z --until 2026-10-16T00:00:
 ## Rust 检查
 
 合入集成分支前：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 均成功；Rust harness 汇总 347 passed / 0 failed。原生集成测试开关 `KR_INTEGRATION` 未开启，这些测试体未执行，不能作为原生验证通过的证据。新增命令回放覆盖 gate/run、加入/移出建议、kr decide 复核与对账、上限报错、完整性保护、项目/场景范围、跨窗口计数、历史正反向重判和远程隔离结果展示。
+
+合入 `origin/p1p2/integration@4610e54` 后：三项检查再全部通过，392 passed / 0 failed。新增 14 个命令回放的完整名称见 `evidence/quarantine/verification.json`。冲突仅在 run 的选择/判断汇总与输出及追加测试区：保留 #30 的选择与解释、判断点 ID 预分配和提前记录默认事件；隔离建议在结果后通过同一 record_default 接口记录，序号接在选择与失败判断之后。两侧追加测试全部保留，另加跨功能回放断言 ID 不重叠、每种判断点和默认事件各仅一条。#31 的合并辅助和入口保持集成版本，本票未改选择规则或新增 Scenario 配置字段。

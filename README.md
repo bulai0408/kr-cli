@@ -41,6 +41,10 @@ kr lock build -- xcodebuild build-for-testing …
 # 6. 只算不跑：哪些构建命中缓存、每项为什么要跑、通道怎么分、按历史大约多久
 kr plan
 kr plan ratings shelf-share --exit-code   # 有事要做退出 3，无事可做退出 0
+kr plan --changed main --explain          # 按工作树相对 main 的改动选测（不运行）
+kr run --changed main --also settings-about --explain
+kr gate --changed main --explain
+kr hash ratings --json                   # 查看构建缓存实际使用的输入和哈希
 
 # 7. 用 kr 自己的调度代码重放记录的运行，比较设定（容量、通道顺序、缓存），带校准误差
 kr simulate --sim 2 --sim 3 --order ipad-first --order name
@@ -123,6 +127,42 @@ JSON 的 `written`、`removed` 是实际修改的文件，`skipped` 说明跳过
 - 机器级：`~/.config/kr/config.toml`（可选。不写时由 `kr doctor` 检测的机器能力推算）。
 - 项目级：仓库根目录 `.kr.toml`（Xcode 版本、平台、测试套件、UI 场景）。
 
+## 按改动选测
+
+`--changed REF` 比较 REF 和当前工作树，包括暂存、未暂存、删除及未跟踪文件。
+SwiftPM 的 `describe` 和 XcodeGen 的只读 `dump` 提供模块图；场景声明覆盖的模块。
+页面关系可以补在项目配置里，例如：
+
+```toml
+[modules.TitleDetail]
+paths = ["Krill/TitleDetail"]
+depends_on = ["Metadata", "Sources"]
+
+[modules.Favorites]
+paths = ["Krill/Favorites"]
+depends_on = ["TitleDetail"]
+
+[scenarios.favorites]
+only = ["KrillUITests/FavoritesUITests"]
+modules = ["Favorites"]
+
+[selection]
+ignore = ["docs/**", "**/*.md", ".github/**"]
+```
+
+改 Metadata 会经 TitleDetail 选中 favorites。必跑场景可以跨出当前 gate；显式目标和
+`--also` 只能加跑，不能排除必跑项。gate 的套件保持执行。没有 `--changed` 时保留原选择。
+忽略名单完全由项目声明，kr 没有内置名单；`--explain` 列出 `ignored by <pattern>`。
+
+图缺失、路径未映射、场景未声明覆盖时，kr 默认加跑所有候选场景，并输出效率类
+`additional_scenarios` 判断点。它不阻止 PASS/FAIL；运行事件记为默认继续、待复核。
+证据附过去 90 天本项目的共同失败次数、共同运行分母和偶发场景运行率。空样本比例为 null，
+不把没有记录当作没有风险。`kr plan` 只展示，不写事件；SwiftPM 描述缓存放在 kr 状态目录，
+不在项目里构建。没有 project.yml 的工程目前保守标为图不完整，可用 `[modules]` 补映射。
+
+`kr hash` 与构建缓存共用计算入口，显示文件内容摘要、缺失文件、完整命令、Xcode 路径和生成命令。
+它是现有保守构建哈希的解释，不是场景结果缓存，也不保证每个场景有独立哈希。
+
 ## 接入一个项目
 
 1. 安装：`cargo install --git https://github.com/bulai0408/kr-cli kr`（或在本仓库 `cargo install --path crates/kr`）。
@@ -202,3 +242,24 @@ kr run --device "蔡煜恒的 iPad Mini" launch
 ```sh
 cargo install --git https://github.com/bulai0408/kr-cli kr
 ```
+
+## 合并辅助
+
+`kr merge` 先算事实，agent 判断逻辑冲突。不会自动执行 `git merge`。
+
+```sh
+kr merge predict --base main feature-a feature-b feature-c --json
+kr decide <decision-id> combine --reason "preserve both requirements" --json
+kr merge install --json
+kr merge check --base <before-merge-commit> --json
+kr merge check --base <before-merge-commit> --decision <decision-id> --verification-run <run-id> --json
+```
+
+- `predict` 用 `git merge-tree` 两两预测，建议先祖先、后少冲突分支。同文件的两侧改动即使文本能干净合并，也产生逻辑冲突判断点（退出 4），附两边提交说明和其中的票号；缺票号时明确标记。祖先已包含于后继时不重复提问。它不保证累计合并或跨文件逻辑兼容。
+- `kr decide` 接受 `combine`、`ours`、`theirs`、`manual`、`reject`。这里 ours/theirs 指判断点的 left/right。选项只记录解法，不替你改代码；全部交回后仍退出 1 并显示 `verification: pending`，直到用合并后的编译和测试证据对账。
+- `install` 显式给当前仓库的全部已有 worktree 开启 rerere 并注册驱动，不修改 global 配置。**它会修改当前 worktree 的已跟踪文件 `.gitattributes`，请审阅并有意提交这个改动**；其他 worktree 也需包含此 attributes 提交。新 worktree 存在独立覆盖时重跑安装。移动 kr 可执行文件后也需重跑安装，以更新驱动路径。
+- `kr merge xcstrings <base> <ours> <theirs>` 是驱动入口：完整 key 条目三方合并，同 key 分歧、删除/修改、元数据分歧、重复 JSON key 都拒绝；校验成功才替换 ours。需要当前 Xcode 的 `xcrun xcstringstool print`。GitHub 服务端不运行本地驱动。
+- `check` 扫描相对 base 的已提交及工作区改动（含未忽略的未跟踪文件）：JSON 和目录、场景清单、迁移版本和重复 DROP、有限凭证模式。错误只报告文件、行号和下一步，凭证值不输出。源代码改动按已配置 build suite 目录增量编译，未知目录回退 App；没有配置就未验证。编译走资源队列，保留现有 DerivedData，不 clean；编译预算 120 秒，静态失败时不编译。秒级只指静态检查，不保证排队和编译耗时。
+- 对账还要求：干净且包含两分支提交的合并树、决定后同一 tree 的非零 `kr run/gate` 结果。缺证据不写成功，编译或测试失败写不支持；同一判断点只对账一次。跨文件逻辑冲突、全部间接依赖与真实服务仍需其他验证。
+
+设计见 [ADR 0017](docs/adr/0017-merge-assistance.md)，真实 Krill 样本、离线前后对比与验证边界见 [调研和证据](docs/research/merge-assistance.md)。

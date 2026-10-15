@@ -106,6 +106,9 @@ fn decide(ctx: &Ctx, choices: &[(String, String)], reason: &str, via: &str) -> R
         run_id = Some(of);
     }
     let run_id = run_id.context("nothing to decide")?;
+    if super::merge::pending_path(&loaded, run_id).exists() {
+        return super::merge::decide(ctx, &loaded, run_id, choices, reason, via);
+    }
     let file = loaded.run_dir(run_id).join(PENDING);
     let mut pending: Pending = std::fs::read(&file)
         .ok()
@@ -177,6 +180,7 @@ fn decide(ctx: &Ctx, choices: &[(String, String)], reason: &str, via: &str) -> R
         ))?;
     }
     let summary = Summary {
+        selection: None,
         label: &pending.label,
         build: &pending.build,
         build_text: &pending.build_text,
@@ -343,7 +347,12 @@ fn test_history(events: &[Event], run_id: RunId, test: &str) -> serde_json::Valu
 
 /// The decision points of a finished run: each failed test kr has not seen, of an item
 /// that only failed tests fail. Adds their IDs to the items.
-pub(crate) fn raise(events: &[Event], run_id: RunId, results: &mut [ItemResult]) -> Vec<Decision> {
+pub(crate) fn raise(
+    events: &[Event],
+    run_id: RunId,
+    results: &mut [ItemResult],
+    offset: usize,
+) -> Vec<Decision> {
     let seen = seen_before(events, run_id);
     let mut decisions = Vec::new();
     for r in results
@@ -358,7 +367,7 @@ pub(crate) fn raise(events: &[Event], run_id: RunId, results: &mut [ItemResult])
             .collect();
         for case in unseen(&cases, false, &seen) {
             let d = failure_kind(
-                format!("{run_id}-{}", decisions.len() + 1),
+                format!("{run_id}-{}", offset + decisions.len() + 1),
                 &r.name,
                 case,
                 json!({
@@ -406,7 +415,6 @@ pub(crate) fn failure_kind(
 /// for `kr decide`; those that only affect efficiency are taken with kr's default and
 /// recorded as pending review.
 pub(crate) fn record(
-    ctx: &Ctx,
     loaded: &Loaded,
     run_id: RunId,
     summary: &Summary<'_>,
@@ -418,20 +426,20 @@ pub(crate) fn record(
     }
     let mut made = BTreeMap::new();
     for d in decisions {
-        loaded.events().append(&Event::now(
-            run_id,
-            loaded.project(),
-            EventKind::DecisionPoint,
-            serde_json::to_value(d)?,
-        ))?;
         if d.affects == Affects::Efficiency {
             let m = Made {
                 choice: d.default.option.clone(),
                 reason: d.default.reason.clone(),
                 via: "default".to_owned(),
             };
-            decision_event(ctx, loaded, run_id, d, &m)?;
             made.insert(d.id.clone(), m);
+        } else {
+            loaded.events().append(&Event::now(
+                run_id,
+                loaded.project(),
+                EventKind::DecisionPoint,
+                serde_json::to_value(d)?,
+            ))?;
         }
     }
     let pending = Pending {
@@ -450,6 +458,33 @@ pub(crate) fn record(
     let file = dir.join(PENDING);
     std::fs::write(&file, serde_json::to_vec(&pending)?)
         .with_context(|| format!("failed to write {}", file.display()))
+}
+
+/// Efficiency defaults are recorded when raised: selection before building, quarantine
+/// after results. `record` saves them without emitting their events twice.
+pub(crate) fn record_default(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    run_id: RunId,
+    d: &Decision,
+) -> Result<()> {
+    loaded.events().append(&Event::now(
+        run_id,
+        loaded.project(),
+        EventKind::DecisionPoint,
+        serde_json::to_value(d)?,
+    ))?;
+    decision_event(
+        ctx,
+        loaded,
+        run_id,
+        d,
+        &Made {
+            choice: d.default.option.clone(),
+            reason: d.default.reason.clone(),
+            via: "default".to_owned(),
+        },
+    )
 }
 
 /// What a later run says about a recorded failure decision: the first `item_end` of

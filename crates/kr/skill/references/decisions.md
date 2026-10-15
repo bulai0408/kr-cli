@@ -52,3 +52,35 @@ How to judge:
 Reconciliation: the next run of the same test on the same build inputs answers the
 decision. `product` is supported if the test fails again; `flaky` and `environment` if
 it passes. kr writes a `reconciliation` event once per decision.
+
+## additional_scenarios: uncertain change impact
+
+This affects efficiency. kr adds all candidates by default, continues, and records
+`via: default`, `review: pending`. It does not wait for `kr decide`.
+
+Inspect `evidence.unknown`, `candidates`, and the 90-day project `history`: pairwise
+cofailures count runs where both scenarios had a final result; flaky rate counts
+scenario runs with at least one flaky result. Read denominators; null means no sample.
+These statistics do not remove scenarios required by the dependency closure.
+
+Use `kr plan --changed <ref> --explain` to inspect file -> module -> consumer -> scenario.
+Add missing page edges under `[modules]` and coverage in `scenarios.<name>.modules`.
+Declare no-impact glob paths under `[selection].ignore`; kr has no built-in ignores.
+Use `--also <scenario>` to add coverage. Recheck the plan after updating mappings.
+
+## Merge resolutions
+
+`kr merge predict --base <ref> <branch>... --json` compares branch pairs. Same-file
+changes can need a `merge_resolution` decision even when the text merge is clean.
+Read both commits, issue references, overlap and conflicts. Missing issue references
+are marked explicitly; inspect the requirements before choosing. Ancestors come first
+in the suggested order; pairwise predictions do not guarantee cumulative compatibility.
+
+Use `kr decide <id> combine|ours|theirs|manual|reject --reason "..."`. Here ours and
+theirs mean the decision's left and right. This records a resolution; it does not
+merge code or prove correctness. Until verified, it exits 1 with verification pending.
+After applying and committing a merge containing both sides, run the affected tests,
+then `kr merge check --base <before-merge> --decision <id> --verification-run <run-id>`.
+Reconciliation requires a clean committed tree, an incremental build and a later
+nonzero test run on that tree. Zero tests, missing evidence and an old tree cannot
+support a resolution. Compilation or test failure records it as unsupported.

@@ -15,11 +15,11 @@ are only added, never changed.
 ## Exit codes
 - 0 passed; 1 failed, unverified, or kr failed; 2 bad arguments.
 - 4 no verdict yet: the run stopped at decision points (only `check`, `run`, `gate`,
-  `decide`). Hand them back, do not run again.
+  `decide`, `merge predict`). Hand them back, do not run again.
 - 3 only `kr plan --exit-code`: there is work to do. 128 + n: stopped by signal n.
 
 ## Decision points
-When kr's rules do not cover a case, the run still runs every item, then exits 4 with
+For a conclusion decision, the run still runs every item, then exits 4 with
 `decisions`: each has an `id`, a question, options, evidence and kr's default with its
 reason. Judge from the evidence (`kr skill --reference decisions`), then:
 
@@ -28,6 +28,9 @@ reason. Judge from the evidence (`kr skill --reference decisions`), then:
 kr records who decided what and why, gives the verdict from the results it has, and
 later sets the choice against what happened (reconciliation). The owner sees how often
 each kind of judgment was right.
+
+For `affects: efficiency`, kr continues with its default and records pending review.
+For `additional_scenarios`, read `kr skill --reference decisions` before changing coverage.
 
 ## Ask the owner instead of deciding when
 - the evidence supports no option better than the others and the item gates a merge;
@@ -43,6 +46,8 @@ each kind of judgment was right.
 - Credentials never go into code, logs, fixtures or commits.
 
 ## More
+- `kr plan --changed <ref> --explain` previews required scenarios; `--also` only adds.
+  `kr hash <scenario>` explains the inputs of the existing build cache.
 - `kr setup --project` installs discovery entries and marked rules for Claude Code and
   Codex in the current directory. `--claude` / `--codex` selects one agent; without
   `--project`, installation is global. Ask the owner before changing global rules.

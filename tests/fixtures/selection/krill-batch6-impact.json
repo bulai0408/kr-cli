@@ -1,0 +1,154 @@
+{
+  "synthetic": [
+    "ratings",
+    "module-watchlist",
+    "official-tmdb", "library-groups", "my-stats", "player-controls", "storage-usage", "favorites", "subtitles",
+    "trakt", "viewing-environment", "media-markers", "airing-calendar", "shelf-edit", "shelf-share", "shelf-share-ipad",
+    "detail-search", "modules", "mvp-polish", "ipad-layout", "analytics",
+    "settings-about", "legal-privacy", "search", "source-management", "source-view",
+    "fnos-form", "webdav-form", "smb-form", "match-correction", "icloud-sync"
+  ],
+  "rules": [
+    {
+      "paths": [
+        "Krill/ShelfShare/*",
+        "Krill/DebugCatalog/ShelfShareCatalog.swift",
+        "KrillKit/Sources/Domain/ShelfShareFile.swift",
+        "KrillKit/Sources/Modules/ModuleHost+Share.swift",
+        "KrillKit/Sources/Sources/SourceShareAccountStore.swift"
+      ],
+      "scenarios": [
+        "shelf-share",
+        "shelf-share-ipad",
+        "shelf-edit",
+        "modules",
+        "source-view",
+        "viewing-environment"
+      ],
+      "reason": "File imports create Home Blocks, install Modules with consent and bind recipient Sources."
+    },
+    {
+      "paths": ["Krill/DebugCatalog/RatingsCatalog.swift", "KrillUITests/RatingsUITests.swift", "KrillTests/TitleRatingsTests.swift"],
+      "scenarios": ["ratings", "detail-search", "ipad-layout"],
+      "reason": "Ratings use module sockets in the production Title detail and its iPad sidebar."
+    },
+    {
+      "paths": ["Krill/Calendar/TrackedSeriesSection.swift", "Krill/Modules/ModuleItemWatchlistButton.swift", "Krill/DebugCatalog/ModuleWatchlistCatalog.swift"],
+      "scenarios": ["module-watchlist", "airing-calendar", "favorites", "detail-search"],
+      "reason": "Module Item watchlist, following and new-episode badges share detail actions, Home posters and the calendar."
+    },
+    {
+      "paths": ["Krill/Modules/ModuleSettingsView.swift", "Krill/DebugCatalog/ModuleSettingsCatalog.swift"],
+      "scenarios": ["modules", "ipad-layout"],
+      "reason": "Generated settings, required fields, source consent and App relaunch are asserted in the modules scenario."
+    },
+    {
+      "paths": ["backend/src/subtitles.ts", "backend/test/subtitles.test.ts", "Krill/DebugCatalog/SubtitlesCatalog.swift"],
+      "scenarios": ["subtitles"],
+      "reason": "Subtitle proxy contracts feed the module results rendered by the subtitle UI."
+    },
+    {
+      "paths": ["scripts/e2e*", "project.yml", "Krill/KrillApp.swift", "Krill/Info.plist", "Krill/*.entitlements", "KrillKit/Package*", "Krill/Localizable.xcstrings", "backend/src/index.ts"],
+      "scenarios": ["*"],
+      "reason": "Runner, build, launch, entitlements, shared localization and backend routing affect all synthetic scenes."
+    },
+    {
+      "paths": ["KrillKit/Sources/Modules/*", "Krill/Modules/*", "Krill/Resources/Modules/*", "Krill/DebugCatalog/ModulesCatalog.swift"],
+      "scenarios": ["ratings", "modules", "official-tmdb", "shelf-edit", "detail-search", "search", "library-groups", "player-controls", "media-markers", "airing-calendar", "trakt", "viewing-environment", "source-view", "mvp-polish", "ipad-layout", "settings-about", "storage-usage", "favorites", "subtitles", "shelf-share"],
+      "reason": "Module hosts supply Home Blocks, metadata, Versions, markers and settings."
+    },
+    {
+      "paths": ["KrillKit/Sources/Player/*", "Krill/Playback/*"],
+      "scenarios": ["player-controls", "modules", "media-markers", "detail-search", "source-view", "mvp-polish", "ipad-layout", "match-correction", "my-stats", "settings-about", "storage-usage", "subtitles"],
+      "reason": "Every synthetic scene that starts playback or configures the player is affected."
+    },
+    {
+      "paths": ["KrillKit/Sources/UserState/*", "KrillKit/Sources/Domain/*"],
+      "scenarios": ["*"],
+      "reason": "Profile, progress, sync and domain identifiers are shared across screens."
+    },
+    {
+      "paths": ["KrillKit/Sources/Library/*", "KrillKit/Sources/Sources/*", "Krill/Sources/*"],
+      "scenarios": ["ratings", "source-management", "source-view", "fnos-form", "webdav-form", "smb-form", "match-correction", "search", "shelf-edit", "viewing-environment", "library-groups", "detail-search", "modules", "player-controls", "media-markers", "mvp-polish", "ipad-layout", "settings-about", "storage-usage", "favorites", "shelf-share"],
+      "reason": "Sources affect Home, search, metadata ownership, Versions and playback."
+    },
+    {
+      "paths": ["KrillKit/Sources/Metadata/*", "Krill/Discover/*", "Krill/Detail/*", "Krill/TitleDetail/*"],
+      "scenarios": ["ratings", "official-tmdb", "search", "detail-search", "modules", "shelf-edit", "source-view", "source-management", "library-groups", "viewing-environment", "mvp-polish", "ipad-layout", "airing-calendar", "match-correction", "favorites"],
+      "reason": "Metadata and detail rendering are reached from search, Home and Source navigation."
+    },
+    {
+      "paths": ["Krill/Home/*", "Krill/DebugCatalog/ShelfEditingCatalog.swift"],
+      "scenarios": ["ratings", "shelf-edit", "modules", "official-tmdb", "trakt", "airing-calendar", "viewing-environment", "source-view", "source-management", "library-groups", "mvp-polish", "ipad-layout", "favorites", "shelf-share"],
+      "reason": "Home renders Blocks from all these modules and sources."
+    },
+    {
+      "paths": ["Krill/Settings/*", "Krill/DebugCatalog/SettingsCatalog.swift"],
+      "scenarios": ["settings-about", "storage-usage", "legal-privacy", "icloud-sync", "player-controls", "viewing-environment", "trakt", "analytics", "mvp-polish", "ipad-layout"],
+      "reason": "Settings is also the entry point for storage, legal, sync and playback preferences."
+    },
+    {
+      "paths": ["docs/legal/*", "Krill/DebugCatalog/LegalPrivacyCatalog.swift"],
+      "scenarios": ["legal-privacy", "modules"],
+      "reason": "Installation consent reads the same bundled legal documents."
+    },
+    {
+      "paths": ["Krill/Stats/*", "Krill/DebugCatalog/ViewingStatsCatalog.swift"],
+      "scenarios": ["my-stats"],
+      "reason": "Local statistics screen."
+    },
+    {
+      "paths": ["Krill/Calendar/*", "Krill/DebugCatalog/AiringCalendarCatalog.swift"],
+      "scenarios": ["airing-calendar", "shelf-edit"],
+      "reason": "Calendar also supplies a Home Block."
+    },
+    {
+      "paths": ["Krill/Analytics/*", "KrillKit/Sources/Analytics/*", "Krill/DebugCatalog/AnalyticsCatalog.swift"],
+      "scenarios": ["analytics", "settings-about", "legal-privacy"],
+      "reason": "Analytics opt-in is part of Settings and privacy."
+    },
+    {
+      "paths": ["KrillUITests/ModulesUITests.swift", "KrillUITests/DetailSearchUITests.swift"],
+      "scenarios": ["ratings", "modules", "detail-search"],
+      "reason": "Related module installation and provider route assertions."
+    },
+    {
+      "paths": ["KrillTests/*", "KrillUITests/E2EApplication.swift"],
+      "scenarios": ["*"],
+      "reason": "Hosted test or shared UI isolation changes need the synthetic matrix."
+    }
+  ],
+  "testSuites": {
+    "ShelfShareUITests": "shelf-share",
+    "ShelfShareIPadUITests": "shelf-share-ipad",
+    "RatingsUITests": "ratings",
+    "ModuleWatchlistUITests": "module-watchlist",
+    "FavoriteUITests": "favorites",
+    "SubtitlesUITests": "subtitles",
+    "OfficialTMDBUITests": "official-tmdb",
+    "LibraryGroupsUITests": "library-groups",
+    "ViewingStatsUITests": "my-stats",
+    "PlayerControlsUITests": "player-controls",
+    "StorageUsageUITests": "storage-usage",
+    "TraktUITests": "trakt",
+    "ViewingEnvironmentUITests": "viewing-environment",
+    "MediaMarkersUITests": "media-markers",
+    "AiringCalendarUITests": "airing-calendar",
+    "ShelfEditingUITests": "shelf-edit",
+    "DetailSearchUITests": "detail-search",
+    "ModulesUITests": "modules",
+    "MVPPolishUITests": "mvp-polish",
+    "IPadLayoutUITests": "ipad-layout",
+    "AnalyticsUITests": "analytics",
+    "SettingsAboutUITests": "settings-about",
+    "LegalPrivacyUITests": "legal-privacy",
+    "SearchUITests": "search",
+    "SourceManagementUITests": "source-management",
+    "SourceViewTests": "source-view",
+    "FNOSFormTests": "fnos-form",
+    "WebDAVUITests": "webdav-form",
+    "SMBUITests": "smb-form",
+    "MatchCorrectionUITests": "match-correction",
+    "ICloudSyncUITests": "icloud-sync"
+  }
+}

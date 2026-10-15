@@ -36,13 +36,15 @@ use crate::{Ctx, Loaded, slots};
 #[derive(Debug, Args)]
 #[command(after_help = EXIT_CODES)]
 pub struct RunArgs {
+    #[command(flatten)]
+    selection: crate::selection::SelectionArgs,
     /// Scenarios and suites to run.
-    #[arg(required_unless_present = "decide")]
+    #[arg(required_unless_present_any = ["decide", "changed"])]
     targets: Vec<String>,
 
     /// Hand back decisions of an earlier run that stopped at decision points, like
     /// `kr decide`: kr gives that run's verdict from its results and runs nothing.
-    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["targets", "remote", "device"])]
+    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["targets", "remote", "device", "changed", "also", "explain"])]
     decide: Vec<String>,
 
     /// Why, for --decide.
@@ -66,11 +68,13 @@ pub struct RunArgs {
 #[derive(Debug, Args)]
 #[command(after_help = EXIT_CODES)]
 pub struct GateArgs {
+    #[command(flatten)]
+    selection: crate::selection::SelectionArgs,
     /// The gate to run. Default: `default`.
     name: Option<String>,
 
     /// Hand back decisions of an earlier run, like `kr run --decide`.
-    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["name", "remote"])]
+    #[arg(long, value_name = "ID=OPTION", requires = "reason", conflicts_with_all = ["name", "remote", "changed", "also", "explain"])]
     decide: Vec<String>,
 
     /// Why, for --decide.
@@ -96,6 +100,7 @@ pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let mut sel = check::select(project, &args.targets, None)?;
+    crate::selection::apply(ctx, &loaded, &mut sel, &args.targets, &args.selection)?;
     sel.on_device = args.device.is_some();
     if let Some(host) = &args.remote {
         // The host's kr checks the device, reads the signing back and runs.
@@ -105,6 +110,7 @@ pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
             .flat_map(|d| ["--device".to_owned(), d.clone()]);
         let kr_args = std::iter::once("run".to_owned())
             .chain(device)
+            .chain(args.selection.flags())
             .chain(args.targets)
             .collect();
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
@@ -136,9 +142,11 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
         let known: Vec<&str> = project.gates.keys().map(String::as_str).collect();
         bail!("no gate `{name}` in .kr.toml; known: {}", known.join(", "));
     }
-    let sel = check::select(project, &[], Some(&name))?;
+    let mut sel = check::select(project, &[], Some(&name))?;
+    crate::selection::apply(ctx, &loaded, &mut sel, &[], &args.selection)?;
     if let Some(host) = &args.remote {
-        let kr_args = vec!["gate".to_owned(), name];
+        let mut kr_args = vec!["gate".to_owned(), name];
+        kr_args.extend(args.selection.flags());
         return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
     }
     remote::check_signing_in_ssh_session(ctx, project, &sel)?;
@@ -318,12 +326,18 @@ fn execute(
     kr_exec::catch_stop_signals()?;
     let run_id = RunId::new();
     quarantine.observe(loaded, root, run_id)?;
+    let mut sel = sel.clone();
+    if let Some(selection) = &mut sel.selection {
+        for (i, decision) in selection.decisions.iter_mut().enumerate() {
+            decision.id = format!("{run_id}-{}", i + 1);
+        }
+    }
     let result = execute_run(
         ctx,
         loaded,
         project,
         root,
-        sel,
+        &sel,
         &label,
         run_id,
         device,
@@ -414,6 +428,7 @@ pub(crate) fn run_start(
                 "parent_pid": unsafe { libc::getppid() },
             },
             "previous": previous,
+            "selection": sel.selection,
         }),
     ))
 }
@@ -584,6 +599,11 @@ fn execute_run(
     let started = Instant::now();
     let runner = ctx.runner()?;
     run_start(ctx, loaded, root, sel, label, run_id)?;
+    if let Some(selection) = &sel.selection {
+        for d in &selection.decisions {
+            decide::record_default(ctx, loaded, run_id, d)?;
+        }
+    }
     // Before building: a device that cannot run tests fails the run at once.
     let mut sel = sel.clone();
     let device = match device {
@@ -659,7 +679,7 @@ fn execute_run(
             label,
             &json!({ "ok": false, "passed": 0, "total": 0, "build_failed": true, "duration_ms": started.elapsed().as_millis() as u64 }),
         )?;
-        report_build_failure(ctx, label, &steps.results)?;
+        report_build_failure(ctx, label, &steps.results, sel.selection.as_ref())?;
         return Ok(ExitCode::FAILURE);
     }
 
@@ -729,6 +749,7 @@ fn execute_run(
         report(
             ctx,
             &Summary {
+                selection: sel.selection.as_ref(),
                 label,
                 build: &build,
                 build_text: &build_text,
@@ -746,15 +767,43 @@ fn execute_run(
         quarantine.apply(r);
     }
     let history = decide::history(loaded);
-    let mut decisions = decide::raise(&history, run_id, &mut results);
+    let mut decisions = sel
+        .selection
+        .as_ref()
+        .map(|s| s.decisions.clone())
+        .unwrap_or_default();
+    decisions.extend(decide::raise(
+        &history,
+        run_id,
+        &mut results,
+        decisions.len(),
+    ));
+    if let Some(selection) = &sel.selection
+        && selection.explain
+    {
+        for r in &mut results {
+            r.notes.extend(
+                selection
+                    .reasons
+                    .get(&r.name)
+                    .into_iter()
+                    .flatten()
+                    .cloned(),
+            );
+        }
+    }
     let quarantine_history = super::report::history(loaded)?;
-    decisions.extend(quarantine.suggestions(
+    let suggestions = quarantine.suggestions(
         &quarantine_history,
         loaded.project(),
         run_id,
         &results,
         decisions.len(),
-    ));
+    );
+    for d in &suggestions {
+        decide::record_default(ctx, loaded, run_id, d)?;
+    }
+    decisions.extend(suggestions);
     decide::reconcile(loaded, run_id, &history)?;
     super::quarantine::reconcile(loaded, run_id, &quarantine_history)?;
     let pending: Vec<&Decision> = decisions
@@ -774,12 +823,13 @@ fn execute_run(
     }
     let (build, build_text) = build_summary(&steps);
     let summary = Summary {
+        selection: sel.selection.as_ref(),
         label,
         build: &build,
         build_text: &build_text,
         elapsed: started.elapsed(),
     };
-    decide::record(ctx, loaded, run_id, &summary, &results, &decisions)?;
+    decide::record(loaded, run_id, &summary, &results, &decisions)?;
     run_end(loaded, run_id, label, &end)?;
     report(
         ctx,
@@ -1993,10 +2043,15 @@ fn json_tail(text: &str) -> Option<&str> {
         .find(|t| serde_json::from_str::<serde::de::IgnoredAny>(t).is_ok())
 }
 
-fn report_build_failure(ctx: &Ctx, label: &str, steps: &[check::StepResult]) -> Result<()> {
+fn report_build_failure(
+    ctx: &Ctx,
+    label: &str,
+    steps: &[check::StepResult],
+    selection: Option<&crate::selection::SelectionReport>,
+) -> Result<()> {
     if ctx.json {
         crate::output::print_json(
-            &json!({ "ok": false, "label": label, "build": steps, "items": [] }),
+            &json!({ "ok": false, "label": label, "build": steps, "items": [], "selection": selection, "decisions": selection.map(|s| &s.decisions).into_iter().flatten().collect::<Vec<_>>() }),
         )?;
         return Ok(());
     }
@@ -2035,6 +2090,7 @@ fn build_summary(steps: &Steps<'_>) -> (serde_json::Value, String) {
 
 /// What a run report says besides its items.
 pub(crate) struct Summary<'a> {
+    pub(crate) selection: Option<&'a crate::selection::SelectionReport>,
     pub(crate) label: &'a str,
     /// `{steps, cached}`.
     pub(crate) build: &'a serde_json::Value,
@@ -2053,13 +2109,12 @@ pub(crate) fn report(
     stopped: Option<&Stopped>,
     pending: &[&Decision],
 ) -> Result<()> {
-    let all_decisions = pending;
-    let pending_only: Vec<&Decision> = pending
+    let conclusions: Vec<_> = pending
         .iter()
         .copied()
         .filter(|d| d.affects == Affects::Conclusion)
         .collect();
-    let pending = pending_only.as_slice();
+    let pending_conclusions = !conclusions.is_empty();
     let label = summary.label;
     let elapsed = summary.elapsed;
     let passed = results.iter().filter(|r| r.passed).count();
@@ -2074,13 +2129,14 @@ pub(crate) fn report(
             "items": results,
             "duration_ms": elapsed.as_millis() as u64,
             "aborted": stopped.map(Stopped::json),
-            "concluded": pending.is_empty() && stopped.is_none(),
-            "decisions": all_decisions,
+            "concluded": !pending_conclusions && stopped.is_none(),
+            "decisions": pending,
+            "selection": summary.selection,
         });
         crate::output::print_json(&out)?;
         return Ok(());
     }
-    let undecided = |r: &ItemResult| pending.iter().any(|d| r.decisions.contains(&d.id));
+    let undecided = |r: &ItemResult| conclusions.iter().any(|d| r.decisions.contains(&d.id));
     for r in results {
         let dur = human_duration(Duration::from_millis(r.duration_ms));
         let counts = r.tests.as_ref().map(|t| {
@@ -2158,11 +2214,30 @@ pub(crate) fn report(
         println!("{}", stop.line(label));
         return Ok(());
     }
-    if !pending.is_empty() {
-        decide::print_pending(pending);
+    if let Some(selection) = summary.selection.filter(|s| s.explain) {
+        for (file, reason) in &selection.ignored {
+            println!("  {file}: {reason}");
+        }
+    }
+    for d in pending.iter().filter(|d| d.affects == Affects::Efficiency) {
+        println!(
+            "REVIEW: {}: {} (default: {}, pending review)",
+            d.kind, d.question, d.default.option
+        );
+        if d.kind.starts_with("quarantine_") {
+            println!("  evidence and exact edit: {}", d.evidence);
+            println!(
+                "  review: kr decide {} <keep|{}> --reason \"...\"",
+                d.id,
+                d.kind.trim_start_matches("quarantine_")
+            );
+        }
+    }
+    if pending_conclusions {
+        decide::print_pending(&conclusions);
         println!(
             "{label}: no verdict yet: {} · {} · {}",
-            match pending.len() {
+            match conclusions.len() {
                 1 => "1 decision pending".to_owned(),
                 n => format!("{n} decisions pending"),
             },
@@ -2170,13 +2245,6 @@ pub(crate) fn report(
             human_duration(elapsed)
         );
         return Ok(());
-    }
-    for d in all_decisions
-        .iter()
-        .filter(|d| d.affects == Affects::Efficiency)
-    {
-        println!("REVIEW {}: {}", d.id, d.question);
-        println!("  evidence and exact edit: {}", d.evidence);
     }
     let unverified = results.iter().filter(|r| r.unverified_count() > 0).count();
     let unverified = if unverified > 0 {

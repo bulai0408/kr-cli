@@ -49,6 +49,7 @@ pub struct Selection {
     /// The UDID of that device once it is found: builds go to it, so automatic signing
     /// makes a profile that includes it.
     pub device: Option<String>,
+    pub selection: Option<crate::selection::SelectionReport>,
 }
 
 pub fn select(
@@ -62,6 +63,7 @@ pub fn select(
             suites: Vec::new(),
             on_device: false,
             device: None,
+            selection: None,
         };
         for t in targets {
             if project.scenarios.contains_key(t) {
@@ -90,6 +92,7 @@ pub fn select(
             suites: g.suites.clone(),
             on_device: false,
             device: None,
+            selection: None,
         }),
         None if gate.is_some() => {
             let known: Vec<&str> = project.gates.keys().map(String::as_str).collect();
@@ -103,6 +106,7 @@ pub fn select(
             suites: project.suites.keys().cloned().collect(),
             on_device: false,
             device: None,
+            selection: None,
         }),
     }
 }
@@ -806,6 +810,55 @@ pub fn job_hashes(
     runner: &dyn Runner,
     developer_dir: Option<&Path>,
 ) -> Vec<Option<String>> {
+    calculate_job_inputs(project, root, jobs, runner, developer_dir, false)
+        .into_iter()
+        .map(|job| job.map(|j| j.hash))
+        .collect()
+}
+
+#[derive(Debug, Serialize)]
+pub struct JobHash {
+    pub job: String,
+    pub hash: String,
+    pub inputs: HashInputs,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HashInputs {
+    pub files: Vec<FileInput>,
+    pub command: Vec<String>,
+    pub developer_dir: String,
+    pub generate: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileInput {
+    pub path: String,
+    pub content_hash: Option<String>,
+    pub bytes: Option<usize>,
+    pub missing: bool,
+}
+
+/// The same inputs as the cache, exposed by `kr hash`. A missing file has the
+/// `<missing>` marker in `input_hash`, and is explicit in this diagnostic view.
+pub fn job_inputs(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+) -> Vec<Option<JobHash>> {
+    calculate_job_inputs(project, root, jobs, runner, developer_dir, true)
+}
+
+fn calculate_job_inputs(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    explain: bool,
+) -> Vec<Option<JobHash>> {
     let list = Command::new("git")
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
         .current_dir(root);
@@ -823,11 +876,36 @@ pub fn job_hashes(
             let xcode = developer_dir
                 .map(|d| d.display().to_string())
                 .unwrap_or_default();
-            let mut parts: Vec<&str> = vec![cmd.program.as_str()];
-            parts.extend(cmd.args.iter().map(String::as_str));
-            parts.push(&xcode);
-            parts.push(project.project.generate.as_deref().unwrap_or(""));
-            kr_run::input_hash(root, files, &parts).ok()
+            let generate = project.project.generate.clone().unwrap_or_default();
+            let mut command = vec![cmd.program];
+            command.extend(cmd.args);
+            let mut parts: Vec<&str> = command.iter().map(String::as_str).collect();
+            parts.extend([xcode.as_str(), generate.as_str()]);
+            let hash = kr_run::input_hash(root, files, &parts).ok()?;
+            let mut files: Vec<_> = files
+                .iter()
+                .filter(|_| explain)
+                .map(|file| {
+                    let bytes = std::fs::read(root.join(file)).ok();
+                    FileInput {
+                        path: file.clone(),
+                        content_hash: bytes.as_ref().map(|b| blake3::hash(b).to_hex().to_string()),
+                        bytes: bytes.as_ref().map(Vec::len),
+                        missing: bytes.is_none(),
+                    }
+                })
+                .collect();
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            Some(JobHash {
+                job: job.label(),
+                hash,
+                inputs: HashInputs {
+                    files,
+                    command,
+                    developer_dir: xcode,
+                    generate,
+                },
+            })
         })
         .collect()
 }

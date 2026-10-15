@@ -1,0 +1,8 @@
+Couldn't access the saved Plex session. Try again.
+Couldn't Read Module File
+Authorize Krill in your browser. Your Plex password is never entered in Krill.
+Add Plex
+Collection
+Couldn't read this file. It may be damaged.
+Couldn't Open File
+Couldn't connect to Plex. Check the server and your network.

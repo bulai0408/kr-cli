@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 pub struct ProjectConfig {
     pub project: ProjectInfo,
     #[serde(default)]
+    pub modules: BTreeMap<String, Module>,
+    #[serde(default)]
+    pub selection: SelectionConfig,
+    #[serde(default)]
     pub simulators: Simulators,
     #[serde(default)]
     pub suites: BTreeMap<String, Suite>,
@@ -179,6 +183,25 @@ pub struct Scenario {
     /// Depends on an outside service: never served from the result cache.
     #[serde(default)]
     pub external: bool,
+    /// Modules this scenario covers, including page modules declared in `[modules]`.
+    #[serde(default)]
+    pub modules: Vec<String>,
+}
+
+/// Page-level relationships that package and project targets cannot express.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Module {
+    /// Source directories or files, relative to the project root.
+    pub paths: Vec<PathBuf>,
+    pub depends_on: Vec<String>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct SelectionConfig {
+    /// Project-declared globs whose changes affect no scenario. No built-in defaults.
+    pub ignore: Vec<String>,
 }
 
 /// A named set of suites and scenarios that decides whether a batch can merge.
@@ -270,6 +293,33 @@ impl ProjectConfig {
     /// Checks references between sections. Each problem has the key path it is about.
     pub fn problems(&self) -> Vec<Problem> {
         let mut out = Vec::new();
+        for (i, pattern) in self.selection.ignore.iter().enumerate() {
+            if let Err(e) = globset::Glob::new(pattern) {
+                out.push(Problem::at(
+                    &["selection", "ignore"],
+                    i,
+                    format!("selection.ignore: invalid glob `{pattern}`: {e}"),
+                    "use a valid glob, e.g. \"docs/**\" or \"**/*.md\"",
+                ));
+            }
+        }
+        for (name, module) in &self.modules {
+            for (i, path) in module.paths.iter().enumerate() {
+                if path.as_os_str().is_empty()
+                    || path.is_absolute()
+                    || path
+                        .components()
+                        .any(|c| matches!(c, std::path::Component::ParentDir))
+                {
+                    out.push(Problem::at(
+                        &["modules", name, "paths"],
+                        i,
+                        "module paths must be nonempty and relative to the project root",
+                        "use a source directory such as \"Krill/TitleDetail\", without `..`",
+                    ));
+                }
+            }
+        }
         let info = &self.project;
         if info.xcodeproj.is_some() && info.workspace.is_some() {
             out.push(Problem::new(

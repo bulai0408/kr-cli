@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "layer": 3,
+  "sample_count": 14,
+  "before_manual": 12,
+  "after_manual": 2,
+  "validated_catalogs": 12,
+  "calibration": "deterministic historical replay; no runtime model or prospective error estimate",
+  "cases": [
+    {
+      "merge": "b212a09bc17e3f50bab1ee38cd1d2b1721d476f2",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "5173c6a16dac71d1bbaba9f6a0ac0246480ef8a0",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "21b89eca65aae1be3feeab5ae4edd7e2ed2ba881",
+      "text_conflict": true,
+      "driver_exit": 1,
+      "validated": false,
+      "same_key_conflicts": 1
+    },
+    {
+      "merge": "65b3f185cfdca4b3185e5d1f8fdd1dad4fb88355",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "b1dbf457807cf3528ea63dc52ab48235d4b90e31",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "12b396f5d329e94fe2fee5c942e2d6d26109c2d9",
+      "text_conflict": false,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "fcc93fbc3e1577ab55981a0578725bafc57546ac",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "509a472f7d84c9308ae1c2899a5e6f1b1f2efb5f",
+      "text_conflict": false,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "9427c9d224f423468bfde854d1a8b90ce7f28c7a",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "36ce68952585bdb12a9ca23899e40b9ba1091316",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "0127ce96ba1d8b53c03ed7ae445c2a3184aeff0c",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "d7ec0f7c033853864456da8ec5859b43d9beaba5",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "83c1bdc3e7622eee3a3aaae0ad416d60208784ad",
+      "text_conflict": true,
+      "driver_exit": 0,
+      "validated": true,
+      "same_key_conflicts": 0
+    },
+    {
+      "merge": "b484eefaf521e7addcb815c35e118ea8e4f585f2",
+      "text_conflict": true,
+      "driver_exit": 1,
+      "validated": false,
+      "same_key_conflicts": 1
+    }
+  ]
+}
