@@ -2140,6 +2140,10 @@ fn preparation_unused_shared_dependency_does_not_delay_cleanup_past_slot_release
         .iter()
         .position(|e| e["type"] == "preparation_end" && e["fields"]["shared"] == "backend")
         .unwrap();
+    assert_eq!(
+        events[cleaned]["fields"]["scenarios"],
+        serde_json::json!(["settings"])
+    );
     let released = events
         .iter()
         .position(|e| e["type"] == "sim_released")

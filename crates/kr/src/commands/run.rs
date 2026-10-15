@@ -1673,7 +1673,7 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
             )
         };
         let mut report = if let Some(key) = &step.shared {
-            s.preparation.acquire(key, start)
+            s.preparation.acquire(key, &item.name, start)
         } else {
             instances.push(start(vec![item.name.clone()]));
             instances.last().unwrap().report.clone()

@@ -225,7 +225,12 @@ impl<'a> SharedInstances<'a> {
         }
     }
 
-    pub fn acquire(&self, key: &str, start: impl FnOnce(Vec<String>) -> Instance<'a>) -> Report {
+    pub fn acquire(
+        &self,
+        key: &str,
+        scenario: &str,
+        start: impl FnOnce(Vec<String>) -> Instance<'a>,
+    ) -> Report {
         let mut entries = self.entries.lock().unwrap();
         let index = if let Some(index) = entries.iter().position(|(name, _)| name == key) {
             index
@@ -243,12 +248,17 @@ impl<'a> SharedInstances<'a> {
                 key.to_owned(),
                 SharedEntry {
                     remaining,
-                    instance: start(users),
+                    instance: start(vec![scenario.to_owned()]),
                 },
             ));
             entries.len() - 1
         };
-        entries[index].1.instance.report.clone()
+        let report = &mut entries[index].1.instance.report;
+        if !report.scenarios.iter().any(|name| name == scenario) {
+            report.scenarios.push(scenario.to_owned());
+            report.scenarios.sort();
+        }
+        report.clone()
     }
 
     pub fn release(&self, scenario: &str) {
