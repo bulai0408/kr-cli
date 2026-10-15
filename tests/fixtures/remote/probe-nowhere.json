@@ -1,0 +1,18 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "nowhere.invalid",
+    "sh -c 'echo \"os=$(uname -s)\"; echo \"xcode=$(xcodebuild -version 2>/dev/null | head -n 1)\"; echo \"kr=$(\"${SHELL:-/bin/sh}\" -lc '\\''kr --version'\\'' 2>/dev/null)\"'"
+  ],
+  "status": 255,
+  "stdout": "",
+  "stderr": "Connection closed by 198.18.13.18 port 22\r\n"
+}

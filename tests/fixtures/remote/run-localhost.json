@@ -1,0 +1,19 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "-tt",
+    "localhost",
+    "sh -c 'set -e\nexport GIT_TERMINAL_PROMPT=0\nif [ ! -d /tmp/kr-remote/Krill/.git ]; then echo '\\''kr-remote: cloning'\\''; git clone --quiet /tmp/kr32/origin.git /tmp/kr-remote/Krill; fi\necho '\\''kr-remote: fetching'\\''\ngit -C /tmp/kr-remote/Krill fetch --quiet origin v0/integration\nif [ ! -d /tmp/kr-remote/Krill@v0-integration ]; then git -C /tmp/kr-remote/Krill worktree add --quiet --detach /tmp/kr-remote/Krill@v0-integration 4ea68bc7212949937b6cb0714fdfd8a59cc6855b; fi\ncd /tmp/kr-remote/Krill@v0-integration\ngit checkout --quiet --force --detach 4ea68bc7212949937b6cb0714fdfd8a59cc6855b\necho '\\''kr-remote: starting kr'\\''\nexec \"${SHELL:-/bin/sh}\" -lc '\\''exec /tmp/kr-remote/bin/kr --json run source-checks kit-build'\\'''"
+  ],
+  "status": 0,
+  "stdout": "kr-remote: fetching\r\nkr-remote: starting kr\r\n{\r\n  \"aborted\": null,\r\n  \"build\": {\r\n    \"cached\": [\r\n      \"KrillKit: build KrillKit-Package (generic/platform=iOS)\",\r\n      \"KrillKit: build KrillKit-Package (generic/platform=tvOS)\",\r\n      \"KrillKit: build KrillKit-Package (generic/platform=macOS)\"\r\n    ],\r\n    \"steps\": [\r\n      {\r\n        \"duration_ms\": 0,\r\n        \"log\": null,\r\n        \"ok\": true,\r\n        \"step\": \"filters\",\r\n        \"summary\": []\r\n      },\r\n      {\r\n        \"duration_ms\": 0,\r\n        \"log\": null,\r\n        \"ok\": true,\r\n        \"step\": \"isolation\",\r\n        \"summary\": []\r\n      }\r\n    ]\r\n  },\r\n  \"duration_ms\": 6684,\r\n  \"items\": [\r\n    {\r\n      \"device\": null,\r\n      \"duration_ms\": 1630,\r\n      \"flaky\": [],\r\n      \"high_load\": null,\r\n      \"kind\": \"suite\",\r\n      \"load\": null,\r\n      \"log\": \"~/.local/state/kr/runs/01a13e26-dfbb-72c1-a3a5-ff9e51e72762/source-checks.log\",\r\n      \"name\": \"source-checks\",\r\n      \"notes\": [],\r\n      \"passed\": true,\r\n      \"summary\": [],\r\n      \"tests\": null,\r\n      \"xcresult\": null\r\n    },\r\n    {\r\n      \"device\": null,\r\n      \"duration_ms\": 0,\r\n      \"flaky\": [],\r\n      \"high_load\": null,\r\n      \"kind\": \"suite\",\r\n      \"load\": null,\r\n      \"log\": null,\r\n      \"name\": \"kit-build\",\r\n      \"notes\": [],\r\n      \"passed\": true,\r\n      \"summary\": [],\r\n      \"tests\": null,\r\n      \"xcresult\": null\r\n    }\r\n  ],\r\n  \"label\": \"run\",\r\n  \"ok\": true,\r\n  \"passed\": 2,\r\n  \"total\": 2\r\n}\r\nConnection to localhost closed.\r\n",
+  "stderr": ""
+}

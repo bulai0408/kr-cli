@@ -19,3 +19,9 @@ cargo run -p kr-exec --example record -- tests/fixtures/simctl/list-devices.json
 - `sysctl/m3-imac.json`、`scutil/`、`df/`、`xcode-select/`、`simctl/`：2026-10-14 在 owner 的 iMac（Apple M3，8 核 4P，24 GB，Xcode 27.1 + 26.6）上录制。
 - `xcode/apps/*.app/Contents/version.plist`：从本机两个 Xcode 复制，供检测已装 Xcode 的测试用。
 - 高配机（M4 Max）和 Intel 机的档案没有真机可录，在 `crates/kr-machine/tests/profile.rs` 里按同一格式构造。
+- `remote/`：2026-10-15 在 owner 的 iMac 上录制，`kr run --remote` 的回放素材（`crates/kr/tests/remote.rs`）。本机是 Krill `v0/integration`（4ea68bc）的干净克隆，`origin` 指向同一台机器上的裸仓库镜像（`/tmp/kr32/origin.git`）：Krill 是私有仓库，SSH 会话里用不了钥匙串里的 HTTPS 凭证。
+  - `git-pushed/`：干净、已推送的分支。其他 git 状态（没推送、有未提交改动、detached HEAD、没有 origin）由测试在这份素材上改出来。
+  - `probe-vps.json`、`probe-fnos.json`：真实 `ssh vps` / `ssh fnos`（Linux）。`probe-nowhere.json`：真实 ssh 连不上的主机（本机代理把不存在的域名解析到 198.18.x 假地址）。
+  - `probe-localhost.json`、`run-localhost.json`：真实 `ssh localhost`。主机一侧的 kr 克隆、拉取，跑 Krill `source-checks` 和 `kit-build`（真 Xcode，按全机锁排队）。`-tt` 下行尾是 `\r\n`，结果 JSON 后面有 OpenSSH 自己的 `Connection to localhost closed.`。
+  - `run-localhost-lost.json`：真实失联：主机一侧 xcodebuild 已经开始时结束了这次会话的 `sshd-session` 进程，ssh 以 255 结束。主机上的 kr 收到 SIGHUP，写了 `run_aborted` 并归还了 `build` 槽位。之后主机上的命令改为在登录 shell 里启动 kr，这份素材只更新了命令行，输出是原样的。
+  - `run-work-build-failed.json`：局域网另一台 Mac（`work`）上第一次远程运行的真实输出：SSH 命令的 PATH 里没有 Homebrew 的 xcodegen，`generate` 失败，什么都没跑。这份输出暴露了两个问题：本机把它显示成 `0/0 PASS`，以及主机上的 kr 没有用登录 shell 的 PATH。命令行换成了 `run-localhost.json` 的，`/Users/kami` 换成 `~`，OpenSSH 断开提示里的局域网地址换成 `work`。

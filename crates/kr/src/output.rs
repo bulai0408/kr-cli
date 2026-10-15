@@ -3,7 +3,44 @@
 use kr_config::ConfigError;
 use serde_json::json;
 
+/// kr refused to start: every reason it found, each with what to do.
+#[derive(Debug)]
+pub struct Refused {
+    /// e.g. "kr::remote::preflight".
+    pub code: &'static str,
+    /// What could not start, e.g. "cannot run on mini".
+    pub what: String,
+    pub problems: Vec<kr_remote::Problem>,
+}
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.what)?;
+        for p in &self.problems {
+            write!(f, "\n  - {}\n    next: {}", p.message, p.next)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for Refused {}
+
 pub fn report_error(err: &anyhow::Error, json: bool) {
+    if let Some(refused) = err.downcast_ref::<Refused>() {
+        if json {
+            println!(
+                "{}",
+                json!({ "error": {
+                    "code": refused.code,
+                    "message": refused.what,
+                    "problems": refused.problems,
+                }})
+            );
+        } else {
+            eprintln!("error: {refused}");
+        }
+        return;
+    }
     let config = err.downcast_ref::<ConfigError>();
     if json {
         let mut obj = json!({

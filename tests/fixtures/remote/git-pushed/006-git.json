@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "ls-remote",
+    "origin",
+    "refs/heads/v0/integration"
+  ],
+  "status": 0,
+  "stdout": "4ea68bc7212949937b6cb0714fdfd8a59cc6855b\trefs/heads/v0/integration\n",
+  "stderr": ""
+}

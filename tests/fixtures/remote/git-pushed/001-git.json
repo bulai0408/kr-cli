@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "rev-parse",
+    "--abbrev-ref",
+    "HEAD"
+  ],
+  "status": 0,
+  "stdout": "v0/integration\n",
+  "stderr": ""
+}

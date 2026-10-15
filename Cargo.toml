@@ -14,6 +14,7 @@ kr-config = { path = "crates/kr-config" }
 kr-events = { path = "crates/kr-events" }
 kr-exec = { path = "crates/kr-exec" }
 kr-machine = { path = "crates/kr-machine" }
+kr-remote = { path = "crates/kr-remote" }
 kr-resource = { path = "crates/kr-resource" }
 kr-run = { path = "crates/kr-run" }
 kr-sim = { path = "crates/kr-sim" }

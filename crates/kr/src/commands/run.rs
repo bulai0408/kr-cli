@@ -29,6 +29,7 @@ use serde_json::json;
 
 use super::check::{self, BuildJob, Selection, Steps, with_xcode};
 use super::human_duration;
+use super::remote;
 use crate::{Ctx, Loaded, slots};
 
 #[derive(Debug, Args)]
@@ -36,12 +37,21 @@ pub struct RunArgs {
     /// Scenarios and suites to run.
     #[arg(required = true)]
     targets: Vec<String>,
+
+    /// Run on this remote machine (`[remotes.<name>]` of the machine config) instead:
+    /// its kr fetches the pushed branch and runs there; the result comes back here.
+    #[arg(long, value_name = "NAME")]
+    remote: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct GateArgs {
     /// The gate to run. Default: `default`.
     name: Option<String>,
+
+    /// Run on this remote machine, like `kr run --remote`.
+    #[arg(long, value_name = "NAME")]
+    remote: Option<String>,
 }
 
 /// Where results go, relative to the repo root; the latest run of each item wins.
@@ -53,6 +63,13 @@ pub fn run(ctx: &Ctx, args: RunArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
     let sel = check::select(project, &args.targets, None)?;
+    if let Some(host) = &args.remote {
+        let kr_args = std::iter::once("run".to_owned())
+            .chain(args.targets)
+            .collect();
+        return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
+    }
+    remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
     execute(ctx, &loaded, project, &root, &sel, "run".to_owned())
 }
 
@@ -65,6 +82,11 @@ pub fn gate(ctx: &Ctx, args: GateArgs) -> Result<ExitCode> {
         bail!("no gate `{name}` in .kr.toml; known: {}", known.join(", "));
     }
     let sel = check::select(project, &[], Some(&name))?;
+    if let Some(host) = &args.remote {
+        let kr_args = vec!["gate".to_owned(), name];
+        return remote::execute(ctx, &loaded, project, &root, &sel, host, kr_args);
+    }
+    remote::refuse_signing_in_ssh_session(ctx, project, &sel)?;
     execute(ctx, &loaded, project, &root, &sel, format!("gate {name}"))
 }
 
