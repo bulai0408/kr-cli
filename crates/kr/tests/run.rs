@@ -829,3 +829,89 @@ fn every_run_ends_with_a_run_end_event_even_when_kr_itself_fails() {
         "{end}"
     );
 }
+
+// --- Scheduling (#18) ---
+
+const UDID_1: &str = "31038384-DFE3-45BC-8984-78A3857E5A5F";
+const UDID_2: &str = "16704C23-1F75-488E-B084-76C5E1460276";
+
+/// Makes the pool's second simulator an iPad, `KrSample-Verify-iPad-1`, that runs
+/// `settings`: edits the sample's config and returns the gate recordings to match.
+fn with_an_ipad(s: &Sample) -> Vec<Recording> {
+    let config = s.home.path().join("repo/.kr.toml");
+    let text = std::fs::read_to_string(&config).unwrap().replace(
+        "[scenarios.settings]\n",
+        "[scenarios.settings]\ndevice = \"iPad\"\n",
+    ) + "\n[simulators.devices.iPad]\ndevice_type = \"iPad Pro 13-inch (M4)\"\n";
+    std::fs::write(&config, text).unwrap();
+    let gate = recordings("gate-default");
+    let mut recs = Vec::new();
+    for r in &gate {
+        let mut r = r.clone();
+        if r.args
+            .starts_with(&["simctl".into(), "list".into(), "devices".into()])
+        {
+            let mut list: serde_json::Value = serde_json::from_str(&r.stdout).unwrap();
+            for runtime in list["devices"].as_object_mut().unwrap().values_mut() {
+                for d in runtime.as_array_mut().unwrap() {
+                    if d["udid"] == UDID_2 {
+                        d["name"] = "KrSample-Verify-iPad-1".into();
+                        d["deviceTypeIdentifier"] =
+                            "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4-8GB".into();
+                    }
+                }
+            }
+            r.stdout = serde_json::to_string(&list).unwrap();
+        }
+        let of_settings = r.args.iter().any(|a| {
+            a.contains("SettingsUITests/testLaunchesTwice") || a.contains("results/settings/")
+        });
+        if of_settings {
+            r.args = r.args.iter().map(|a| a.replace(UDID_1, UDID_2)).collect();
+        }
+        recs.push(r);
+    }
+    // The iPad lane boots and shuts down its own device.
+    recs.extend(
+        gate.iter()
+            .filter(|r| r.program == "xcrun" && r.args.iter().any(|a| a == UDID_1))
+            .filter(|r| r.args[1] == "shutdown" || r.args[1] == "bootstatus")
+            .map(|r| {
+                let mut r = r.clone();
+                r.args = r.args.iter().map(|a| a.replace(UDID_1, UDID_2)).collect();
+                r.stdout = r
+                    .stdout
+                    .replace("KrSample-Verify-1", "KrSample-Verify-iPad-1");
+                r
+            }),
+    );
+    recs
+}
+
+#[test]
+fn ipad_lanes_take_their_simulator_slot_before_iphone_lanes() {
+    // ADR 0010: which lane got a slot first was up to thread timing; iPad items are the
+    // longest in Krill, so starting them first shortens the gate (41.3 → 37.6 min).
+    let s = Sample::new();
+    let recs = with_an_ipad(&s);
+    let (code, out) = s.kr(&recs, &["run", "launch", "settings"]);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(out.contains("run: 2/2 PASS"), "{out}");
+    assert!(
+        out.contains("PASS: settings (1 tests, KrSample-Verify-iPad-1, "),
+        "{out}"
+    );
+    let events = s.events();
+    let lanes: Vec<&str> = events
+        .iter()
+        .filter(|e| e["type"] == "slot_acquired" && e["fields"]["resource"] == "sim")
+        .map(|e| e["fields"]["task"].as_str().unwrap())
+        .collect();
+    assert_eq!(lanes, ["run iPad lane", "run default lane"]);
+    let started: Vec<&str> = events
+        .iter()
+        .filter(|e| e["type"] == "item_start")
+        .map(|e| e["fields"]["item"].as_str().unwrap())
+        .collect();
+    assert_eq!(started, ["settings", "launch"]);
+}

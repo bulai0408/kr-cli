@@ -617,12 +617,34 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, V
         let lanes = capacity.min(devices).min(queue.len()).max(1);
         lanes_of.push((kind, Mutex::new(queue), lanes));
     }
+    // iPad lanes first: their items are the longest (ADR 0010).
+    let ipad = |kind: &str| {
+        s.project
+            .simulators
+            .devices
+            .get(kind)
+            .is_some_and(|k| k.device_type.contains("iPad"))
+    };
+    lanes_of.sort_by_key(|(kind, _, _)| !ipad(kind));
+    // Lanes queue for their slot one after another, in this order; each runs on its own.
     std::thread::scope(|scope| {
         for (kind, queue, lanes) in &lanes_of {
             for _ in 0..*lanes {
+                if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
+                    break;
+                }
+                let task = format!("run {kind} lane");
+                let taken =
+                    match slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task) {
+                        Ok(taken) => taken,
+                        Err(e) => {
+                            errors.lock().unwrap().push((kind.clone(), e));
+                            continue;
+                        }
+                    };
                 let (pool, collected, errors, simctl) = (&pool, &collected, &errors, &simctl);
                 scope.spawn(move || {
-                    if let Err(e) = lane(s, simctl, pool, kind, queue, collected) {
+                    if let Err(e) = lane(s, simctl, pool, kind, queue, collected, taken) {
                         errors.lock().unwrap().push((kind.clone(), e));
                     }
                 });
@@ -665,12 +687,9 @@ fn lane(
     kind: &str,
     queue: &Mutex<VecDeque<WorkItem>>,
     collected: &Mutex<Vec<ItemResult>>,
+    taken: slots::Taken,
 ) -> Result<()> {
-    if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
-        return Ok(());
-    }
-    let task = format!("run {kind} lane");
-    let taken = slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task)?;
+    let task = taken.task.clone();
     // Other lanes may have finished the work while this one waited for its slot.
     if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
         return slots::give_back(s.loaded, s.run_id, taken, Some(0));
