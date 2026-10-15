@@ -1,6 +1,8 @@
 //! Xcode's compilation cache, shared by the worktrees of one project (ADR 0013).
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use anyhow::Result;
 use kr_config::ProjectConfig;
@@ -58,9 +60,18 @@ pub fn build(
     dir: &Path,
     clean: &Path,
 ) -> Result<bool> {
-    let fields = |clean: bool| json!({ "compilation_cache": { "enabled": true, "clean": clean } });
+    let logs = root
+        .join(crate::commands::check::DERIVED_DATA)
+        .join("Logs/Build");
+    let fields = |clean: bool, started: SystemTime| {
+        let (hits, misses) = remarks(&logs, started).unzip();
+        json!({ "compilation_cache": {
+            "enabled": true, "clean": clean, "hits": hits, "misses": misses,
+        } })
+    };
     let shared = cmd.clone().args(settings(root, dir));
-    if steps.run_logged_with(runner, step, &shared, |_| fields(false))? {
+    let started = SystemTime::now();
+    if steps.run_logged_with(runner, step, &shared, |_| fields(false, started))? {
         return Ok(true);
     }
     let first = steps.results.last().expect("the step was recorded");
@@ -71,7 +82,8 @@ pub fn build(
     let _ = std::fs::remove_dir_all(clean);
     let again = cmd.clone().args(settings(root, clean));
     let retry_step = format!("{step} (clean cache)");
-    let ok = steps.run_logged_with(runner, &retry_step, &again, |_| fields(true));
+    let started = SystemTime::now();
+    let ok = steps.run_logged_with(runner, &retry_step, &again, |_| fields(true, started));
     let _ = std::fs::remove_dir_all(clean);
     let ok = ok?;
     let retry = steps.results.pop().expect("the retry was recorded");
@@ -108,6 +120,36 @@ pub fn build(
         );
     }
     Ok(ok)
+}
+
+/// The cache hits and misses Xcode reported in the activity log the build wrote to `logs`
+/// (the newest one changed since `started`), or `None` if there is none. kr builds with
+/// `-quiet`, which keeps these remarks out of the console. Each remark is a string record
+/// of its own in the log: "Replay cache hit" / "Replay cache miss" for Swift jobs (lower
+/// case for modules), "replayed cache hit: llvmcas://…" / "cache miss: llvmcas://…" for
+/// Clang. The same words inside longer notes are not counted again.
+fn remarks(logs: &Path, started: SystemTime) -> Option<(u64, u64)> {
+    let newest = std::fs::read_dir(logs)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().is_some_and(|x| x == "xcactivitylog"))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .filter(|(modified, _)| *modified >= started)
+        .max()?
+        .1;
+    let mut text = Vec::new();
+    flate2::read::GzDecoder::new(std::fs::File::open(newest).ok()?)
+        .read_to_end(&mut text)
+        .ok()?;
+    let text = text.to_ascii_lowercase();
+    let count = |pattern: &[u8]| {
+        text.windows(pattern.len())
+            .filter(|w| *w == pattern)
+            .count() as u64
+    };
+    let hits = count(b"16\"replay cache hit") + count(b"\"replayed cache hit: llvmcas://");
+    let misses = count(b"17\"replay cache miss") + count(b"\"cache miss: llvmcas://");
+    Some((hits, misses))
 }
 
 /// Why a failed build may be the cache's fault, or `None` if it is not. A compiler

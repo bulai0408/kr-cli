@@ -61,7 +61,10 @@ pub enum EventKind {
     MachineLock,
     /// A build was skipped: its inputs match its last successful build. Fields: job, hash.
     BuildCacheHit,
-    /// A step of a command finished. Fields: command, step, ok, `duration_ms`.
+    /// A step of a command finished. Fields: command, step, ok, `duration_ms`. Build
+    /// steps also have `compilation_cache` (ADR 0013): enabled, and when it is on, clean
+    /// (the build used an empty cache), hits and misses (null if Xcode wrote no activity
+    /// log).
     StepEnd,
     /// A scenario or suite started. Fields: item, kind, device, concurrency (what held
     /// the machine then: `build` and `sim` slots held by anyone, this run included, and

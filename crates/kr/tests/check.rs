@@ -313,6 +313,39 @@ fn with_the_cache_on_every_build_of_the_project_shares_one_cache() {
 }
 
 #[test]
+fn with_the_cache_on_builds_record_the_hits_and_misses_xcode_reported() {
+    let s = Sample::new(with_cache);
+    let cas = s.state().join("cache/KrSample/compilation");
+    // The activity log the build writes (a recording cannot write files, so it is put
+    // there before, dated after the build starts).
+    let logs = s.home.path().join("repo/build/kr/DerivedData/Logs/Build");
+    std::fs::create_dir_all(&logs).unwrap();
+    let log = logs.join("A2A00082.xcactivitylog");
+    std::fs::copy(
+        root().join("tests/fixtures/xcode/activity/cache-remarks.xcactivitylog"),
+        &log,
+    )
+    .unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&log)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+        .unwrap();
+    let (code, out) = s.check_edited("pass", &[], |mut r| {
+        if r.program == "xcodebuild" {
+            r.args.extend(cache_settings(&s, &cas));
+        }
+        vec![r]
+    });
+    assert_eq!(code, Some(0), "{out}");
+    let events = s.events();
+    let cache = &build_steps(&events)[0]["fields"]["compilation_cache"];
+    assert_eq!(cache["hits"], 6, "{cache}");
+    assert_eq!(cache["misses"], 3, "{cache}");
+}
+
+#[test]
 fn with_the_cache_off_builds_say_so() {
     let s = Sample::new(|c| c);
     let (code, out) = s.check("pass", &[]);

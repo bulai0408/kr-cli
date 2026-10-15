@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 blake3.workspace = true
+flate2.workspace = true
 clap.workspace = true
 kr-config.workspace = true
 kr-device.workspace = true
