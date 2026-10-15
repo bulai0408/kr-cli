@@ -17,6 +17,7 @@ use kr_config::{
 use kr_events::{Event, EventKind, RunId};
 use kr_exec::{Command, Runner};
 use kr_resource::Resource;
+use kr_run::rejudge::{self, Saved};
 use kr_run::schedule::{self, Action, Done, Executor, LaneId, Order, WallClock};
 use kr_run::{Attempt, Final, Verdict, judge, longest_first};
 use kr_sim::{DeviceLocks, Lease, LeaseHolder, PoolDevice, Simctl};
@@ -1214,16 +1215,13 @@ fn run_item_once(
 
     let mut invalid: Vec<String> = Vec::new();
     let verdict = if enumeration.enabled.is_empty() {
-        judge(
-            &enumeration,
-            &Attempt {
-                exit: Some(0),
-                timed_out: enum_timed_out,
-                results: Some(Vec::new()),
-                bundle: None,
-            },
-            &[],
-        )
+        let first = Attempt {
+            exit: Some(0),
+            timed_out: enum_timed_out,
+            results: Some(Vec::new()),
+            bundle: None,
+        };
+        save(&logs, &name, &enumeration, first, Vec::new())?
     } else {
         let (first, bundle) = attempt("run", filters.clone())?;
         r.xcresult = Some(cwd.join(&bundle));
@@ -1269,7 +1267,7 @@ fn run_item_once(
             ))?;
             reruns.push(Some(again));
         }
-        judge(&enumeration, &first, &reruns)
+        save(&logs, &name, &enumeration, first, reruns)?
     };
 
     r.passed = verdict.passed();
@@ -1301,6 +1299,30 @@ fn run_item_once(
     r.log = Some(logs);
     r.duration_ms = started.elapsed().as_millis() as u64;
     Ok(r)
+}
+
+/// Judges one pass and saves what the verdict came from as `<logs>/verdict.json`, small
+/// enough to keep for every run, so `kr rejudge` can judge it again (ADR 0010).
+fn save(
+    logs: &Path,
+    name: &str,
+    enumeration: &Enumeration,
+    first: Attempt,
+    reruns: Vec<Option<Attempt>>,
+) -> Result<Verdict> {
+    let saved = Saved {
+        schema_version: rejudge::SCHEMA_VERSION,
+        item: name.to_owned(),
+        verdict: judge(enumeration, &first, &reruns),
+        enumeration: enumeration.clone(),
+        first,
+        reruns,
+    };
+    std::fs::create_dir_all(logs)?;
+    let file = logs.join("verdict.json");
+    std::fs::write(&file, serde_json::to_vec(&saved)?)
+        .with_context(|| format!("failed to write {}", file.display()))?;
+    Ok(saved.verdict)
 }
 
 /// The JSON document at the end of xcodebuild's enumeration output.

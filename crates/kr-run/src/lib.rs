@@ -1,6 +1,7 @@
 //! Decisions of `kr run` that do not touch the machine (ADR 0005): whether a scenario
 //! passed, what the build inputs hash to, and in which order work goes to simulators.
 
+pub mod rejudge;
 pub mod schedule;
 
 use std::path::{Path, PathBuf};
@@ -8,10 +9,10 @@ use std::time::Duration;
 
 use anyhow::Result;
 use kr_xcode::{Enumeration, TestCase, TestOutcome};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One `test-without-building` run and what it left behind.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
     pub exit: Option<i32>,
     pub timed_out: bool,
@@ -22,7 +23,7 @@ pub struct Attempt {
 }
 
 /// The four results a test can end with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Final {
     Passed,
@@ -32,7 +33,7 @@ pub enum Final {
     Skipped,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestVerdict {
     pub id: String,
     pub outcome: Final,
@@ -40,7 +41,7 @@ pub struct TestVerdict {
     pub duration_s: f64,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Verdict {
     /// Why the run as a whole cannot be trusted, if it cannot.
     pub reasons: Vec<String>,

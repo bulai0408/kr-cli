@@ -8,7 +8,8 @@ use kr_exec::Command;
 use serde::{Deserialize, Serialize};
 
 /// The tests a filter selects, from `-test-enumeration-format json`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Enumeration {
     /// Full identifiers, e.g. "KrSampleUITests/LaunchUITests/testShowsGreeting()".
     pub enabled: Vec<String>,
@@ -71,7 +72,7 @@ pub enum TestOutcome {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TestCase {
     /// "Target/Class/method()", the same form as the enumeration.
     pub id: String,

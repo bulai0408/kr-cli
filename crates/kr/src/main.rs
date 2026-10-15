@@ -50,6 +50,10 @@ enum Command {
     /// (sim capacity, lane order, cache): p50/p90, lower bound, queue share, and the
     /// calibration error against the measured times.
     Simulate(commands::simulate::SimulateArgs),
+    /// Judge saved results again with this kr's rules and list only the verdicts that
+    /// change: the items of saved `kr run` / `kr gate` runs and, with --evidence, older
+    /// result bundles.
+    Rejudge(commands::rejudge::RejudgeArgs),
     /// The project's simulator pool: status, sync, lease.
     Pool(commands::pool::PoolArgs),
     /// Draft the delivery report of a run: decided by machine, needs human judgment of
@@ -75,6 +79,7 @@ fn main() -> ExitCode {
         Command::Doctor => commands::doctor::run(&ctx),
         Command::Plan(args) => commands::plan::run(&ctx, args),
         Command::Simulate(args) => commands::simulate::run(&ctx, args),
+        Command::Rejudge(args) => commands::rejudge::run(&ctx, args),
         Command::Pool(args) => commands::pool::run(&ctx, args),
         Command::Check(args) => commands::check::run(&ctx, args),
         Command::Run(args) => commands::run::run(&ctx, args),

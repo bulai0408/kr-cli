@@ -915,3 +915,106 @@ fn ipad_lanes_take_their_simulator_slot_before_iphone_lanes() {
         .collect();
     assert_eq!(started, ["settings", "launch"]);
 }
+
+// --- Offline evaluation (#29, ADR 0010) ---
+
+impl Sample {
+    fn state(&self) -> PathBuf {
+        self.home.path().join(".local/state/kr")
+    }
+
+    fn run_id(&self) -> String {
+        self.events()
+            .iter()
+            .rfind(|e| e["type"] == "run_end")
+            .expect("a finished run")["run_id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    fn json(&self, recordings: &[Recording], args: &[&str]) -> serde_json::Value {
+        let mut all = vec!["--json"];
+        all.extend(args);
+        let (code, out) = self.kr(recordings, &all);
+        assert_eq!(code, Some(0), "{out}");
+        serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+    }
+}
+
+#[test]
+fn every_item_saves_its_parsed_results_and_rejudging_the_run_changes_nothing() {
+    let s = Sample::new();
+    s.kr(&recordings("gate-default"), &["gate"]);
+    let run = s.state().join("runs").join(s.run_id());
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(run.join("launch/verdict.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved["schema_version"], 1);
+    assert_eq!(saved["item"], "launch");
+    assert_eq!(
+        saved["enumeration"]["enabled"].as_array().unwrap().len(),
+        2,
+        "{saved}"
+    );
+    assert_eq!(saved["reruns"].as_array().unwrap().len(), 1);
+    let flaky = saved["verdict"]["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == "KrSampleUITests/LaunchUITests/testFlakyOnce()")
+        .unwrap();
+    assert_eq!(flaky["outcome"], "flaky");
+
+    let out = s.json(&[], &["rejudge"]);
+    assert_eq!(out["schema_version"], 1);
+    assert_eq!(out["runs"], 1);
+    assert_eq!(out["items"], 4);
+    assert_eq!(out["changed"], 0);
+    assert_eq!(out["changes"], serde_json::json!([]));
+    let (code, text) = s.kr(&[], &["rejudge"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(text.trim(), "rejudge: 4 items in 1 run; no verdict changed");
+}
+
+#[test]
+fn a_verdict_recorded_under_another_rule_is_listed_as_changed() {
+    // As if the run had been judged by a rule that ignored the passing rerun.
+    let s = Sample::new();
+    s.kr(&recordings("gate-default"), &["gate"]);
+    let file = s
+        .state()
+        .join("runs")
+        .join(s.run_id())
+        .join("launch/verdict.json");
+    let text = std::fs::read_to_string(&file)
+        .unwrap()
+        .replace("\"flaky\"", "\"failed\"");
+    std::fs::write(&file, text).unwrap();
+
+    let out = s.json(&[], &["rejudge"]);
+    assert_eq!(out["changed"], 1);
+    let change = &out["changes"][0];
+    assert_eq!(change["source"], "run");
+    assert_eq!(change["item"], "launch");
+    assert_eq!(change["before"]["passed"], false);
+    assert_eq!(change["after"]["passed"], true);
+    assert_eq!(
+        change["tests"],
+        serde_json::json!([{
+            "id": "KrSampleUITests/LaunchUITests/testFlakyOnce()",
+            "before": "failed",
+            "after": "flaky",
+        }])
+    );
+    let (_, text) = s.kr(&[], &["rejudge"]);
+    let run_id = s.run_id();
+    assert_eq!(
+        text.lines().collect::<Vec<_>>(),
+        [
+            format!("CHANGED: {run_id} launch: FAIL → PASS").as_str(),
+            "  KrSampleUITests/LaunchUITests/testFlakyOnce(): failed → flaky",
+            "rejudge: 4 items in 1 run; 1 verdict changed",
+        ]
+    );
+}
