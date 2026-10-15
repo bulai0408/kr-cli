@@ -95,6 +95,10 @@ pub enum EventKind {
     ProductsMissing,
     /// The run rebuilt missing test products (once per build). Fields: item, ok.
     ProductsRebuilt,
+    /// A build failed with the shared compilation cache in a way the cache may cause,
+    /// and was built once more with a clean cache (ADR 0013). Fields: step, reason,
+    /// `first_ok` (false), `first_log`, ok, log, `cache_caused` (the clean build passed).
+    CompilationCacheRetry,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

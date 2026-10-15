@@ -43,6 +43,10 @@ pub struct ProjectInfo {
     pub xcode: Option<String>,
     #[serde(default)]
     pub platforms: Vec<Platform>,
+    /// Builds share Xcode's compilation cache with the other worktrees of this project
+    /// (ADR 0013). Off by default.
+    #[serde(default)]
+    pub compilation_cache: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 mod commands;
+mod compilation_cache;
 mod ctx;
 mod output;
 mod slots;

@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::human_duration;
-use crate::{Ctx, Loaded, slots};
+use crate::{Ctx, Loaded, compilation_cache, slots};
 
 #[derive(Debug, Args)]
 pub struct CheckArgs {
@@ -293,6 +293,10 @@ pub struct StepResult {
     /// At most three lines on failure.
     pub summary: Vec<String>,
     pub log: Option<PathBuf>,
+    /// Something to know whether the step passed or not, e.g. that it passed only
+    /// with a clean compilation cache.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Records each step as an event and keeps the results for the report.
@@ -314,12 +318,30 @@ impl Steps<'_> {
         summary: Vec<String>,
         log: Option<PathBuf>,
     ) -> Result<bool> {
+        self.finish_with(step, started, ok, summary, log, json!({}))
+    }
+
+    /// Like [`Steps::finish`], with more fields for the event.
+    pub fn finish_with(
+        &mut self,
+        step: &str,
+        started: Instant,
+        ok: bool,
+        summary: Vec<String>,
+        log: Option<PathBuf>,
+        extra: serde_json::Value,
+    ) -> Result<bool> {
         let duration_ms = started.elapsed().as_millis() as u64;
+        let mut fields =
+            json!({ "command": self.command, "step": step, "ok": ok, "duration_ms": duration_ms });
+        if let (Some(fields), Some(extra)) = (fields.as_object_mut(), extra.as_object()) {
+            fields.extend(extra.clone());
+        }
         self.loaded.events().append(&Event::now(
             self.run_id,
             self.loaded.project(),
             EventKind::StepEnd,
-            json!({ "command": self.command, "step": step, "ok": ok, "duration_ms": duration_ms }),
+            fields,
         ))?;
         self.results.push(StepResult {
             step: step.to_owned(),
@@ -327,12 +349,24 @@ impl Steps<'_> {
             duration_ms,
             summary,
             log,
+            note: None,
         });
         Ok(ok)
     }
 
     /// Runs a long command into `<run dir>/<step>.log` and records the step.
     pub fn run_logged(&mut self, runner: &dyn Runner, step: &str, cmd: &Command) -> Result<bool> {
+        self.run_logged_with(runner, step, cmd, |_| json!({}))
+    }
+
+    /// Like [`Steps::run_logged`]; `extra` reads the finished log for more event fields.
+    pub fn run_logged_with(
+        &mut self,
+        runner: &dyn Runner,
+        step: &str,
+        cmd: &Command,
+        extra: impl FnOnce(&Path) -> serde_json::Value,
+    ) -> Result<bool> {
         let started = Instant::now();
         let log = self
             .loaded
@@ -350,7 +384,8 @@ impl Steps<'_> {
         } else {
             error_summary(&format!("{}{}", out.stdout, out.stderr))
         };
-        self.finish(step, started, ok, summary, Some(log))
+        let extra = extra(&log);
+        self.finish_with(step, started, ok, summary, Some(log), extra)
     }
 }
 
@@ -474,9 +509,18 @@ pub fn build(
             return Ok(false);
         }
     }
+    let cache = compilation_cache::dir(project, steps.loaded);
     for (job, hash) in todo {
         let cmd = with_xcode(job.command(project, root), developer_dir).timeout(BUILD_TIMEOUT);
-        if !steps.run_logged(runner, &format!("build {}", job.label()), &cmd)? {
+        let step = format!("build {}", job.label());
+        let built = match &cache {
+            Some(dir) => {
+                let clean = root.join("build/kr/CleanCompilationCache");
+                compilation_cache::build(runner, steps, &step, &cmd, dir, &clean)?
+            }
+            None => steps.run_logged_with(runner, &step, &cmd, |_| compilation_cache::off())?,
+        };
+        if !built {
             return Ok(false);
         }
         if let Some(hash) = hash {
@@ -797,6 +841,9 @@ fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
         .collect();
     if ok {
         println!("PASS: check · {}", times.join(" · "));
+        for note in steps.iter().filter_map(|s| s.note.as_ref()) {
+            println!("  {note}");
+        }
         return Ok(());
     }
     let failed = steps.iter().find(|s| !s.ok).expect("a step failed");
@@ -807,6 +854,9 @@ fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
     );
     for line in &failed.summary {
         println!("  {line}");
+    }
+    if let Some(note) = &failed.note {
+        println!("  {note}");
     }
     if let Some(log) = &failed.log {
         println!("  log: {}", log.display());
