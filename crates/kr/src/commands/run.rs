@@ -112,11 +112,11 @@ impl ItemResult {
 
 /// A test run to place on a simulator (or on this Mac).
 #[derive(Debug, Clone)]
-struct WorkItem {
-    name: String,
-    kind: &'static str,
+pub(crate) struct WorkItem {
+    pub(crate) name: String,
+    pub(crate) kind: &'static str,
     /// Pool device kind; `None` runs on this Mac.
-    device: Option<String>,
+    pub(crate) device: Option<String>,
     job: usize,
     only: Vec<String>,
     skip: Vec<String>,
@@ -429,7 +429,7 @@ fn execute_run(
     })
 }
 
-fn work_items(
+pub(crate) fn work_items(
     project: &ProjectConfig,
     sel: &Selection,
     jobs: &[BuildJob],

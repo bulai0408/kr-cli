@@ -3,6 +3,7 @@ pub mod config;
 pub mod deliver;
 pub mod doctor;
 pub mod lock;
+pub mod plan;
 pub mod pool;
 pub mod queue;
 pub mod run;
