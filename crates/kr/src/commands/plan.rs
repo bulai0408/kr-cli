@@ -228,7 +228,7 @@ pub fn run(ctx: &Ctx, args: PlanArgs) -> Result<ExitCode> {
         },
     };
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&plan)?);
+        crate::output::print_json(&plan)?;
     } else {
         print!("{}", human(&plan));
     }

@@ -183,10 +183,9 @@ fn a_second_run_with_unchanged_inputs_skips_the_build() {
     assert!(s.events().iter().any(|e| e["type"] == "build_cache_hit"));
 }
 
-#[test]
-fn a_test_that_fails_again_on_its_rerun_fails_the_run() {
-    let s = Sample::new();
-    // That run reused a build; give this fresh repo the build from the gate recording.
+/// The `broken` scenario's run (its test fails, and fails again on its rerun), with
+/// the build from the gate recording: that run reused a build.
+fn broken() -> Vec<Recording> {
     let mut recs: Vec<Recording> = recordings("gate-default")
         .into_iter()
         .filter(|r| {
@@ -196,7 +195,35 @@ fn a_test_that_fails_again_on_its_rerun_fails_the_run() {
         })
         .collect();
     recs.extend(recordings("broken"));
-    let (code, out) = s.kr(&recs, &["run", "broken"]);
+    recs
+}
+
+const BROKEN_TEST: &str = "KrSampleUITests/SettingsUITests/testFailsOnRequest()";
+
+impl Sample {
+    /// An earlier run in which `test` failed with `signature`: kr has seen that failure.
+    fn seen_failure(&self, test: &str, signature: &str) {
+        let dir = self.state().join("events");
+        std::fs::create_dir_all(&dir).unwrap();
+        let event = serde_json::json!({
+            "ts": "2026-10-01T00:00:00Z",
+            "run_id": "01999999-0000-7000-8000-000000000000",
+            "project": "KrSample",
+            "type": "item_end",
+            "fields": { "item": "broken", "passed": false, "cases": [
+                { "id": test, "outcome": "failed", "duration_s": 1.0, "signature": signature, "category": "assertion" },
+            ]},
+        });
+        std::fs::write(dir.join("2026-10-01.ndjson"), format!("{event}\n")).unwrap();
+    }
+}
+
+#[test]
+fn a_test_that_fails_again_on_its_rerun_fails_the_run() {
+    let s = Sample::new();
+    // kr has seen this failure, so its rules decide: FAIL (ADR 0011 supplement).
+    s.seen_failure(BROKEN_TEST, "failed - asked to fail");
+    let (code, out) = s.kr(&broken(), &["run", "broken"]);
     assert_eq!(code, Some(1), "{out}");
     let lines: Vec<&str> = out.lines().collect();
     assert!(
@@ -1217,4 +1244,341 @@ fn each_pick_of_the_scheduler_is_recorded_with_its_candidates_and_estimates() {
     // The second run has the first one's durations as estimates.
     assert!(picks[0]["estimate_ms"].is_u64(), "{}", picks[0]);
     assert_eq!(picks[1]["candidates"].as_array().unwrap().len(), 1);
+}
+
+// --- Decision points (#20, ADR 0011, ADR 0015) ---
+
+impl Sample {
+    fn kinds<'a>(events: &'a [serde_json::Value], kind: &str) -> Vec<&'a serde_json::Value> {
+        events
+            .iter()
+            .filter(|e| e["type"] == kind)
+            .map(|e| &e["fields"])
+            .collect()
+    }
+
+    /// `kr --json run broken` on a fresh history: it stops at one decision point.
+    fn stopped_at_a_decision(&self) -> serde_json::Value {
+        let (code, out) = self.kr(&broken(), &["--json", "run", "broken"]);
+        assert_eq!(code, Some(4), "{out}");
+        serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+    }
+}
+
+#[test]
+fn an_unseen_failure_ends_the_run_without_a_verdict_and_with_a_decision_point() {
+    let s = Sample::new();
+    let out = s.stopped_at_a_decision();
+    assert_eq!(out["schema_version"], 1);
+    assert_eq!(out["ok"], false);
+    assert_eq!(out["concluded"], false);
+    let decisions = out["decisions"].as_array().unwrap();
+    assert_eq!(decisions.len(), 1, "{out}");
+    let d = &decisions[0];
+    let run_id = s.run_id();
+    assert_eq!(d["id"], format!("{run_id}-1"));
+    assert_eq!(d["kind"], "failure_kind");
+    assert_eq!(d["affects"], "conclusion");
+    assert_eq!(d["item"], "broken");
+    assert_eq!(d["test"], BROKEN_TEST);
+    let options: Vec<&str> = d["options"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(options, ["product", "flaky", "environment"]);
+    assert_eq!(d["default"]["option"], "product");
+    assert_eq!(d["evidence"]["signature"], "failed - asked to fail");
+    assert_eq!(d["evidence"]["category"], "assertion");
+    assert_eq!(d["evidence"]["history"]["runs"], 0);
+    assert!(
+        d["evidence"]["xcresult"]
+            .as_str()
+            .unwrap()
+            .ends_with("build/kr/results/broken/run.xcresult"),
+        "{d}"
+    );
+    assert_eq!(out["items"][0]["decisions"], serde_json::json!([d["id"]]));
+
+    let events = s.events();
+    assert_eq!(Sample::kinds(&events, "decision_point")[0]["id"], d["id"]);
+    let end = Sample::kinds(&events, "run_end")[0];
+    assert_eq!(end["ok"], false);
+    assert_eq!(end["decisions_pending"], 1);
+}
+
+#[test]
+fn the_human_report_puts_the_decision_point_in_its_own_section_with_the_next_command() {
+    let s = Sample::new();
+    let (code, out) = s.kr(&broken(), &["run", "broken"]);
+    assert_eq!(code, Some(4), "{out}");
+    let id = format!("{}-1", s.run_id());
+    let lines: Vec<&str> = out.lines().collect();
+    assert!(
+        lines[0].starts_with("UNDECIDED: broken (1 tests, "),
+        "{out}"
+    );
+    assert!(
+        out.contains(&format!(
+            "DECIDE {id}: What kind of failure is {BROKEN_TEST} in broken?"
+        )),
+        "{out}"
+    );
+    assert!(
+        out.contains(&format!(
+            "  next: kr decide {id} <product|flaky|environment> --reason \"…\""
+        )),
+        "{out}"
+    );
+    assert!(out.contains("  kr suggests product: "), "{out}");
+    let last = lines.last().unwrap();
+    assert!(
+        last.starts_with("run: no verdict yet: 1 decision pending · "),
+        "{last}"
+    );
+    assert!(!last.contains("PASS") && !last.contains("FAIL"), "{last}");
+}
+
+#[test]
+fn a_decision_gives_the_verdict_without_running_again_and_a_later_run_reconciles_it() {
+    let s = Sample::new();
+    let id = s.stopped_at_a_decision()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let run_id = s.run_id();
+
+    // No recordings: kr decide runs nothing.
+    let (code, out) = s.kr_env(
+        &[],
+        &[
+            "decide",
+            &id,
+            "flaky",
+            "--reason",
+            "it passed in the last 20 runs",
+        ],
+        &[("KR_REQUESTER", "claude")],
+    );
+    assert_eq!(code, Some(0), "{out}");
+    let lines = verdict_lines(&out);
+    assert_eq!(
+        lines[0],
+        "PASS: broken (1 tests, 1 flaky, KrSample-Verify-1)"
+    );
+    assert_eq!(
+        lines[1],
+        format!(
+            "  flaky: {BROKEN_TEST} (failed again when run on its own; the agent judged it flaky: it passed in the last 20 runs)"
+        )
+    );
+    assert!(
+        out.lines().last().unwrap().starts_with("run: 1/1 PASS · "),
+        "{out}"
+    );
+
+    let events = s.events();
+    let decision = Sample::kinds(&events, "decision")[0];
+    assert_eq!(decision["id"], id.as_str());
+    assert_eq!(decision["choice"], "flaky");
+    assert_eq!(decision["reason"], "it passed in the last 20 runs");
+    assert_eq!(decision["via"], "kr decide");
+    assert_eq!(decision["by"]["agent"], "claude");
+    assert_eq!(decision["evidence"]["signature"], "failed - asked to fail");
+    let decided = events.iter().find(|e| e["type"] == "run_decided").unwrap();
+    assert_eq!(decided["run_id"], run_id.as_str());
+    assert_eq!(decided["fields"]["ok"], true);
+    assert_eq!(decided["fields"]["decisions"], serde_json::json!([id]));
+
+    // The same failure again on the same build inputs: kr has seen it now, so its
+    // rules decide (FAIL), and the flaky judgment is not supported.
+    let (code, out) = s.kr(&broken(), &["run", "broken"]);
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.starts_with("FAIL: broken"), "{out}");
+    let events = s.events();
+    let reconciled = Sample::kinds(&events, "reconciliation");
+    assert_eq!(reconciled.len(), 1, "{events:?}");
+    let r = reconciled[0];
+    assert_eq!(r["id"], id.as_str());
+    assert_eq!(r["decided_run"], run_id.as_str());
+    assert_eq!(r["choice"], "flaky");
+    assert_eq!(r["later"]["outcome"], "failed");
+    assert_eq!(r["later"]["run_id"], s.run_id().as_str());
+    assert_eq!(r["supported"], false);
+
+    // Reconciled once: a third run adds none.
+    s.kr(&broken(), &["run", "broken"]);
+    assert_eq!(Sample::kinds(&s.events(), "reconciliation").len(), 1);
+}
+
+#[test]
+fn a_decision_handed_back_on_the_next_run_command_is_recorded_like_kr_decide() {
+    let s = Sample::new();
+    let id = s.stopped_at_a_decision()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let flag = format!("{id}=product");
+    let (code, out) = s.kr(
+        &[],
+        &[
+            "run",
+            "--decide",
+            &flag,
+            "--reason",
+            "asked to fail is a real bug",
+        ],
+    );
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.starts_with("FAIL: broken"), "{out}");
+    let events = s.events();
+    assert_eq!(
+        Sample::kinds(&events, "decision")[0]["via"],
+        "kr run --decide"
+    );
+    assert_eq!(Sample::kinds(&events, "run_decided")[0]["ok"], false);
+
+    s.kr(&broken(), &["run", "broken"]);
+    let r = Sample::kinds(&s.events(), "reconciliation")[0].clone();
+    assert_eq!(r["choice"], "product");
+    assert_eq!(r["supported"], true);
+}
+
+#[test]
+fn an_environment_judgment_leaves_the_test_unverified_which_is_not_a_pass() {
+    let s = Sample::new();
+    let id = s.stopped_at_a_decision()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (code, out) = s.kr(
+        &[],
+        &[
+            "--json",
+            "decide",
+            &id,
+            "environment",
+            "--reason",
+            "the simulator hung",
+        ],
+    );
+    assert_eq!(code, Some(1), "{out}");
+    let out: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(out["concluded"], true);
+    assert_eq!(out["decisions"], serde_json::json!([]));
+    let item = &out["items"][0];
+    assert_eq!(item["passed"], false);
+    assert_eq!(item["tests"]["unverified"], 1);
+    assert_eq!(item["tests"]["failed"], 0);
+    assert_eq!(
+        item["unverified_reason"],
+        format!("the agent judged {BROKEN_TEST} an environment failure: the simulator hung")
+    );
+}
+
+#[test]
+fn a_wrong_decision_argument_exits_2_and_says_what_is_valid() {
+    let s = Sample::new();
+    let id = s.stopped_at_a_decision()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (code, out) = s.kr(&[], &["decide", &id, "maybe", "--reason", "x"]);
+    assert_eq!(code, Some(2), "{out}");
+    assert!(
+        out.contains("`maybe` is not an option of")
+            && out.contains("choose one of: product, flaky, environment"),
+        "{out}"
+    );
+    let (code, out) = s.kr(&[], &["decide", "nonsense", "product", "--reason", "x"]);
+    assert_eq!(code, Some(2), "{out}");
+    assert!(out.contains("is not a decision ID"), "{out}");
+
+    let (code, _) = s.kr(&[], &["decide", &id, "product", "--reason", "x"]);
+    assert_eq!(code, Some(1));
+    let (code, out) = s.kr(&[], &["--json", "decide", &id, "flaky", "--reason", "y"]);
+    assert_eq!(code, Some(2), "{out}");
+    let err: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(err["error"]["code"], "kr::bad_arguments");
+    assert!(
+        err["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("is decided already: product"),
+        "{err}"
+    );
+    // Only one decision event: the refused ones left no trace.
+    assert_eq!(Sample::kinds(&s.events(), "decision").len(), 1);
+}
+
+#[test]
+fn rejudge_shows_a_decision_point_with_its_decision_and_reconciliation() {
+    let s = Sample::new();
+    let id = s.stopped_at_a_decision()["decisions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let decided_run = s.run_id();
+    s.kr(&[], &["decide", &id, "flaky", "--reason", "timing"]);
+    s.kr(&broken(), &["run", "broken"]);
+    let later_run = s.run_id();
+
+    let out = s.json(&[], &["rejudge"]);
+    assert_eq!(out["changed"], 0);
+    // The second run's failure was seen by then: only the first run has a decision point.
+    let points = out["decision_points"].as_array().unwrap();
+    assert_eq!(points.len(), 1, "{out}");
+    let p = &points[0];
+    assert_eq!(p["run_id"], decided_run.as_str());
+    assert_eq!(p["item"], "broken");
+    assert_eq!(p["test"], BROKEN_TEST);
+    assert_eq!(p["default"], "product");
+    assert_eq!(p["id"], id.as_str());
+    assert_eq!(p["decision"]["choice"], "flaky");
+    assert_eq!(p["reconciliation"]["recorded"], true);
+    assert_eq!(p["reconciliation"]["supported"], false);
+
+    let (code, text) = s.kr(&[], &["rejudge"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(
+        text.lines().collect::<Vec<_>>(),
+        [
+            format!(
+                "DECISION POINT: {decided_run} broken: {BROKEN_TEST}: unseen assertion failure; kr suggests product"
+            )
+            .as_str(),
+            format!("  {id}: decided flaky via kr decide: timing").as_str(),
+            format!("  reconciled by run {later_run}: failed → not supported").as_str(),
+            "rejudge: 2 items in 2 runs; no verdict changed; 1 decision point (1 decided, 1 reconciled, 0 supported)",
+        ]
+    );
+}
+
+#[test]
+fn rejudge_raises_the_decision_points_of_runs_from_before_them() {
+    // A run of a kr without decision points: it judged the failure FAIL and recorded no
+    // decision point.
+    let s = Sample::new();
+    s.stopped_at_a_decision();
+    let dir = s.state().join("events");
+    for e in std::fs::read_dir(&dir).unwrap() {
+        let path = e.unwrap().path();
+        let kept: String = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .filter(|l| !l.contains("\"type\":\"decision_point\""))
+            .map(|l| format!("{l}\n"))
+            .collect();
+        std::fs::write(&path, kept).unwrap();
+    }
+    let out = s.json(&[], &["rejudge"]);
+    let p = &out["decision_points"][0];
+    assert_eq!(p["test"], BROKEN_TEST);
+    assert_eq!(p["id"], serde_json::Value::Null);
+    let (_, text) = s.kr(&[], &["rejudge"]);
+    assert!(
+        text.contains("  not raised when it ran (a kr without decision points): it was FAIL then"),
+        "{text}"
+    );
 }

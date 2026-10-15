@@ -44,6 +44,9 @@ enum Command {
     Run(commands::run::RunArgs),
     /// Run a gate from .kr.toml: its suites and scenarios, like `kr run`.
     Gate(commands::run::GateArgs),
+    /// Hand back a decision of a run that stopped at decision points (exit 4): kr
+    /// records it and, once all are decided, gives the run's verdict from its results.
+    Decide(commands::decide::DecideArgs),
     /// Show what `kr run` / `kr gate` would do without doing it: cached builds, why each
     /// item runs, the lanes, and the expected time from history. With --exit-code, exit
     /// 3 when there is work to do.
@@ -61,6 +64,9 @@ enum Command {
     /// Draft the delivery report of a run: decided by machine, needs human judgment of
     /// feel, not verified. Lists the to-dos the run and the changed files show.
     Deliver(commands::deliver::DeliverArgs),
+    /// How to use this kr, for the agent that calls it: the usual flow, decision points,
+    /// when to ask the owner, the hard rules. With project and personal additions.
+    Skill(commands::skill::SkillArgs),
 }
 
 pub use ctx::{Ctx, Loaded};
@@ -86,13 +92,19 @@ fn main() -> ExitCode {
         Command::Check(args) => commands::check::run(&ctx, args),
         Command::Run(args) => commands::run::run(&ctx, args),
         Command::Gate(args) => commands::run::gate(&ctx, args),
+        Command::Decide(args) => commands::decide::run(&ctx, args),
         Command::Deliver(args) => commands::deliver::run(&ctx, args),
+        Command::Skill(args) => commands::skill::run(&ctx, args),
     };
     match result {
         Ok(code) => code,
         Err(err) => {
             output::report_error(&err, ctx.json);
-            ExitCode::FAILURE
+            if err.downcast_ref::<output::BadArguments>().is_some() {
+                ExitCode::from(output::BAD_ARGUMENTS)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }

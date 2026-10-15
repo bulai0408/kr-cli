@@ -156,7 +156,7 @@ pub fn run(ctx: &Ctx, args: SimulateArgs) -> Result<ExitCode> {
     };
     let report = simulate(&runs, &args, &ipad)?;
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        crate::output::print_json(&report)?;
     } else {
         print!("{}", human(&report));
     }

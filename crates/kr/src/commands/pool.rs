@@ -88,10 +88,7 @@ fn status(
         })
         .collect();
     if ctx.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({ "devices": rows }))?
-        );
+        crate::output::print_json(&json!({ "devices": rows }))?;
         return Ok(ExitCode::SUCCESS);
     }
     let missing = devices.iter().filter(|d| d.udid.is_none()).count();
@@ -130,7 +127,7 @@ fn status(
 fn sync(ctx: &Ctx, project: &ProjectConfig, simctl: &Simctl<'_>) -> Result<ExitCode> {
     let report = kr_sim::sync(simctl, project)?;
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
+        crate::output::print_json(&report)?;
     } else {
         if report.problems.is_empty() {
             println!(

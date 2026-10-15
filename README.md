@@ -52,6 +52,15 @@ kr rejudge --evidence ~/orca/workspaces/Krill/v0-evidence
 # 9. 交付报告初稿：机器判定 / 需人判断手感 / 未验证三段；--base 给出起点分支，
 #    改动里的 schema（待部署）、Artboard（手感）、法律文本（owner 复核）自动列入
 kr deliver --base main
+
+# 10. 运行遇到 kr 规则覆盖不到的失败：跑完全部场景，不给结论，退出 4，列出判断点；
+#     agent 按证据交回决定，kr 按已有结果给出最终结论，不重跑
+kr decide <判断点 ID> product --reason "断言的是 App 的数据，不是环境"
+kr run --decide <判断点 ID>=flaky --reason "..."   # 也可以在下一条运行命令上交回
+
+# 11. 给调用 kr 的 agent 读的使用说明，与当前版本一致；项目 .kr/skill.md、个人 ~/.config/kr/skill.md 追加在后面
+kr skill
+kr skill --reference decisions
 ```
 
 每个命令都支持 `--json`，给 agent 读。
@@ -60,6 +69,8 @@ kr deliver --base main
 - 构建一次：输入（git 知道的文件内容、xcodebuild 命令行、Xcode）没变就复用上次的测试产物，不再构建。
 - 每个场景先在租到的模拟器上真实枚举测试，0 条即失败；运行后从 xcresult 核对：实际跑的测试必须正好是枚举出的那些，xcodebuild 的退出码和测试结果必须一致。
 - 失败的测试单独重跑一次：通过记为偶发（场景仍通过，输出里列出），仍失败记为失败。
+- 仍失败、而且这条测试的这种失败在过去 90 天里没见过时，kr 不替 agent 判断：跑完全部场景后不给结论，退出 4，`--json` 的 `decisions` 列出判断点（证据、选项、默认建议），人读输出单独一段写明下一步命令（ADR 0011、0015）。见过的失败照常记为失败。
+- 每个 `--json` 输出都有 `schema_version`（现为 1）和 `decisions`；字段只加不改。
 - 模拟器通道按固定顺序排队拿槽位：先 iPad，再其他类型（按名字）。
 - 每个场景有硬超时（默认 20 分钟，`.kr.toml` 里 `timeout` 可改），超时终止整个进程组并判失败。
 - 结果包在 `build/kr/results/<场景>/`，日志在 `~/.local/state/kr/runs/<运行 ID>/`，事件在 `~/.local/state/kr/events/`。

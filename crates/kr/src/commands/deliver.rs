@@ -168,7 +168,7 @@ pub fn run(ctx: &Ctx, args: DeliverArgs) -> Result<ExitCode> {
     }
 
     if ctx.json {
-        println!("{}", serde_json::to_string_pretty(&draft)?);
+        crate::output::print_json(&draft)?;
     } else {
         print!("{}", markdown(&draft));
     }

@@ -1,13 +1,13 @@
 //! What the events keep of each test (ADR 0010): its time, and for a failure a
 //! signature and a category, so failures can be grouped and counted across runs.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{Final, Verdict};
 
 /// Where a failure comes from, by its message. `Unknown` when no rule matches: kr does
 /// not guess.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Category {
     Assertion,
@@ -132,14 +132,14 @@ pub fn signature(message: &str) -> String {
 }
 
 /// One test of a verdict as the events keep it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Case {
     pub id: String,
     pub outcome: Final,
     pub duration_s: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category: Option<Category>,
 }
 
