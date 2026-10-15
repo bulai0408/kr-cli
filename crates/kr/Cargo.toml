@@ -32,6 +32,9 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 kr-exec.workspace = true
+kr-resource.workspace = true
+jiff.workspace = true
+libc.workspace = true
 assert_cmd.workspace = true
 insta.workspace = true
 tempfile.workspace = true

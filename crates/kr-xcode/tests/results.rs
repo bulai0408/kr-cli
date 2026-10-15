@@ -86,13 +86,61 @@ fn a_rerun_result_has_just_the_rerun_test() {
 }
 
 #[test]
-fn only_testing_ids_drop_the_parentheses_of_xctest_methods() {
+fn rerun_filters_follow_the_test_framework_of_each_case() {
+    // Real output: the URL of an XCTest case has no "()", a Swift Testing one has.
+    let results = parse_test_results(&read("xcresult/sample-r1-tests.json")).unwrap();
+    let filter = |id: &str| {
+        results
+            .iter()
+            .find(|c| c.id == id)
+            .map(|c| c.filter.clone())
+            .unwrap()
+    };
     assert_eq!(
-        only_testing_id("KrSampleUITests/LaunchUITests/testFlakyOnce()"),
+        filter("KrSampleUITests/LaunchUITests/testFlakyOnce()"),
         "KrSampleUITests/LaunchUITests/testFlakyOnce"
     );
     assert_eq!(
-        only_testing_id("KrSampleTests/GreetingTests/greetsByName()"),
+        filter("KrSampleTests/GreetingTests/greetsByName()"),
+        "KrSampleTests/GreetingTests/greetsByName()"
+    );
+}
+
+#[test]
+fn a_swift_testing_function_named_test_keeps_its_parentheses() {
+    // Krill #125: `testLocalBackend…()` is a Swift Testing function; without "()" its
+    // rerun selected 0 tests.
+    let json = read("xcresult/sample-r1-tests.json").replace("greetsByName", "testGreetsByName");
+    let results = parse_test_results(&json).unwrap();
+    let case = results
+        .iter()
+        .find(|c| c.id == "KrSampleTests/GreetingTests/testGreetsByName()")
+        .unwrap();
+    assert_eq!(
+        case.filter,
+        "KrSampleTests/GreetingTests/testGreetsByName()"
+    );
+}
+
+#[test]
+fn a_parameterized_swift_testing_function_keeps_its_argument_labels() {
+    let json = read("xcresult/sample-r1-tests.json").replace("greetsByName()", "greets(name:)");
+    let results = parse_test_results(&json).unwrap();
+    assert!(
+        results
+            .iter()
+            .any(|c| c.filter == "KrSampleTests/GreetingTests/greets(name:)")
+    );
+}
+
+#[test]
+fn without_a_url_rerun_filters_fall_back_to_the_method_name() {
+    assert_eq!(
+        only_testing_id("KrSampleUITests/LaunchUITests/testFlakyOnce()", None),
+        "KrSampleUITests/LaunchUITests/testFlakyOnce"
+    );
+    assert_eq!(
+        only_testing_id("KrSampleTests/GreetingTests/greetsByName()", None),
         "KrSampleTests/GreetingTests/greetsByName()"
     );
 }

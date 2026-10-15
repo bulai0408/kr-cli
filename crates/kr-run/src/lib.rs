@@ -1,7 +1,7 @@
 //! Decisions of `kr run` that do not touch the machine (ADR 0005): whether a scenario
 //! passed, what the build inputs hash to, and in which order work goes to simulators.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -15,6 +15,8 @@ pub struct Attempt {
     pub timed_out: bool,
     /// Test cases from the result bundle; `None` if it is missing or unreadable.
     pub results: Option<Vec<TestCase>>,
+    /// Where the result bundle should be, to name it when it is missing.
+    pub bundle: Option<PathBuf>,
 }
 
 /// The four results a test can end with.
@@ -93,8 +95,13 @@ pub fn judge(enumeration: &Enumeration, first: &Attempt, reruns: &[Option<Attemp
         v.reasons.push("the filters select 0 tests".to_owned());
     }
     let Some(results) = &first.results else {
-        v.reasons
-            .push("no test results (the result bundle is missing or unreadable)".to_owned());
+        v.reasons.push(match &first.bundle {
+            Some(bundle) => format!(
+                "no test results: {} is missing or unreadable",
+                bundle.display()
+            ),
+            None => "no test results (the result bundle is missing or unreadable)".to_owned(),
+        });
         return v;
     };
 

@@ -68,7 +68,9 @@ pub enum EventKind {
     /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
     /// tests (counts per outcome), flaky.
     ItemEnd,
-    /// A failed test was run again on its own. Fields: item, test, passed.
+    /// A failed test was run again on its own. Fields: item, test, passed, filter
+    /// (`-only-testing:…`), `filter_invalid` (the filter selected no test, so it did not
+    /// run).
     Rerun,
     /// A filter passed the static check but selected nothing on the device.
     FilterMismatch,
@@ -76,6 +78,14 @@ pub enum EventKind {
     SimLeased,
     /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.
     SimReleased,
+    /// A run stopped on SIGINT, SIGTERM or SIGHUP. Fields: signal ("SIGTERM"),
+    /// interrupted (items stopped midway), `not_started`, finished.
+    RunAborted,
+    /// The test products of an item were gone when it was about to start. Fields: item,
+    /// products (directory).
+    ProductsMissing,
+    /// The run rebuilt missing test products (once per build). Fields: item, ok.
+    ProductsRebuilt,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

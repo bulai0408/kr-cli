@@ -2,7 +2,7 @@
 //! suite on leased pool simulators, check the results against the enumeration, rerun
 //! failures once, and report PASS/FAIL per item.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Mutex;
@@ -128,11 +128,19 @@ struct Shared<'a> {
     project: &'a ProjectConfig,
     root: &'a Path,
     jobs: &'a [BuildJob],
+    /// Input hash of each job, recorded again after a rebuild.
+    hashes: &'a [Option<String>],
     runner: &'a dyn Runner,
     developer_dir: Option<&'a Path>,
     run_id: RunId,
+    /// Jobs whose missing test products this run has rebuilt (once each).
+    rebuilt: Mutex<BTreeSet<usize>>,
+    /// Items a stop signal ended midway.
+    interrupted: Mutex<Vec<String>>,
 }
 
+/// Runs, and if a stop signal (SIGINT, SIGTERM, SIGHUP) ends it, records that, reports
+/// what finished and exits with 128 + the signal number.
 fn execute(
     ctx: &Ctx,
     loaded: &Loaded,
@@ -141,9 +149,112 @@ fn execute(
     sel: &Selection,
     label: String,
 ) -> Result<ExitCode> {
+    kr_exec::catch_stop_signals()?;
+    let run_id = RunId::new();
+    let result = execute_run(ctx, loaded, project, root, sel, &label, run_id);
+    match (result, kr_exec::stop_signal()) {
+        // Stopped before any item ran, e.g. while building.
+        (Err(e), Some(signal)) => {
+            tracing::info!("stopped: {e:#}");
+            let all: Vec<String> = sel.suites.iter().chain(&sel.scenarios).cloned().collect();
+            let stop = Stopped {
+                signal,
+                interrupted: Vec::new(),
+                not_started: all,
+            };
+            stop.record(loaded, run_id, &[])?;
+            stop.report(ctx, &label, &[])?;
+            Ok(stop.exit_code())
+        }
+        (result, _) => result,
+    }
+}
+
+/// How a stop signal left the run.
+struct Stopped {
+    signal: i32,
+    interrupted: Vec<String>,
+    not_started: Vec<String>,
+}
+
+impl Stopped {
+    fn name(&self) -> String {
+        match self.signal {
+            libc::SIGINT => "SIGINT".to_owned(),
+            libc::SIGTERM => "SIGTERM".to_owned(),
+            libc::SIGHUP => "SIGHUP".to_owned(),
+            n => format!("signal {n}"),
+        }
+    }
+
+    fn exit_code(&self) -> ExitCode {
+        ExitCode::from(u8::try_from(128 + self.signal).unwrap_or(1))
+    }
+
+    fn record(&self, loaded: &Loaded, run_id: RunId, finished: &[ItemResult]) -> Result<()> {
+        loaded.events().append(&Event::now(
+            run_id,
+            loaded.project(),
+            EventKind::RunAborted,
+            json!({
+                "signal": self.name(),
+                "interrupted": self.interrupted,
+                "not_started": self.not_started,
+                "finished": finished.iter().map(|r| &r.name).collect::<Vec<_>>(),
+            }),
+        ))
+    }
+
+    fn json(&self) -> serde_json::Value {
+        json!({
+            "signal": self.name(),
+            "interrupted": self.interrupted,
+            "not_started": self.not_started,
+        })
+    }
+
+    /// For the human report: `ABORTED: <label> (SIGTERM) · interrupted: … · not started: …`.
+    fn line(&self, label: &str) -> String {
+        let mut line = format!("ABORTED: {label} ({})", self.name());
+        if !self.interrupted.is_empty() {
+            line += &format!(" · interrupted: {}", self.interrupted.join(", "));
+        }
+        if !self.not_started.is_empty() {
+            line += &format!(" · not started: {}", self.not_started.join(", "));
+        }
+        line
+    }
+
+    /// The report when nothing finished.
+    fn report(&self, ctx: &Ctx, label: &str, results: &[ItemResult]) -> Result<()> {
+        if ctx.json {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json!({
+                    "ok": false,
+                    "label": label,
+                    "items": results,
+                    "aborted": self.json(),
+                }))?
+            );
+        } else {
+            println!("{}", self.line(label));
+        }
+        Ok(())
+    }
+}
+
+fn execute_run(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    project: &ProjectConfig,
+    root: &Path,
+    sel: &Selection,
+    label: &str,
+    run_id: RunId,
+) -> Result<ExitCode> {
     let started = Instant::now();
     let runner = ctx.runner()?;
-    let run_id = RunId::new();
     let developer_dir = loaded.developer_dir(ctx)?;
     let jobs = check::build_jobs(project, sel)?;
     let mut steps = Steps {
@@ -196,7 +307,7 @@ fn execute(
         )?;
     }
     if !built {
-        report_build_failure(ctx, &label, &steps.results)?;
+        report_build_failure(ctx, label, &steps.results)?;
         return Ok(ExitCode::FAILURE);
     }
 
@@ -206,11 +317,15 @@ fn execute(
         project,
         root,
         jobs: &jobs,
+        hashes: &hashes,
         runner: runner.as_ref(),
         developer_dir: developer_dir.as_deref(),
         run_id,
+        rebuilt: Mutex::new(BTreeSet::new()),
+        interrupted: Mutex::new(Vec::new()),
     };
     let mut results: Vec<ItemResult> = Vec::new();
+    let mut not_started: Vec<String> = Vec::new();
     // Build suites passed when their build did.
     for name in &sel.suites {
         if let Suite::Build { .. } = &project.suites[name] {
@@ -221,17 +336,23 @@ fn execute(
     }
     for name in &sel.suites {
         if let Suite::Command { run, dir, timeout } = &project.suites[name] {
-            results.push(run_command_suite(
-                &shared,
-                name,
-                run,
-                dir.as_deref(),
-                timeout.as_deref(),
-            )?);
+            if kr_exec::stop_signal().is_some() {
+                not_started.push(name.clone());
+                continue;
+            }
+            match run_command_suite(&shared, name, run, dir.as_deref(), timeout.as_deref()) {
+                Ok(r) => results.push(r),
+                Err(_) if kr_exec::stop_signal().is_some() => {
+                    shared.interrupted.lock().unwrap().push(name.clone());
+                }
+                Err(e) => results.push(failed_item(&shared, name, "suite", None, &e)?),
+            }
         }
     }
     let items = work_items(project, sel, &jobs)?;
-    results.extend(run_items(&shared, items)?);
+    let (done, left) = run_items(&shared, items)?;
+    results.extend(done);
+    not_started.extend(left);
 
     // Report in the order of the selection.
     let order: Vec<&String> = sel.suites.iter().chain(&sel.scenarios).collect();
@@ -241,8 +362,26 @@ fn execute(
             .position(|n| **n == r.name)
             .unwrap_or(usize::MAX)
     });
+    if let Some(signal) = kr_exec::stop_signal() {
+        let stop = Stopped {
+            signal,
+            interrupted: shared.interrupted.into_inner().unwrap(),
+            not_started,
+        };
+        stop.record(loaded, run_id, &results)?;
+        report(
+            ctx,
+            label,
+            &steps,
+            &results,
+            false,
+            started.elapsed(),
+            Some(&stop),
+        )?;
+        return Ok(stop.exit_code());
+    }
     let ok = results.iter().all(|r| r.passed);
-    report(ctx, &label, &steps, &results, ok, started.elapsed())?;
+    report(ctx, label, &steps, &results, ok, started.elapsed(), None)?;
     Ok(if ok {
         ExitCode::SUCCESS
     } else {
@@ -381,18 +520,31 @@ fn run_command_suite_once(
 }
 
 /// Runs simulator items in lanes (one leased device each, at most `sim` capacity at
-/// once), longest first; Mac items one after another.
-fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<Vec<ItemResult>> {
+/// once), longest first; Mac items one after another. An item that errors fails on its
+/// own; a lane that errors fails the items it could not run. After a stop signal no
+/// item starts: returns the results and the names of the items not started.
+fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<(Vec<ItemResult>, Vec<String>)> {
     let history = durations(s.loaded);
     let items = longest_first(items, |i| history.get(&i.name).copied());
     let (mac, sim): (Vec<WorkItem>, Vec<WorkItem>) =
         items.into_iter().partition(|i| i.device.is_none());
     let mut results = Vec::new();
+    let mut not_started = Vec::new();
     for item in &mac {
-        results.push(run_item(s, item, None)?);
+        if kr_exec::stop_signal().is_some() {
+            not_started.push(item.name.clone());
+            continue;
+        }
+        if let Some(r) = run_item_or_fail(s, item, None)? {
+            results.push(r);
+        }
     }
     if sim.is_empty() {
-        return Ok(results);
+        return Ok((results, not_started));
+    }
+    if kr_exec::stop_signal().is_some() {
+        not_started.extend(sim.into_iter().map(|i| i.name));
+        return Ok((results, not_started));
     }
     let simctl = Simctl::new(s.runner, s.developer_dir.map(Path::to_path_buf));
     let pool = kr_sim::plan(s.project, &simctl.runtimes()?, &simctl.devices()?)?;
@@ -405,7 +557,7 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<Vec<ItemResult>> {
             .push_back(item);
     }
     let collected = Mutex::new(Vec::new());
-    let errors = Mutex::new(Vec::new());
+    let errors: Mutex<Vec<(String, anyhow::Error)>> = Mutex::new(Vec::new());
     // (kind, work queue, lanes); kinds without devices fail right away.
     let mut lanes_of: Vec<(String, Mutex<VecDeque<WorkItem>>, usize)> = Vec::new();
     for (kind, queue) in by_kind {
@@ -432,17 +584,39 @@ fn run_items(s: &Shared<'_>, items: Vec<WorkItem>) -> Result<Vec<ItemResult>> {
                 let (pool, collected, errors, simctl) = (&pool, &collected, &errors, &simctl);
                 scope.spawn(move || {
                     if let Err(e) = lane(s, simctl, pool, kind, queue, collected) {
-                        errors.lock().unwrap().push(e);
+                        errors.lock().unwrap().push((kind.clone(), e));
                     }
                 });
             }
         }
     });
-    if let Some(e) = errors.into_inner().unwrap().into_iter().next() {
-        return Err(e);
+    let mut collected = collected.into_inner().unwrap();
+    let errors = errors.into_inner().unwrap();
+    for (kind, queue, _) in lanes_of {
+        let left = queue.into_inner().unwrap();
+        if kr_exec::stop_signal().is_some() {
+            not_started.extend(left.into_iter().map(|i| i.name));
+            continue;
+        }
+        // Every lane of this kind failed before the queue was empty.
+        let why = errors
+            .iter()
+            .find(|(k, _)| *k == kind)
+            .map_or_else(|| "no lane ran it".to_owned(), |(_, e)| format!("{e:#}"));
+        for item in left {
+            let mut r = ItemResult::new(&item.name, item.kind);
+            r.summary = vec![format!("not run: the `{kind}` lane failed: {why}")];
+            item_event(s, &r)?;
+            collected.push(r);
+        }
     }
-    results.extend(collected.into_inner().unwrap());
-    Ok(results)
+    for (kind, e) in &errors {
+        if kr_exec::stop_signal().is_none() {
+            eprintln!("warning: a `{kind}` lane failed: {e:#}");
+        }
+    }
+    results.extend(collected);
+    Ok((results, not_started))
 }
 
 fn lane(
@@ -453,13 +627,13 @@ fn lane(
     queue: &Mutex<VecDeque<WorkItem>>,
     collected: &Mutex<Vec<ItemResult>>,
 ) -> Result<()> {
-    if queue.lock().unwrap().is_empty() {
+    if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
         return Ok(());
     }
     let task = format!("run {kind} lane");
     let taken = slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Sim, &task)?;
     // Other lanes may have finished the work while this one waited for its slot.
-    if queue.lock().unwrap().is_empty() {
+    if queue.lock().unwrap().is_empty() || kr_exec::stop_signal().is_some() {
         return slots::give_back(s.loaded, s.run_id, taken, Some(0));
     }
     let holder = LeaseHolder {
@@ -486,12 +660,14 @@ fn lane(
     ))?;
     let held_since = Instant::now();
     let mut outcome = Ok(());
-    loop {
+    // No new item after a stop signal.
+    while kr_exec::stop_signal().is_none() {
         let Some(item) = queue.lock().unwrap().pop_front() else {
             break;
         };
-        match run_item(s, &item, Some((&name, &udid))) {
-            Ok(r) => collected.lock().unwrap().push(r),
+        match run_item_or_fail(s, &item, Some((&name, &udid))) {
+            Ok(Some(r)) => collected.lock().unwrap().push(r),
+            Ok(None) => {}
             Err(e) => {
                 outcome = Err(e);
                 break;
@@ -561,6 +737,125 @@ fn results_dir(item: &str) -> PathBuf {
     Path::new(RESULTS).join(item)
 }
 
+/// Runs one item; an error fails just this item (Krill #125: one error lost every
+/// verdict of a finished run). `None` when a stop signal ended it midway.
+fn run_item_or_fail(
+    s: &Shared<'_>,
+    item: &WorkItem,
+    device: Option<(&str, &str)>,
+) -> Result<Option<ItemResult>> {
+    match run_item(s, item, device) {
+        Ok(r) => Ok(Some(r)),
+        Err(_) if kr_exec::stop_signal().is_some() => {
+            s.interrupted.lock().unwrap().push(item.name.clone());
+            Ok(None)
+        }
+        Err(e) => failed_item(s, &item.name, item.kind, device.map(|d| d.0), &e).map(Some),
+    }
+}
+
+/// A failed item for an error that kept it from finishing; records its end.
+fn failed_item(
+    s: &Shared<'_>,
+    name: &str,
+    kind: &'static str,
+    device: Option<&str>,
+    error: &anyhow::Error,
+) -> Result<ItemResult> {
+    let mut r = ItemResult::new(name, kind);
+    r.device = device.map(str::to_owned);
+    r.summary = vec![format!("{error:#}")];
+    r.log = Some(s.loaded.run_dir(s.run_id).join(name));
+    item_event(s, &r)?;
+    Ok(r)
+}
+
+/// Test products can disappear while a run waits (Krill: a workspace deleted midway).
+/// Before each item: if they are gone, rebuild them once under a `build` slot.
+/// `Ok(Some(note))` after a rebuild; `Err` says why the item cannot run and what to do.
+fn ensure_products(s: &Shared<'_>, item: &WorkItem) -> Result<Option<String>, String> {
+    let job = &s.jobs[item.job];
+    let products = job.products(s.root);
+    let present = || XcTestRun::find(&products, &job.scheme).is_ok();
+    if present() {
+        return Ok(None);
+    }
+    let rebuilt_note = "test products were missing before the item started; rebuilt them";
+    // One lane rebuilds; the others wait here and find the products back.
+    let mut rebuilt = s.rebuilt.lock().unwrap();
+    if present() {
+        return Ok(Some(rebuilt_note.to_owned()));
+    }
+    let still_missing = format!(
+        "test products are still missing after rebuilding them once ({}); something deletes them during the run: stop it, run `kr check`, then run again",
+        products.display()
+    );
+    if !rebuilt.insert(item.job) {
+        return Err(still_missing);
+    }
+    let event = |kind, fields| {
+        s.loaded
+            .events()
+            .append(&Event::now(s.run_id, s.loaded.project(), kind, fields))
+            .map_err(|e| format!("{e:#}"))
+    };
+    event(
+        EventKind::ProductsMissing,
+        json!({ "item": item.name, "products": products }),
+    )?;
+    let mut steps = Steps {
+        loaded: s.loaded,
+        run_id: s.run_id,
+        command: "run",
+        results: Vec::new(),
+        cached: Vec::new(),
+    };
+    let built = (|| -> Result<bool> {
+        let task = format!("run rebuild {}", job.scheme);
+        let taken = slots::take(s.ctx, s.loaded, s.runner, s.run_id, Resource::Build, &task)?;
+        let todo = [(job, s.hashes[item.job].clone())];
+        let result = check::build(
+            s.project,
+            s.root,
+            &todo,
+            s.runner,
+            s.developer_dir,
+            &mut steps,
+        );
+        slots::give_back(
+            s.loaded,
+            s.run_id,
+            taken,
+            Some(if matches!(result, Ok(true)) { 0 } else { 1 }),
+        )?;
+        result
+    })();
+    let ok = matches!(built, Ok(true)) && present();
+    event(
+        EventKind::ProductsRebuilt,
+        json!({ "item": item.name, "ok": ok }),
+    )?;
+    match built {
+        Err(e) => Err(format!(
+            "test products were missing ({}) and rebuilding them failed: {e:#}; run `kr check`, then run again",
+            products.display()
+        )),
+        Ok(false) => {
+            let failed = steps.results.iter().find(|r| !r.ok);
+            let log = failed
+                .and_then(|r| r.log.as_ref())
+                .map(|l| format!(" (log: {})", l.display()))
+                .unwrap_or_default();
+            Err(format!(
+                "test products were missing ({}) and rebuilding them failed{log}; fix the build with `kr check`, then run again",
+                products.display()
+            ))
+        }
+        Ok(true) if ok => Ok(Some(rebuilt_note.to_owned())),
+        Ok(true) => Err(still_missing),
+    }
+}
+
 /// Runs one item, sampling the machine load before and after. A failure during high
 /// load (`[load] per_core`) is marked as such and the whole item runs once more; if it
 /// passes then, the item counts as flaky (ADR 0003).
@@ -572,6 +867,17 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
         EventKind::ItemStart,
         json!({ "item": item.name, "kind": item.kind, "device": device.map(|d| d.0) }),
     ))?;
+    let rebuilt = match ensure_products(s, item) {
+        Ok(note) => note,
+        Err(why) => {
+            let mut r = ItemResult::new(&item.name, item.kind);
+            r.device = device.map(|d| d.0.to_owned());
+            r.summary = vec![why];
+            r.duration_ms = started.elapsed().as_millis() as u64;
+            item_event(s, &r)?;
+            return Ok(r);
+        }
+    };
     let per_core = s.loaded.config.machine.load.per_core;
     let sample = || kr_machine::read_hardware(s.runner).ok();
     let before = sample();
@@ -607,6 +913,7 @@ fn run_item(s: &Shared<'_>, item: &WorkItem, device: Option<(&str, &str)>) -> Re
         }
     }
     r.high_load = high;
+    r.notes.extend(rebuilt);
     r.duration_ms = started.elapsed().as_millis() as u64;
     item_event(s, &r)?;
     Ok(r)
@@ -656,28 +963,31 @@ fn run_item_once(
     };
 
     // What will run: the real enumeration on this device is the authority.
-    let enum_cmd = base("test-without-building")
-        .args([
-            "-enumerate-tests",
-            "-test-enumeration-style",
-            "flat",
-            "-test-enumeration-format",
-            "json",
-        ])
-        .args(filters.iter().cloned())
-        .command();
-    let enum_log = logs.join("enumerate.log");
-    let enum_out = s.runner.run_logged(
-        &with_xcode(enum_cmd, s.developer_dir)
-            .current_dir(&cwd)
-            .timeout(item.timeout),
-        &enum_log,
-    )?;
-    // The whole log: the JSON of a big project is larger than the in-memory tail.
-    let enum_text = std::fs::read_to_string(&enum_log).unwrap_or_default();
-    let enumeration = json_tail(&enum_text)
-        .and_then(|j| Enumeration::parse(j).ok())
-        .unwrap_or_default();
+    let enumerate = |filters: &[String], log: &Path| -> Result<(Enumeration, bool)> {
+        let cmd = base("test-without-building")
+            .args([
+                "-enumerate-tests",
+                "-test-enumeration-style",
+                "flat",
+                "-test-enumeration-format",
+                "json",
+            ])
+            .args(filters.iter().cloned())
+            .command();
+        let out = s.runner.run_logged(
+            &with_xcode(cmd, s.developer_dir)
+                .current_dir(&cwd)
+                .timeout(item.timeout),
+            log,
+        )?;
+        // The whole log: the JSON of a big project is larger than the in-memory tail.
+        let text = std::fs::read_to_string(log).unwrap_or_default();
+        let enumeration = json_tail(&text)
+            .and_then(|j| Enumeration::parse(j).ok())
+            .unwrap_or_default();
+        Ok((enumeration, out.timed_out))
+    };
+    let (enumeration, enum_timed_out) = enumerate(&filters, &logs.join("enumerate.log"))?;
     for f in &item.only {
         if !enumeration.hits(f) {
             let note = format!("`{f}` passed the static check but selects no test on the device");
@@ -715,18 +1025,21 @@ fn run_item_once(
                 exit: out.status,
                 timed_out: out.timed_out,
                 results,
+                bundle: Some(cwd.join(&bundle)),
             },
             bundle,
         ))
     };
 
+    let mut invalid: Vec<String> = Vec::new();
     let verdict = if enumeration.enabled.is_empty() {
         judge(
             &enumeration,
             &Attempt {
                 exit: Some(0),
-                timed_out: enum_out.timed_out,
+                timed_out: enum_timed_out,
                 results: Some(Vec::new()),
+                bundle: None,
             },
             &[],
         )
@@ -735,10 +1048,34 @@ fn run_item_once(
         r.xcresult = Some(cwd.join(&bundle));
         let mut reruns = Vec::new();
         for (n, test) in Verdict::to_rerun(&first).iter().enumerate() {
-            let (again, _) = attempt(
-                &format!("rerun-{}", n + 1),
-                vec![format!("-only-testing:{}", only_testing_id(test))],
+            let name = format!("rerun-{}", n + 1);
+            // The filter follows the test's framework (Swift Testing keeps "()").
+            let id = first
+                .results
+                .iter()
+                .flatten()
+                .find(|c| &c.id == test)
+                .map_or_else(|| only_testing_id(test, None), |c| c.filter.clone());
+            let filter = format!("-only-testing:{id}");
+            // A filter that selects nothing would "rerun" zero tests (Krill #125).
+            let (selected, _) = enumerate(
+                std::slice::from_ref(&filter),
+                &logs.join(format!("{name}-enumerate.log")),
             )?;
+            if selected.enabled.is_empty() {
+                invalid.push(format!(
+                    "rerun filter invalid: `{filter}` selects 0 tests; {test} was not run again"
+                ));
+                s.loaded.events().append(&Event::now(
+                    s.run_id,
+                    s.loaded.project(),
+                    EventKind::Rerun,
+                    json!({ "item": item.name, "test": test, "passed": false, "filter": filter, "filter_invalid": true }),
+                ))?;
+                reruns.push(None);
+                continue;
+            }
+            let (again, _) = attempt(&name, vec![filter.clone()])?;
             let passed = again.results.as_ref().is_some_and(|r| {
                 r.iter()
                     .any(|c| &c.id == test && c.outcome != kr_xcode::TestOutcome::Failed)
@@ -747,7 +1084,7 @@ fn run_item_once(
                 s.run_id,
                 s.loaded.project(),
                 EventKind::Rerun,
-                json!({ "item": item.name, "test": test, "passed": passed }),
+                json!({ "item": item.name, "test": test, "passed": passed, "filter": filter, "filter_invalid": false }),
             ))?;
             reruns.push(Some(again));
         }
@@ -758,7 +1095,11 @@ fn run_item_once(
     r.summary = if r.passed {
         Vec::new()
     } else {
-        verdict.summary()
+        invalid
+            .into_iter()
+            .chain(verdict.summary())
+            .take(3)
+            .collect()
     };
     r.flaky = verdict
         .tests
@@ -821,6 +1162,7 @@ fn report(
     results: &[ItemResult],
     ok: bool,
     elapsed: Duration,
+    stopped: Option<&Stopped>,
 ) -> Result<()> {
     let passed = results.iter().filter(|r| r.passed).count();
     let build = if steps.results.iter().any(|s| s.step.starts_with("build")) {
@@ -843,6 +1185,7 @@ fn report(
             "build": { "steps": steps.results, "cached": steps.cached },
             "items": results,
             "duration_ms": elapsed.as_millis() as u64,
+            "aborted": stopped.map(Stopped::json),
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
@@ -885,6 +1228,10 @@ fn report(
         for note in &r.notes {
             println!("  note: {note}");
         }
+    }
+    if let Some(stop) = stopped {
+        println!("{}", stop.line(label));
+        return Ok(());
     }
     println!(
         "{label}: {passed}/{} PASS · {build} · {}",

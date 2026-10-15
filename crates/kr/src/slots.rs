@@ -60,6 +60,10 @@ pub fn take(
         if let Some(slot) = ticket.try_acquire(capacity)? {
             break slot;
         }
+        // Only commands that catch stop signals (see kr_exec) see one here.
+        if let Some(signal) = kr_exec::stop_signal() {
+            anyhow::bail!("stopped by signal {signal} while waiting for {res}");
+        }
         if !announced {
             announced = true;
             announce_wait(ctx, loaded, res, capacity)?;

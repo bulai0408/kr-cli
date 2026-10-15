@@ -17,6 +17,7 @@ fn case(id: &str, outcome: TestOutcome) -> TestCase {
         outcome,
         duration_s: 1.0,
         failure: (outcome == TestOutcome::Failed).then(|| format!("{id} broke")),
+        filter: id.trim_end_matches("()").into(),
     }
 }
 
@@ -29,6 +30,7 @@ fn attempt(exit: i32, cases: Vec<TestCase>) -> Attempt {
         exit: Some(exit),
         timed_out: false,
         results: Some(cases),
+        bundle: None,
     }
 }
 
@@ -158,6 +160,7 @@ fn a_timeout_is_a_failure() {
         exit: None,
         timed_out: true,
         results: None,
+        bundle: None,
     };
     let v = judge(&enumeration(&[A]), &a, &[]);
     assert!(!v.passed());
@@ -170,10 +173,26 @@ fn a_missing_result_bundle_is_a_failure() {
         exit: Some(0),
         timed_out: false,
         results: None,
+        bundle: None,
     };
     let v = judge(&enumeration(&[A]), &a, &[]);
     assert_eq!(
         v.reasons,
         ["no test results (the result bundle is missing or unreadable)"]
+    );
+}
+
+#[test]
+fn a_missing_result_bundle_is_named_when_known() {
+    let a = Attempt {
+        exit: Some(0),
+        timed_out: false,
+        results: None,
+        bundle: Some("/repo/build/kr/results/login/run.xcresult".into()),
+    };
+    let v = judge(&enumeration(&[A]), &a, &[]);
+    assert_eq!(
+        v.reasons,
+        ["no test results: /repo/build/kr/results/login/run.xcresult is missing or unreadable"]
     );
 }
