@@ -53,6 +53,21 @@ Reconciliation: the next run of the same test on the same build inputs answers t
 decision. `product` is supported if the test fails again; `flaky` and `environment` if
 it passes. kr writes a `reconciliation` event once per decision.
 
+## additional_scenarios: uncertain change impact
+
+This affects efficiency. kr adds all candidates by default, continues, and records
+`via: default`, `review: pending`. It does not wait for `kr decide`.
+
+Inspect `evidence.unknown`, `candidates`, and the 90-day project `history`: pairwise
+cofailures count runs where both scenarios had a final result; flaky rate counts
+scenario runs with at least one flaky result. Read denominators; null means no sample.
+These statistics do not remove scenarios required by the dependency closure.
+
+Use `kr plan --changed <ref> --explain` to inspect file -> module -> consumer -> scenario.
+Add missing page edges under `[modules]` and coverage in `scenarios.<name>.modules`.
+Declare no-impact glob paths under `[selection].ignore`; kr has no built-in ignores.
+Use `--also <scenario>` to add coverage. Recheck the plan after updating mappings.
+
 ## Merge resolutions
 
 `kr merge predict --base <ref> <branch>... --json` compares branch pairs. Same-file

@@ -1,7 +1,7 @@
 //! `kr plan` (ADR 0010, level 1): what `kr run` / `kr gate` would do, without doing
 //! it — which builds are cached, why each item runs, the lanes, and how long it should
-//! take by history. It runs only `git ls-files` (for the input hashes) and records
-//! nothing.
+//! take by history. With `--changed` it also reads the git diff and package/project
+//! descriptions; it records no run events and starts no builds or tests.
 
 use std::collections::BTreeMap;
 use std::process::ExitCode;

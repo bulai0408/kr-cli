@@ -73,6 +73,7 @@ pub(super) fn run(
             scenarios: Vec::new(),
             on_device: false,
             device: None,
+            selection: None,
         },
     )?;
     if uncovered {
