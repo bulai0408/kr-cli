@@ -32,6 +32,7 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
       },
       "project": {
         "build_settings": {},
+        "compilation_cache": false,
         "configuration": null,
         "generate": null,
         "name": "krill",
