@@ -11,7 +11,7 @@ mod selection;
 mod selection_history;
 mod slots;
 
-/// Kami's Apple development workflow tool: resource queues, simulator pool,
+/// Apple development workflow tool: resource queues, simulator pool,
 /// pre-checks, build-once test runs and gates.
 #[derive(Debug, Parser)]
 #[command(name = "kr", version, propagate_version = true)]
