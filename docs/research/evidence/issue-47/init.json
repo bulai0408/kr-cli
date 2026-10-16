@@ -1,0 +1,33 @@
+{
+  "decisions": [
+    {
+      "affects": "efficiency",
+      "default": {
+        "option": "configure_isolation",
+        "reason": "stable minimal configuration; review and edit .kr.toml before running tests"
+      },
+      "evidence": {
+        "file": ".kr.toml",
+        "isolation": "not inferred from production settings",
+        "ui_targets": [
+          "KrSampleUITests"
+        ]
+      },
+      "id": "init-1",
+      "item": "isolation",
+      "kind": "init_isolation",
+      "options": [
+        {
+          "means": "set isolation to configure_isolation",
+          "name": "configure_isolation"
+        }
+      ],
+      "question": "Which synthetic bundle IDs and entitlements may UI tests use?"
+    }
+  ],
+  "ok": true,
+  "schema_version": 1,
+  "written": [
+    ".kr.toml"
+  ]
+}
