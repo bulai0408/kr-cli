@@ -108,7 +108,41 @@ fn setup_installs_only_a_discovery_entry_is_idempotent_and_removes_both_scopes()
 }
 
 #[test]
-fn setup_preserves_every_byte_outside_the_markers_and_remove_restores_it() {
+fn setup_adds_a_final_newline_once_and_leaves_unmodified_files_alone() {
+    let s = Sandbox::new();
+    let (_, rules) = s.paths(true, false);
+    write(&rules, "prefix\n<!-- kr -->old<!-- kr -->");
+    s.setup(&["--project", "--codex"]);
+    let installed = std::fs::read(&rules).unwrap();
+    assert_eq!(installed.last(), Some(&b'\n'));
+    assert!(installed.starts_with(b"prefix\n<!-- kr -->"));
+    assert_eq!(
+        s.setup(&["--project", "--codex"])["written"],
+        serde_json::json!([])
+    );
+    assert_eq!(std::fs::read(&rules).unwrap(), installed);
+    s.setup(&["--project", "--codex", "--remove"]);
+    assert_eq!(std::fs::read(&rules).unwrap(), b"prefix\n\n");
+    let removed = std::fs::read(&rules).unwrap();
+    assert_eq!(
+        s.setup(&["--project", "--codex", "--remove"])["written"],
+        serde_json::json!([])
+    );
+    assert_eq!(std::fs::read(&rules).unwrap(), removed);
+
+    write(&rules, "owner without final newline");
+    assert_eq!(
+        s.setup(&["--project", "--codex", "--remove"])["written"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        std::fs::read(&rules).unwrap(),
+        b"owner without final newline"
+    );
+}
+
+#[test]
+fn setup_preserves_outside_bytes_except_for_the_final_newline() {
     for original in ["# Owner rules", "# Owner rules\r\n\r\n", "前置规则\n"] {
         let s = Sandbox::new();
         let (_, rules) = s.paths(true, false);
@@ -120,7 +154,10 @@ fn setup_preserves_every_byte_outside_the_markers_and_remove_restores_it() {
                 .starts_with(original)
         );
         s.setup(&["--project", "--codex", "--remove"]);
-        assert_eq!(std::fs::read_to_string(&rules).unwrap(), original);
+        assert_eq!(
+            std::fs::read_to_string(&rules).unwrap(),
+            format!("{original}\n")
+        );
         write(
             &rules,
             "prefix\r\n<!-- kr -->old content<!-- kr -->\r\nsuffix",
@@ -128,7 +165,7 @@ fn setup_preserves_every_byte_outside_the_markers_and_remove_restores_it() {
         s.setup(&["--project", "--codex"]);
         let installed = std::fs::read_to_string(&rules).unwrap();
         assert!(installed.starts_with("prefix\r\n<!-- kr -->"));
-        assert!(installed.ends_with("<!-- kr -->\r\nsuffix"));
+        assert!(installed.ends_with("<!-- kr -->\r\nsuffix\n"));
         assert!(!installed.contains("old content"));
         assert_eq!(
             s.setup(&["--project", "--codex"])["written"],
@@ -137,7 +174,7 @@ fn setup_preserves_every_byte_outside_the_markers_and_remove_restores_it() {
         s.setup(&["--project", "--codex", "--remove"]);
         assert_eq!(
             std::fs::read_to_string(&rules).unwrap(),
-            "prefix\r\n\r\nsuffix"
+            "prefix\r\n\r\nsuffix\n"
         );
     }
 }
@@ -217,7 +254,7 @@ fn setup_uses_codex_home_and_the_effective_override_file() {
         cmd.assert().success();
         assert_eq!(
             std::fs::read_to_string(&rules).unwrap(),
-            "# Effective rules"
+            "# Effective rules\n"
         );
     }
     assert!(!s.home.path().join(".codex").exists());

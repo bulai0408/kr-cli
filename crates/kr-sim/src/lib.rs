@@ -309,6 +309,21 @@ pub fn lease<'a>(
     poll: Duration,
     wait: Option<Duration>,
 ) -> Result<Lease<'a>> {
+    lease_with_wait_notice(simctl, locks, pool, kind, holder, poll, wait, |_, _| {})
+}
+
+/// Like [`lease`], with a notice for each busy candidate while waiting.
+#[allow(clippy::too_many_arguments)]
+pub fn lease_with_wait_notice<'a>(
+    simctl: &'a Simctl<'a>,
+    locks: &DeviceLocks,
+    pool: &[PoolDevice],
+    kind: &str,
+    holder: &LeaseHolder,
+    poll: Duration,
+    wait: Option<Duration>,
+    mut notice: impl FnMut(&PoolDevice, Option<LeaseHolder>),
+) -> Result<Lease<'a>> {
     let candidates: Vec<&PoolDevice> = pool
         .iter()
         .filter(|d| d.kind == kind && d.udid.is_some() && d.issue.is_none())
@@ -331,6 +346,7 @@ pub fn lease<'a>(
                 simctl.boot(udid)?;
                 return Ok(lease);
             }
+            notice(device, locks.holder(udid));
         }
         if wait.is_some_and(|w| start.elapsed() >= w) {
             bail!(

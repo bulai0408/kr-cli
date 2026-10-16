@@ -1,0 +1,20 @@
+---
+source: crates/kr/tests/pool.rs
+expression: "String::from_utf8_lossy(&out.stdout)"
+---
+Take a `sim` slot, lease and boot a pool device, run a command, then shut it down. The command gets KR_SIM_UDID and KR_SIM_NAME. With --json, lease notices go to stderr; command stdout and exit code pass through
+
+Usage: kr pool lease [OPTIONS] -- <COMMAND>...
+
+Arguments:
+  <COMMAND>...  
+
+Options:
+      --json         Print machine-readable JSON on stdout
+      --kind <KIND>  Device kind from [simulators.devices]. Default: `default`. Conflicts with --name/--udid
+      --name <NAME>  Lease only this pool device; wait for it when busy. Conflicts with --kind/--udid
+  -v, --verbose...   More log output on stderr (-v info, -vv debug, -vvv trace). `KR_LOG` overrides
+      --udid <UDID>  Lease only this pool UDID; wait for it when busy. Conflicts with --kind/--name
+      --task <TASK>  Task name shown in `kr queue` and `kr pool`. Default: the command line
+  -h, --help         Print help
+  -V, --version      Print version

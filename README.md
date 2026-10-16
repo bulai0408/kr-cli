@@ -313,6 +313,15 @@ kr lock light --task module-test -- swift test --filter MyModuleTests
 多个模拟器；不要再在子脚本中拿旧全机锁。普通 `kr lock sim` 只限制数量，不分配设备。
 构建和测试分开占各自槽位；容量和来源用 `kr doctor --json` 查看，配置覆盖优先。
 
+指定池内设备时用 `kr pool lease --name Krill-Verify-1 -- <command>` 或
+`kr pool lease --udid <UDID> -- <command>`。`--name`、`--udid`、显式 `--kind`
+三者互斥；都不传时按 `default` 类型选空闲设备。指定设备忙时只等这一台，
+不会换其他空闲设备；等待提示显示名称、UDID 和持有者的 task，`kr queue` 的
+task 也包含目标。池外名称或 UDID 退出 2，用 `kr pool status` 查看当前池。
+等待设备锁时仍占用 sim 槽位，保持负载 → 旧锁 → sim 槽 → 设备锁的顺序（ADR 0023）。
+`--json` 在 stderr 输出租约通知，`selection` 为 `{"by":"name|udid|kind","value":"..."}`；
+`sim_leased`、`sim_released` 事件的 `fields.selection` 记录同一选择。子命令 stdout 和退出码透传。
+
 `kr lock` 原样传回子命令退出码（包括 4，这里不表示判断点）；子进程被信号 n
 终止时返回 128+n。取消排队或 kr 自己出错返回 1，参数错误返回 2。stdout/stderr
 透传给子命令；排队提示写 stderr，`--json` 不将子命令输出包装成 JSON。

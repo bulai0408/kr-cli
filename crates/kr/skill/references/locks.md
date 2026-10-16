@@ -12,6 +12,15 @@ shuts it down on return. `kr lock sim -- <command>` takes only a slot, not a
 device; never start multiple simulators inside that slot. Build and test in
 separate slots. Do not take the old mkdir lock inside either command.
 
+Use `kr pool lease --name Krill-Verify-1 -- <command>` or `--udid <UDID>` to wait
+for exactly one project pool device. --name, --udid and explicit --kind conflict;
+without them, kind defaults to `default`. A busy target never falls back to another
+device. Notices name the device, UDID and holder task; `kr queue` tasks show the target.
+Unknown targets exit 2: use `kr pool status`. Waiting for a device still holds a sim
+slot, keeping load -> legacy lock -> sim slot -> device lock order (ADR 0023).
+With --json, lease notices go to stderr with selection {by: name|udid|kind, value};
+sim_leased/sim_released events carry fields.selection. Child stdout stays unchanged.
+
 `kr lock` passes through stdout, stderr and the child's exit code, including 4.
 A child killed by signal n returns 128+n. Queue cancellation and kr errors return 1; argument errors
 return 2. Queue notices go to stderr; --json does not wrap the child's output.
