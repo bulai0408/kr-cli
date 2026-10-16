@@ -148,6 +148,13 @@ class ReleaseTests(unittest.TestCase):
                                 for p in (dist / "tap").rglob("*") if p.is_file()),
                          ["Formula/kr.rb", "README.md"])
 
+    def test_public_tap_commit_uses_the_noreply_identity(self):
+        commands = release.publish_commands(self.root, "0.1.0", self.root / "tap")
+        commit = next(c for c in commands if "commit" in c)
+        self.assertIn(f"user.name={release.TAP_AUTHOR_NAME}", commit)
+        self.assertIn(f"user.email={release.TAP_AUTHOR_EMAIL}", commit)
+        self.assertTrue(release.TAP_AUTHOR_EMAIL.endswith("@users.noreply.github.com"))
+
     def test_publish_pending_never_reaches_public_operations(self):
         self.fake_binary()
 
