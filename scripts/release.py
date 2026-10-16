@@ -107,6 +107,11 @@ def archive_binary(binary, archive):
             tar.addfile(info, source)
 
 
+# Public tap commits never carry the local git identity.
+TAP_AUTHOR_NAME = "bulai0408"
+TAP_AUTHOR_EMAIL = "31983330+bulai0408@users.noreply.github.com"
+
+
 def publish_commands(dist, version, checkout):
     tag = "v" + version
     return [
@@ -115,7 +120,8 @@ def publish_commands(dist, version, checkout):
         ["mkdir", "-p", str(checkout / "Formula")],
         ["cp", str(dist / "tap/Formula/kr.rb"), str(checkout / "Formula/kr.rb")],
         ["git", "-C", str(checkout), "add", "README.md", "Formula/kr.rb"],
-        ["git", "-C", str(checkout), "commit", "-m", f"kr {version}"],
+        ["git", "-C", str(checkout), "-c", f"user.name={TAP_AUTHOR_NAME}",
+         "-c", f"user.email={TAP_AUTHOR_EMAIL}", "commit", "-m", f"kr {version}"],
         ["git", "-C", str(checkout), "push", "origin", "HEAD:main"],
         ["gh", "release", "create", tag, str(dist / f"kr-{version}-{TARGET}.tar.gz"),
          str(dist / "SHA256SUMS"), "--repo", TAP, "--title", f"kr {version}",
