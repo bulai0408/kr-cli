@@ -1,6 +1,6 @@
 [package]
 name = "kr"
-description = "Kami's Apple development workflow tool"
+description = "Apple development workflow tool"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

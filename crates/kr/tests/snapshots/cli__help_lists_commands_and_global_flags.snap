@@ -2,7 +2,7 @@
 source: crates/kr/tests/cli.rs
 expression: "String::from_utf8_lossy(&out.stdout)"
 ---
-Kami's Apple development workflow tool: resource queues, simulator pool, pre-checks, build-once test runs and gates
+Apple development workflow tool: resource queues, simulator pool, pre-checks, build-once test runs and gates
 
 Usage: kr [OPTIONS] <COMMAND>
 
