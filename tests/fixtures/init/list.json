@@ -1,0 +1,12 @@
+{
+  "program": "xcodebuild",
+  "args": [
+    "-list",
+    "-json",
+    "-project",
+    "KrSample.xcodeproj"
+  ],
+  "status": 0,
+  "stdout": "{\n  \"project\": {\n    \"configurations\": [\n      \"Debug\",\n      \"Release\"\n    ],\n    \"name\": \"KrSample\",\n    \"schemes\": [\n      \"KrSample\"\n    ],\n    \"targets\": [\n      \"KrSample\",\n      \"KrSampleTests\",\n      \"KrSampleUITests\"\n    ]\n  }\n}\n",
+  "stderr": ""
+}

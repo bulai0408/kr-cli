@@ -3,6 +3,7 @@
 This text comes with the kr you run (version {version}). Read it again when kr changes.
 
 ## Usual flow
+0. No `.kr.toml`? Run `kr init`, review its decisions with `kr skill --reference config`.
 1. `kr doctor`: the machine and the project are ready (Xcode, runtimes, simulator pool).
 2. `kr check`: generate, compile with the app's settings, check test filters and data
    isolation. It holds only a `build` slot. Fix what it reports before you go on.

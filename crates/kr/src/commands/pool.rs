@@ -59,7 +59,7 @@ pub fn run(ctx: &Ctx, args: PoolArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let project =
         loaded.config.project.as_ref().context(
-            "no .kr.toml found from here up to the repo root; the pool is defined there",
+            "no .kr.toml found from here up to the repo root; run `kr init` in the project root, then read `kr skill --reference config`",
         )?;
     let runner = ctx.runner()?;
     let simctl = Simctl::new(runner.as_ref(), loaded.developer_dir(ctx)?);

@@ -30,6 +30,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Create a minimal .kr.toml from this project's metadata without building.
+    Init,
     /// Predict merge conflicts, install rerere and the catalog driver, or check a merge.
     Merge(commands::merge::MergeArgs),
     /// Show the merged configuration and where each layer came from.
@@ -115,6 +117,7 @@ fn main() -> ExitCode {
     slots::watch_children();
     ctx.json = cli.json;
     let result = match cli.command {
+        Command::Init => commands::init::run(&ctx),
         Command::Merge(args) => commands::merge::run(&ctx, args),
         Command::Config => commands::config::run(&ctx),
         Command::Lock(args) => commands::lock::run(&ctx, args),

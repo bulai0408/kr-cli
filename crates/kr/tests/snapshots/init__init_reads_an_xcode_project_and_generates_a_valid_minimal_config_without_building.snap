@@ -1,0 +1,7 @@
+---
+source: crates/kr/tests/init.rs
+expression: "String::from_utf8(out.stdout).unwrap()"
+---
+Created .kr.toml; configuration valid.
+Please confirm: Which synthetic bundle IDs and entitlements may UI tests use? (default: configure_isolation)
+Next: review .kr.toml with `kr skill --reference config`, then run `kr doctor` and `kr check`.

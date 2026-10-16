@@ -1,0 +1,12 @@
+{
+  "program": "xcodegen",
+  "args": [
+    "dump",
+    "--type",
+    "json",
+    "--no-env"
+  ],
+  "status": 0,
+  "stdout": "{\n  \"targets\": {\n    \"KrSample\": {\n      \"type\": \"application\",\n      \"info\": {\n        \"path\": \"App/Info.plist\",\n        \"properties\": {\n          \"UILaunchScreen\": {}\n        }\n      },\n      \"sources\": [\n        \"App\"\n      ],\n      \"settings\": {\n        \"base\": {\n          \"PRODUCT_BUNDLE_IDENTIFIER\": \"$(KR_SAMPLE_BUNDLE_ID)\"\n        }\n      },\n      \"platform\": \"iOS\",\n      \"entitlements\": {\n        \"properties\": {\n          \"com.apple.developer.icloud-container-environment\": \"Development\"\n        },\n        \"path\": \"App/KrSample.entitlements\"\n      }\n    },\n    \"KrSampleUITests\": {\n      \"type\": \"bundle.ui-testing\",\n      \"sources\": [\n        \"UITests\"\n      ],\n      \"platform\": \"iOS\",\n      \"dependencies\": [\n        {\n          \"target\": \"KrSample\"\n        }\n      ]\n    },\n    \"KrSampleTests\": {\n      \"type\": \"bundle.unit-test\",\n      \"sources\": [\n        \"Tests\"\n      ],\n      \"platform\": \"iOS\",\n      \"dependencies\": [\n        {\n          \"target\": \"KrSample\"\n        }\n      ]\n    }\n  },\n  \"schemes\": {\n    \"KrSample\": {\n      \"test\": {\n        \"targets\": [\n          \"KrSampleTests\",\n          \"KrSampleUITests\"\n        ]\n      },\n      \"build\": {\n        \"targets\": {\n          \"KrSample\": \"all\"\n        }\n      }\n    }\n  },\n  \"settings\": {\n    \"base\": {\n      \"GENERATE_INFOPLIST_FILE\": true,\n      \"KR_SAMPLE_BUNDLE_ID\": \"dev.kr.sample\",\n      \"CODE_SIGN_STYLE\": \"Automatic\",\n      \"SWIFT_VERSION\": \"6.0\",\n      \"CODE_SIGN_IDENTITY\": \"-\"\n    }\n  },\n  \"name\": \"KrSample\",\n  \"options\": {\n    \"deploymentTarget\": {\n      \"iOS\": \"18.0\"\n    },\n    \"bundleIdPrefix\": \"dev.kr\"\n  }\n}\n",
+  "stderr": ""
+}

@@ -5,6 +5,7 @@ pub mod deliver;
 pub mod device;
 pub mod doctor;
 pub mod hash;
+pub mod init;
 pub mod lock;
 pub mod merge;
 pub mod plan;

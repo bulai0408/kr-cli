@@ -696,7 +696,9 @@ dependencies = [
  "serde",
  "serde_json",
  "signal-hook",
+ "syn 2.0.119",
  "tempfile",
+ "toml 1.1.8+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
 ]
