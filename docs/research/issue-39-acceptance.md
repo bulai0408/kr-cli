@@ -6,7 +6,7 @@
 - 新增回放回归 `replay_outer_legacy_holder_can_enter_kr_while_another_kr_waits`、`sigterm_while_waiting_for_the_bridge_removes_its_ticket_without_starting_work`；RED/GREEN 原始日志保存在 `evidence/machine-concurrency/`。
 - 新增 doctor 回归 `doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock`、`doctor_excludes_kr_owned_locks_and_explains_the_observation_limit`、`doctor_calibrates_the_work_mac_to_two_builds_without_hiding_config_overrides`，覆盖近期已退出 owner、kr 自身排除和真实容量覆盖。
 - 两机 KrSample 构建 16/16 PASS；启动断言 84/84 PASS（local 24，work 60）。逐个读取 84 个 xcresult 的 summary，每个都是 1 passed / 0 failed / 0 skipped。脱敏批次、负载、身份和 doctor 前后结果均已入库；完整 xcresult 保留在本机 `/tmp/kr39-calibration`，没有提交二进制结果包。
-- 集成同步前 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 全部通过，测试合计 415 PASS / 0 FAIL；另已构建 release 并在两机真实配置下回读 doctor。最终同步后的检查证据随交付补入。
+- 集成同步前后 `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`、`cargo test` 均全部通过，每轮测试合计 415 PASS / 0 FAIL；另已构建 release 并在两机真实配置下回读 doctor。已 fetch 并合入 `origin/p1p2/integration`（98d2e8a，Already up to date），最终检查日志见 `evidence/machine-concurrency/post-merge-checks.log`。
 - `kr lock` 的脚本替换命令和退出码已写入 README 与 `kr skill --reference locks`；维护版校准驱动通过 Python 语法检查。未改其他仓库、机器真实配置或全局 AGENTS.md；work 临时目录 `~/kr39` 已删除。
 
 ## ADR 0010 前后对比
