@@ -338,7 +338,7 @@ kr。`kr doctor` 会列出七天内观察到的非 kr 使用者及下一步。�
 `Formula/kr.rb` 和 Release 二进制附件；本仓库的源码、测试素材、docs、Git 历史、
 构建日志和私有词表都不公开。公开仓库的创建和第一次发布由协调者在 owner 确认后执行。
 
-发版脚本需要 macOS Apple Silicon、Python 3.11+、Rust stable、`aarch64-apple-darwin`
+发版脚本需要 macOS Apple Silicon、Python 3.12+、Rust stable、`aarch64-apple-darwin`
 target、已安装的 kr 和（仅发布时）gh。只支持稳定版 `MAJOR.MINOR.PATCH`。
 不注入假版本：先把 workspace 的 Cargo 版本改成待发布版本并提交，协调者再创建
 对应的 `v<version>` tag。脚本从该 tag 的已跟踪源码快照构建，要求 Cargo 版本和
