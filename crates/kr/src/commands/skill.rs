@@ -27,6 +27,7 @@ const REFERENCES: &[(&str, &str)] = &[
         include_str!("../../skill/references/decisions.md"),
     ),
     ("json", include_str!("../../skill/references/json.md")),
+    ("locks", include_str!("../../skill/references/locks.md")),
 ];
 
 pub fn run(ctx: &Ctx, args: SkillArgs) -> Result<ExitCode> {

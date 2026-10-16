@@ -296,3 +296,29 @@ kr merge check --base <before-merge-commit> --decision <decision-id> --verificat
 - 对账还要求：干净且包含两分支提交的合并树、决定后同一 tree 的非零 `kr run/gate` 结果。缺证据不写成功，编译或测试失败写不支持；同一判断点只对账一次。跨文件逻辑冲突、全部间接依赖与真实服务仍需其他验证。
 
 设计见 [ADR 0017](docs/adr/0017-merge-assistance.md)，真实 Krill 样本、离线前后对比与验证边界见 [调研和证据](docs/research/merge-assistance.md)。
+## 旧脚本接入资源队列
+
+没有 `.kr.toml` 的脚本也能使用资源队列。将原来的 `/tmp/native-build.lock`
+排队、`mkdir`、写 owner 和 trap 删除，整体替换为：
+
+```sh
+kr lock build --task conflux-build -- bash scripts/build.sh
+kr lock sim --task legacy-test -- bash scripts/test-one-simulator.sh
+kr lock light --task module-test -- swift test --filter MyModuleTests
+```
+
+一条 `kr lock` 占一个对应槽位。模拟器脚本优先用
+`kr pool lease -- <command>`：它还会租用项目池设备，传入 `KR_SIM_UDID` 和
+`KR_SIM_NAME`，结束后关机归还。需要项目 `.kr.toml`。不要在一个 sim 槽位内启动
+多个模拟器；不要再在子脚本中拿旧全机锁。普通 `kr lock sim` 只限制数量，不分配设备。
+构建和测试分开占各自槽位；容量和来源用 `kr doctor --json` 查看，配置覆盖优先。
+
+`kr lock` 原样传回子命令退出码（包括 4，这里不表示判断点）；子进程被信号 n
+终止时返回 128+n。取消排队或 kr 自己出错返回 1，参数错误返回 2。stdout/stderr
+透传给子命令；排队提示写 stderr，`--json` 不将子命令输出包装成 JSON。
+SIGINT/SIGTERM/SIGHUP 会转发到子进程组，退出后归还槽位。嵌套同资源
+调用只在槽位的持有者确为祖先进程时重入，不能靠伪造 `KR_HELD` 跳过排队。
+
+桥接期间继续保留机器 `[legacy]`；新版本先取旧锁再取槽位，允许旧脚本持锁调用
+kr。`kr doctor` 会列出七天内观察到的非 kr 使用者及下一步。观察不到不代表未接入
+的脚本不存在，删除前须核对 [迁移步骤](docs/research/machine-concurrency.md)。

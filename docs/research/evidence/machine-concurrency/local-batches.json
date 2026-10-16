@@ -1,0 +1,306 @@
+[
+  {
+    "kind": "build",
+    "capacity": 1,
+    "repeat": 0,
+    "wall_s": 16.626078792032786,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 9.473699708993081,
+        "duration_s": 9.416886500024702
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 16.61277449998306,
+        "duration_s": 6.899873166985344
+      }
+    ]
+  },
+  {
+    "kind": "build",
+    "capacity": 2,
+    "repeat": 0,
+    "wall_s": 11.553506334021222,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 11.185440041997936,
+        "duration_s": 11.100913790985942
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 11.553208041994367,
+        "duration_s": 10.935891375003848
+      }
+    ]
+  },
+  {
+    "kind": "build",
+    "capacity": 1,
+    "repeat": 1,
+    "wall_s": 16.399798250000458,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 7.696748375019524,
+        "duration_s": 7.616437208955176
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 16.3994786250405,
+        "duration_s": 8.183462416986004
+      }
+    ]
+  },
+  {
+    "kind": "build",
+    "capacity": 2,
+    "repeat": 1,
+    "wall_s": 12.82040024996968,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 12.729242584027816,
+        "duration_s": 12.657136249996256
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 12.820112625020556,
+        "duration_s": 12.687826249981299
+      }
+    ]
+  },
+  {
+    "kind": "sim",
+    "capacity": 2,
+    "repeat": 0,
+    "wall_s": 144.5602341669728,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 46.312376166984905,
+        "duration_s": 32.98424299998442,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 46.55313641700195,
+        "duration_s": 29.523469917010516,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 2,
+        "exit_code": 0,
+        "wall_s": 45.885579249996226,
+        "duration_s": 31.255790000024717,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 3,
+        "exit_code": 0,
+        "wall_s": 54.10839620803017,
+        "duration_s": 37.612031666969415,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 4,
+        "exit_code": 0,
+        "wall_s": 51.98350204102462,
+        "duration_s": 38.33247595798457,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 5,
+        "exit_code": 0,
+        "wall_s": 31.938550291000865,
+        "duration_s": 17.480728499998804,
+        "passed_tests": 1,
+        "failed_tests": 0
+      }
+    ]
+  },
+  {
+    "kind": "sim",
+    "capacity": 3,
+    "repeat": 0,
+    "wall_s": 169.4873075420037,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 44.303496917011216,
+        "duration_s": 26.31963733304292,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 89.7736280829995,
+        "duration_s": 23.215512124996167,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 2,
+        "exit_code": 0,
+        "wall_s": 159.9610613330151,
+        "duration_s": 139.27054100000532,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 3,
+        "exit_code": 0,
+        "wall_s": 124.82481058401754,
+        "duration_s": 111.63308466703165,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 4,
+        "exit_code": 0,
+        "wall_s": 26.653510125004686,
+        "duration_s": 17.844182791013736,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 5,
+        "exit_code": 0,
+        "wall_s": 25.756401040998753,
+        "duration_s": 15.39617179200286,
+        "passed_tests": 1,
+        "failed_tests": 0
+      }
+    ]
+  },
+  {
+    "kind": "sim",
+    "capacity": 3,
+    "repeat": 1,
+    "wall_s": 133.95189779199427,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 45.82301654201001,
+        "duration_s": 25.399083583964966,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 133.82258158404147,
+        "duration_s": 114.46068620897131,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 2,
+        "exit_code": 0,
+        "wall_s": 93.89803058299003,
+        "duration_s": 71.8878965829499,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 3,
+        "exit_code": 0,
+        "wall_s": 26.599492166016717,
+        "duration_s": 13.531457915960345,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 4,
+        "exit_code": 0,
+        "wall_s": 39.08367629197892,
+        "duration_s": 22.214820957975462,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 5,
+        "exit_code": 0,
+        "wall_s": 31.41186320804991,
+        "duration_s": 16.806224250001833,
+        "passed_tests": 1,
+        "failed_tests": 0
+      }
+    ]
+  },
+  {
+    "kind": "sim",
+    "capacity": 2,
+    "repeat": 1,
+    "wall_s": 124.58610204100842,
+    "items": [
+      {
+        "index": 0,
+        "exit_code": 0,
+        "wall_s": 65.24081124999793,
+        "duration_s": 49.53112079197308,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 1,
+        "exit_code": 0,
+        "wall_s": 34.23119287501322,
+        "duration_s": 17.056903082993813,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 2,
+        "exit_code": 0,
+        "wall_s": 22.038836833031382,
+        "duration_s": 13.461375540995505,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 3,
+        "exit_code": 0,
+        "wall_s": 67.91742508398602,
+        "duration_s": 53.74113729101373,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 4,
+        "exit_code": 0,
+        "wall_s": 30.426704417041037,
+        "duration_s": 14.193178958026692,
+        "passed_tests": 1,
+        "failed_tests": 0
+      },
+      {
+        "index": 5,
+        "exit_code": 0,
+        "wall_s": 21.570510375022423,
+        "duration_s": 11.880954833002761,
+        "passed_tests": 1,
+        "failed_tests": 0
+      }
+    ]
+  }
+]

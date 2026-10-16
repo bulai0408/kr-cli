@@ -57,7 +57,7 @@ For `additional_scenarios`, read `kr skill --reference decisions` before changin
   failed again individually with normal load measured both before and after that
   rerun. High or unknown solo-rerun load keeps the whole-item rerun. Events keep the evidence.
 - `kr skill --reference <name>`: {references}.
-- `kr <command> --help`: arguments and exit codes of each command.
+- `kr <command> --help`: arguments and exit codes; for old scripts use `kr skill --reference locks`.
 - Additions without a new kr: `.kr/skill.md` in the project repo and
   `~/.config/kr/skill.md` for you; kr prints them after this text.
 

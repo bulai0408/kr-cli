@@ -1,0 +1,33 @@
+kr39: acquired native lock
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/doctor.rs (target/debug/deps/doctor-23ded88c1bbe6da5)
+
+running 6 tests
+
+thread 'doctor_calibrates_the_work_mac_to_two_builds_without_hiding_config_overrides' (49316083) panicked at crates/kr/tests/doctor.rs:78:5:
+assertion `left == right` failed
+  left: Number(1)
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test doctor_calibrates_the_work_mac_to_two_builds_without_hiding_config_overrides ... FAILED
+test doctor_fails_when_the_required_xcode_is_missing ... ok
+
+thread 'doctor_json_says_where_each_capacity_comes_from' (49316086) panicked at crates/kr/tests/doctor.rs:156:5:
+assertion `left == right` failed
+  left: Null
+ right: 1
+test doctor_json_says_where_each_capacity_comes_from ... FAILED
+test doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock ... ok
+test doctor_excludes_kr_owned_locks_and_explains_the_observation_limit ... ok
+test doctor_shows_profile_capacity_and_pool_problems ... ok
+
+failures:
+
+failures:
+    doctor_calibrates_the_work_mac_to_two_builds_without_hiding_config_overrides
+    doctor_json_says_where_each_capacity_comes_from
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+
+error: test failed, to rerun pass `-p kr --test doctor`

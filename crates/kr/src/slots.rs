@@ -99,15 +99,24 @@ fn take_in(
         json!({ "resource": res, "task": task, "capacity": capacity }),
     ))?;
     let queued = Instant::now();
+    let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
+    // Old scripts enter kr while holding the machine lock. Never occupy a slot
+    // while waiting for that lock, or their nested kr can wait for our slot.
+    let legacy = if heavy {
+        wait_for_load(ctx, loaded, runner, run_id, res)?;
+        machine_lock(ctx, loaded, run_id, task)?
+    } else {
+        None
+    };
     let ticket = pool.enqueue(res, &holder)?;
     let mut announced = false;
     let slot = loop {
-        if let Some(slot) = ticket.try_acquire(capacity)? {
-            break slot;
-        }
         // Only commands that catch stop signals (see kr_exec) see one here.
         if let Some(signal) = kr_exec::stop_signal() {
             anyhow::bail!("stopped by signal {signal} while waiting for {res}");
+        }
+        if let Some(slot) = ticket.try_acquire(capacity)? {
+            break slot;
         }
         if !announced {
             announced = true;
@@ -122,17 +131,6 @@ fn take_in(
         EventKind::SlotAcquired,
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
-    let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
-    // Wait (for critical memory pressure, or high load if `[load] block`) before taking
-    // the machine-wide lock, so a busy machine does not also block other projects' queue.
-    if heavy {
-        wait_for_load(ctx, loaded, runner, run_id, res)?;
-    }
-    let legacy = if heavy {
-        machine_lock(ctx, loaded, run_id, task)?
-    } else {
-        None
-    };
     Ok(Taken {
         slot,
         task: task.to_owned(),
@@ -160,8 +158,8 @@ pub fn give_back(
             "exit_code": exit_code,
         }),
     ))?;
-    drop(taken.legacy);
     drop(taken.slot);
+    drop(taken.legacy);
     Ok(())
 }
 
@@ -200,27 +198,33 @@ fn machine_lock(
         .as_deref()
         .and_then(kr_config::parse_timeout)
         .unwrap_or(kr_resource::legacy::DEFAULT_POLL);
-    let bridge = LegacyLock::new(lock, queue).with_poll(poll);
+    let bridge = LegacyLock::new(lock, queue)
+        .with_poll(poll)
+        .with_history(loaded.state_dir.join("legacy-observations.json"));
     let start = Instant::now();
     let mut waited_for = None;
-    let guard = bridge.acquire(&format!("kr-{task}"), |owner| {
-        let who = owner.map_or_else(
-            || "unknown".to_owned(),
-            |o| format!("{} (pid {}, since {})", o.task, o.pid, o.started),
-        );
-        waited_for = Some(who.clone());
-        if ctx.json {
-            eprintln!(
-                "{}",
-                json!({ "waiting": "machine_lock", "lock": lock, "holder": who })
+    let guard = bridge.acquire_interruptible(
+        &format!("kr-{task}"),
+        |owner| {
+            let who = owner.map_or_else(
+                || "unknown".to_owned(),
+                |o| format!("{} (pid {}, since {})", o.task, o.pid, o.started),
             );
-        } else {
-            eprintln!(
-                "waiting for the machine lock {}: held by {who}",
-                lock.display()
-            );
-        }
-    })?;
+            waited_for = Some(who.clone());
+            if ctx.json {
+                eprintln!(
+                    "{}",
+                    json!({ "waiting": "machine_lock", "lock": lock, "holder": who })
+                );
+            } else {
+                eprintln!(
+                    "waiting for the machine lock {}: held by {who}",
+                    lock.display()
+                );
+            }
+        },
+        kr_exec::stop_signal,
+    )?;
     loaded.events().append(&Event::now(
         run_id,
         loaded.project(),
@@ -236,7 +240,7 @@ fn machine_lock(
     Ok(Some(guard))
 }
 
-/// Waits (holding the slot) while the machine is overloaded, and records it.
+/// Waits before taking locks while the machine is overloaded, and records it.
 fn wait_for_load(
     ctx: &Ctx,
     loaded: &Loaded,

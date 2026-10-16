@@ -10,12 +10,14 @@
 //! older than one minute.
 
 use std::collections::HashMap;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use jiff::Timestamp;
+use serde::{Deserialize, Serialize};
 
 /// How many guards of this process share each lock directory it owns.
 static HELD: Mutex<Option<HashMap<PathBuf, usize>>> = Mutex::new(None);
@@ -34,25 +36,32 @@ pub struct LegacyLock {
     poll: Duration,
     max_wait: Option<Duration>,
     session: String,
+    history: Option<PathBuf>,
 }
 
 /// The content of `<lock>/owner`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Owner {
     pub task: String,
     pub session: String,
     pub pid: u32,
     pub started: String,
+    /// Explicit protocol marker, not a guess from a task name or command line.
+    #[serde(default)]
+    pub kr: bool,
 }
 
 impl Owner {
     fn parse(text: &str) -> Option<Self> {
         let mut f = text.split_whitespace();
+        let task = f.next()?.to_owned();
+        let session = f.next()?;
         Some(Self {
-            task: f.next()?.to_owned(),
-            session: f.next()?.to_owned(),
+            task,
+            session: session.strip_prefix("kr:").unwrap_or(session).to_owned(),
             pid: f.next()?.parse().ok()?,
             started: f.next().unwrap_or("").to_owned(),
+            kr: session.starts_with("kr:"),
         })
     }
 }
@@ -65,12 +74,71 @@ impl LegacyLock {
             poll: DEFAULT_POLL,
             max_wait: None,
             session: std::env::var("ORCA_SESSION_ID").unwrap_or_else(|_| "kr".to_owned()),
+            history: None,
         }
     }
 
     pub fn with_poll(mut self, poll: Duration) -> Self {
         self.poll = poll;
         self
+    }
+
+    pub fn with_history(mut self, path: impl Into<PathBuf>) -> Self {
+        self.history = Some(path.into());
+        self
+    }
+
+    /// Last seven days of observed non-kr owners. Does not inspect process arguments.
+    /// The file lock also serializes doctor with parallel kr waiters.
+    pub fn recent_non_kr_owners(&self) -> Result<Vec<Observation>> {
+        let Some(path) = &self.history else {
+            return Ok(Vec::new());
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let guard = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path.with_extension("lock"))?;
+        guard.lock()?;
+        let text = match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
+        };
+        let mut entries: Vec<Observation> = if text.is_empty() {
+            Vec::new()
+        } else {
+            serde_json::from_str(&text).with_context(|| {
+                format!("cannot read legacy lock observations in {}", path.display())
+            })?
+        };
+        let now = Timestamp::now();
+        entries.retain(|e| now.as_second() - e.last_seen.as_second() <= 7 * 86400);
+        if let Some(owner) = self.owner().filter(|o| !o.kr) {
+            if let Some(entry) = entries
+                .iter_mut()
+                .find(|e| e.lock == self.lock_dir && e.owner == owner)
+            {
+                entry.last_seen = now;
+            } else {
+                entries.push(Observation {
+                    lock: self.lock_dir.clone(),
+                    owner,
+                    last_seen: now,
+                });
+            }
+        }
+        // Keep the previous complete history if kr is killed during the write.
+        let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
+        std::fs::write(&tmp, serde_json::to_vec(&entries)?)?;
+        std::fs::rename(tmp, path)?;
+        Ok(entries
+            .into_iter()
+            .filter(|e| e.lock == self.lock_dir)
+            .collect())
     }
 
     /// Give up after this long (tests). Default: wait as long as it takes.
@@ -90,16 +158,33 @@ impl LegacyLock {
 
     /// Waits for the lock. `on_wait` is called once, with the current owner, if kr has
     /// to wait.
-    pub fn acquire(
+    pub fn acquire(&self, task: &str, on_wait: impl FnMut(Option<&Owner>)) -> Result<LegacyGuard> {
+        self.acquire_interruptible(task, on_wait, || None)
+    }
+
+    /// Like [`Self::acquire`], but removes the ticket promptly on a stop signal.
+    pub fn acquire_interruptible(
         &self,
         task: &str,
         mut on_wait: impl FnMut(Option<&Owner>),
+        stop_signal: impl Fn() -> Option<i32>,
     ) -> Result<LegacyGuard> {
         let _one_at_a_time = ACQUIRING.lock().unwrap_or_else(|e| e.into_inner());
+        let check_stop = || -> Result<()> {
+            if let Some(signal) = stop_signal() {
+                bail!(
+                    "stopped by signal {signal} while waiting for the machine lock {}",
+                    self.lock_dir.display()
+                );
+            }
+            Ok(())
+        };
+        check_stop()?;
         if let Some(count) = held_map().get_mut(&self.lock_dir) {
             *count += 1;
             return Ok(self.guard(Kind::Shared));
         }
+        self.recent_non_kr_owners()?;
         if self.owner().is_some_and(|o| crate::is_ancestor(o.pid)) {
             return Ok(self.guard(Kind::Ancestor));
         }
@@ -126,15 +211,17 @@ impl LegacyLock {
         let start = Instant::now();
         let mut announced = false;
         loop {
+            check_stop()?;
             self.remove_dead_tickets();
             self.remove_stale_lock();
             let owner = self.owner();
+            self.recent_non_kr_owners()?;
             if owner.as_ref().is_some_and(|o| crate::is_ancestor(o.pid)) {
                 return Ok(self.guard(Kind::Ancestor));
             }
             if self.first_in_line(&ticket.0) && std::fs::create_dir(&self.lock_dir).is_ok() {
                 let line = format!(
-                    "{task} {} {} {}\n",
+                    "{task} kr:{} {} {}\n",
                     self.session,
                     std::process::id(),
                     Timestamp::now()
@@ -158,7 +245,15 @@ impl LegacyLock {
                     start.elapsed()
                 );
             }
-            std::thread::sleep(self.poll);
+            let pause = Instant::now();
+            while pause.elapsed() < self.poll {
+                check_stop()?;
+                std::thread::sleep(
+                    self.poll
+                        .saturating_sub(pause.elapsed())
+                        .min(Duration::from_millis(100)),
+                );
+            }
         }
     }
 
@@ -221,6 +316,13 @@ impl LegacyLock {
             }
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Observation {
+    pub lock: PathBuf,
+    pub owner: Owner,
+    pub last_seen: Timestamp,
 }
 
 /// Limit: the owner line names one process. With two simulator lanes kr points it at

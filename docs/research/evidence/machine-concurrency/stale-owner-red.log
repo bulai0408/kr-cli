@@ -1,0 +1,132 @@
+kr39: acquired native lock
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/doctor.rs (target/debug/deps/doctor-23ded88c1bbe6da5)
+
+running 1 test
+
+thread 'doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock' (49438071) panicked at crates/kr/tests/doctor.rs:148:5:
+{
+  "capacity": {
+    "build": {
+      "formula": "clamp(min(P/5, M/16), 1, 2) with P=4, M=24 → min(0, 1) → 1",
+      "source": "suggested",
+      "value": 1
+    },
+    "light": {
+      "formula": "clamp(P/4, 1, 4) with P=4 → 1 → 1",
+      "source": "suggested",
+      "value": 1
+    },
+    "sim": {
+      "formula": "clamp(min(P/2, (M-8)/4), 1, 6) with P=4, M=24 → min(2, 4) → 2",
+      "source": "suggested",
+      "value": 2
+    }
+  },
+  "decisions": [],
+  "legacy": {
+    "can_disable": false,
+    "enabled": true,
+    "lock": "<home>/native.lock",
+    "next": "legacy lock is still in use; migrate the listed owners to `kr lock`, confirm the migration checklist, then remove [legacy] on this machine",
+    "observation_scope": "doctor calls and kr bridge acquisition; unobserved legacy activity is unknown",
+    "recent_non_kr_owners": [
+      {
+        "last_seen": "2026-10-16T00:38:48.356067Z",
+        "lock": "<home>/native.lock",
+        "owner": {
+          "kr": false,
+          "pid": 72296,
+          "session": "orca",
+          "started": "2026-10-16T00:00:00Z",
+          "task": "krill-e2e-smoke"
+        }
+      }
+    ],
+    "unknown_owner": false,
+    "window_days": 7
+  },
+  "machine": {
+    "chip": "Apple M3",
+    "cores": 8,
+    "disk_free_bytes": 259478933504,
+    "host": "iMac",
+    "load": {
+      "fifteen": 3.62,
+      "five": 3.41,
+      "one": 3.08
+    },
+    "load_threshold": 32.0,
+    "memory_bytes": 25769803776,
+    "memory_pressure": "normal",
+    "performance_cores": 4,
+    "swap_used_bytes": 1667235840
+  },
+  "ok": true,
+  "problems": [
+    {
+      "code": "pool_incomplete",
+      "fix": "run `kr pool sync` to create them",
+      "message": "simulator pool is missing Krill-Verify-3",
+      "severity": "warning"
+    }
+  ],
+  "runtimes": [
+    "iOS 18.6",
+    "iOS 26.5",
+    "iOS 27.0",
+    "iOS 27.1",
+    "tvOS 26.5",
+    "tvOS 27.0"
+  ],
+  "schema_version": 1,
+  "suggested_capacity": {
+    "build": {
+      "formula": "clamp(min(P/5, M/16), 1, 2) with P=4, M=24 → min(0, 1) → 1",
+      "value": 1
+    },
+    "light": {
+      "formula": "clamp(P/4, 1, 4) with P=4 → 1 → 1",
+      "value": 1
+    },
+    "sim": {
+      "formula": "clamp(min(P/2, (M-8)/4), 1, 6) with P=4, M=24 → min(2, 4) → 2",
+      "value": 2
+    }
+  },
+  "xcode": {
+    "developer_dir": "/Applications/Xcode.app/Contents/Developer",
+    "installed": [
+      {
+        "build": "27A9269",
+        "path": "<apps>/Xcode.app",
+        "version": "27.1"
+      },
+      {
+        "build": "17F113",
+        "path": "<apps>/Xcode_26.6.app",
+        "version": "26.6"
+      }
+    ],
+    "required": "27.1",
+    "selected": {
+      "build": "27A9269",
+      "developer_dir": "<apps>/Xcode.app/Contents/Developer",
+      "path": "<apps>/Xcode.app",
+      "version": "27.1"
+    }
+  }
+}
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock ... FAILED
+
+failures:
+
+failures:
+    doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.45s
+
+error: test failed, to rerun pass `-p kr --test doctor`

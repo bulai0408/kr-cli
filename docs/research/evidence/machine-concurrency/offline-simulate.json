@@ -1,0 +1,74 @@
+{
+  "calibration": {
+    "mape": 0.00025419046943629025,
+    "ranking_matches": null,
+    "runs": [
+      {
+        "capacity": 2,
+        "error": 0.00025419046943629025,
+        "items": 33,
+        "lanes": [
+          "default",
+          "iPad",
+          "default"
+        ],
+        "measured_ms": 2758411,
+        "project": "Krill",
+        "run_id": "01a13972-e967-759e-b387-d49fbf89cf37",
+        "simulated_ms": 2759113
+      }
+    ],
+    "target": 0.1
+  },
+  "decisions": [],
+  "items": {
+    "count": 33,
+    "run_id": "01a13972-e967-759e-b387-d49fbf89cf37",
+    "samples_max": 1,
+    "samples_min": 1
+  },
+  "iterations": 1000,
+  "schema_version": 1,
+  "settings": [
+    {
+      "cache": "hit",
+      "lower_bound_ms": 2614729,
+      "order": "ipad-first",
+      "outside_calibration": null,
+      "p50_ms": 2632300,
+      "p90_ms": 2632300,
+      "queue_share": 0.10995880249717599,
+      "sim": 2
+    },
+    {
+      "cache": "hit",
+      "lower_bound_ms": 2297550,
+      "order": "ipad-first",
+      "outside_calibration": "sim=3: the runs were recorded with sim=2; concurrency changes item durations, so this is a direction only",
+      "p50_ms": 2302584,
+      "p90_ms": 2302584,
+      "queue_share": 0.0,
+      "sim": 3
+    },
+    {
+      "cache": "hit",
+      "lower_bound_ms": 2297550,
+      "order": "ipad-first",
+      "outside_calibration": "sim=5: the runs were recorded with sim=2; concurrency changes item durations, so this is a direction only",
+      "p50_ms": 2302584,
+      "p90_ms": 2302584,
+      "queue_share": 0.0,
+      "sim": 5
+    },
+    {
+      "cache": "hit",
+      "lower_bound_ms": 2297550,
+      "order": "ipad-first",
+      "outside_calibration": "sim=6: the runs were recorded with sim=2; concurrency changes item durations, so this is a direction only",
+      "p50_ms": 2302584,
+      "p90_ms": 2302584,
+      "queue_share": 0.0,
+      "sim": 6
+    }
+  ]
+}

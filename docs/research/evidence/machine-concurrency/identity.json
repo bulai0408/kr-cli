@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-16",
+  "base_commit": "98d2e8a636945c55c1c131e1f86814e944f1adcd",
+  "sample_tree": "f4b69d7c6ddde5133fb37aa6cb76583b2699ec7b",
+  "krill_scripts_tree": "d31740763144226d670ec67c2a8c2f9020e4b3d9",
+  "calibration_binary_sha256": "3205d84779c434767eb1aa9391cddb17612db60ea0c372b265ae984af11dc345",
+  "note": "Calibration used the same release binary on both machines, with the lock-order fix and initial doctor observer, before final capacity/cancellation changes. Drivers preserved here are the exact measured versions; the maintained driver adds preflight and immediate failure guards.",
+  "final_binary_sha256": "ca0ff2baaa1d42d43c6b85b67a71aba2a7e60cb5a3c29177313dae6d270a3f78"
+}

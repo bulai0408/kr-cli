@@ -1,0 +1,19 @@
+kr39: acquired native lock
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running tests/skill.rs (target/debug/deps/skill-4f5ac7db86c13b70)
+
+running 1 test
+
+thread 'the_main_text_matches_this_version_and_names_its_references' (49373619) panicked at crates/kr/tests/skill.rs:60:5:
+93
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test the_main_text_matches_this_version_and_names_its_references ... FAILED
+
+failures:
+
+failures:
+    the_main_text_matches_this_version_and_names_its_references
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.45s
+
+error: test failed, to rerun pass `-p kr --test skill`

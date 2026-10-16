@@ -72,6 +72,7 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
         .filter(|p| p.severity == Severity::Error)
         .count();
     let warnings = problems.len() - errors;
+    let legacy = legacy_report(&loaded)?;
 
     if ctx.json {
         let mut out = json!({
@@ -97,9 +98,13 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
             },
             "runtimes": profile.runtimes.iter().filter(|r| r.is_available).map(|r| &r.name).collect::<Vec<_>>(),
             "capacity": capacity.iter().cloned().collect::<serde_json::Map<_, _>>(),
+            "suggested_capacity": kr_machine::suggest(&profile.hardware),
         });
         if let Some(d) = &device {
             out["device"] = d.json()["device"].clone();
+        }
+        if let Some(legacy) = &legacy {
+            out["legacy"] = legacy.clone();
         }
         crate::output::print_json(&out)?;
     } else {
@@ -115,12 +120,56 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
             println!("device    {}", d.line());
             println!("          {}", device::Inspected::UI_AUTOMATION_NOTE);
         }
+        if let Some(legacy) = &legacy {
+            println!("legacy    {}", legacy["next"].as_str().unwrap_or(""));
+            for observation in legacy["recent_non_kr_owners"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                println!(
+                    "          {} (pid {}, last seen {})",
+                    observation["owner"]["task"].as_str().unwrap_or("?"),
+                    observation["owner"]["pid"],
+                    observation["last_seen"].as_str().unwrap_or("?")
+                );
+            }
+        }
     }
     Ok(if errors == 0 {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE
     })
+}
+
+fn legacy_report(loaded: &crate::Loaded) -> Result<Option<Value>> {
+    let config = &loaded.config.machine.legacy;
+    let (Some(lock), Some(queue)) = (&config.machine_lock, &config.queue) else {
+        return Ok(None);
+    };
+    let bridge = kr_resource::legacy::LegacyLock::new(lock, queue)
+        .with_history(loaded.state_dir.join("legacy-observations.json"));
+    let owners = bridge.recent_non_kr_owners()?;
+    let unknown = lock.exists() && bridge.owner().is_none();
+    let can_disable = owners.is_empty() && !unknown;
+    let next = if unknown {
+        "legacy lock owner is unknown; keep [legacy], inspect its owner file and confirm the migration checklist"
+    } else if can_disable {
+        "can remove [legacy] after confirming the migration checklist; no non-kr owners observed in the last 7 days (observations only)"
+    } else {
+        "legacy lock is still in use or has recent non-kr owners; migrate the listed entry points to `kr lock`, confirm the migration checklist, then remove [legacy] on this machine"
+    };
+    Ok(Some(json!({
+        "enabled": true,
+        "lock": lock,
+        "recent_non_kr_owners": owners,
+        "window_days": 7,
+        "observation_scope": "doctor calls and kr bridge acquisition; unobserved legacy activity is unknown",
+        "unknown_owner": unknown,
+        "can_disable": can_disable,
+        "next": next,
+    })))
 }
 
 /// The Xcode kr will use: the required one if installed, else the selected one.
@@ -213,6 +262,7 @@ fn print_human(
         .map(|r| r.name.as_str())
         .collect();
     println!("runtimes  {}", runtimes.join(", "));
+    let suggested = kr_machine::suggest(hw);
     for (i, (name, c)) in capacity.iter().enumerate() {
         let label = if i == 0 { "capacity" } else { "" };
         let how = match c["formula"].as_str() {
@@ -220,6 +270,17 @@ fn print_human(
             None => c["source"].as_str().unwrap_or("").to_owned(),
         };
         println!("{label:<9} {name:<5} {}  {how}", c["value"]);
+        if c["source"] != "suggested" {
+            let derived = match name.as_str() {
+                "build" => &suggested.build,
+                "sim" => &suggested.sim,
+                _ => &suggested.light,
+            };
+            println!(
+                "          hardware suggestion: {name}={}  {}",
+                derived.value, derived.formula
+            );
+        }
     }
     if let Some(project) = &loaded.config.project {
         let kinds: Vec<String> = project

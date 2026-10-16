@@ -1,0 +1,98 @@
+{
+  "capacity": {
+    "build": {
+      "formula": "clamp(min(P/6, M/16), 1, 4) with P=4, M=24 → min(0, 1) → 1",
+      "source": "suggested",
+      "value": 1
+    },
+    "light": {
+      "formula": "clamp(P/4, 1, 4) with P=4 → 1 → 1",
+      "source": "suggested",
+      "value": 1
+    },
+    "sim": {
+      "formula": "clamp(min(P/2, (M-8)/4), 1, 6) with P=4, M=24 → min(2, 4) → 2",
+      "source": "suggested",
+      "value": 2
+    }
+  },
+  "decisions": [],
+  "legacy": {
+    "can_disable": false,
+    "enabled": true,
+    "lock": "/tmp/native-build.lock",
+    "next": "legacy lock is still in use; migrate the listed owners to `kr lock`, confirm the migration checklist, then remove [legacy] on this machine",
+    "observation_scope": "doctor calls and kr bridge acquisition; unobserved legacy activity is unknown",
+    "recent_non_kr_owners": [
+      {
+        "last_seen": "2026-10-16T00:21:31.788335Z",
+        "lock": "/tmp/native-build.lock",
+        "owner": {
+          "kr": false,
+          "pid": 29246,
+          "session": "calibration",
+          "started": "1792109903.540517",
+          "task": "kr39"
+        }
+      }
+    ],
+    "unknown_owner": false,
+    "window_days": 7
+  },
+  "machine": {
+    "chip": "Apple M3",
+    "cores": 8,
+    "disk_free_bytes": 278254772224,
+    "host": "iMac",
+    "load": {
+      "fifteen": 50.87,
+      "five": 122.0,
+      "one": 295.92
+    },
+    "load_threshold": 32.0,
+    "memory_bytes": 25769803776,
+    "memory_pressure": "normal",
+    "performance_cores": 4,
+    "swap_used_bytes": 1456209920
+  },
+  "ok": true,
+  "problems": [
+    {
+      "code": "load_high",
+      "fix": "test failures now are marked as high-load failures and run again; check `top -o cpu` for processes that do not belong to a build",
+      "message": "1-minute load 295.92 is above 32 (4 × 8 cores)",
+      "severity": "warning"
+    }
+  ],
+  "runtimes": [
+    "iOS 18.6",
+    "iOS 26.5",
+    "iOS 27.0",
+    "iOS 27.1",
+    "tvOS 26.5",
+    "tvOS 27.0"
+  ],
+  "schema_version": 1,
+  "xcode": {
+    "developer_dir": "/Applications/Xcode.app/Contents/Developer",
+    "installed": [
+      {
+        "build": "27A9269",
+        "path": "/Applications/Xcode.app",
+        "version": "27.1"
+      },
+      {
+        "build": "17F113",
+        "path": "/Applications/Xcode_26.6.app",
+        "version": "26.6"
+      }
+    ],
+    "required": null,
+    "selected": {
+      "build": "27A9269",
+      "developer_dir": "/Applications/Xcode.app/Contents/Developer",
+      "path": "/Applications/Xcode.app",
+      "version": "27.1"
+    }
+  }
+}

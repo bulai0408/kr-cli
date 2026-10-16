@@ -1,0 +1,33 @@
+kr39: acquired native lock
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling rustix v1.1.5
+   Compiling errno v0.3.14
+   Compiling memchr v2.8.3
+   Compiling once_cell v1.21.4
+   Compiling serde_json v1.0.154
+   Compiling syn v3.0.9
+   Compiling tempfile v3.27.0
+   Compiling serde_derive v1.0.229
+   Compiling serde v1.0.229
+   Compiling kr-resource v0.1.0 (<repo>/crates/kr-resource)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.32s
+     Running tests/legacy.rs (target/debug/deps/legacy-4c0f6b3b3d964b40)
+
+running 1 test
+
+thread 'rewriting_the_owner_pid_never_leaves_a_partial_file' (49336775) panicked at crates/kr-resource/tests/legacy.rs:238:13:
+assertion `left == right` failed: "kr kr 6098 2026-10-16T00:32:02.479082Z kr\n"
+  left: 5
+ right: 4
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test rewriting_the_owner_pid_never_leaves_a_partial_file ... FAILED
+
+failures:
+
+failures:
+    rewriting_the_owner_pid_never_leaves_a_partial_file
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.33s
+
+error: test failed, to rerun pass `-p kr-resource --test legacy`

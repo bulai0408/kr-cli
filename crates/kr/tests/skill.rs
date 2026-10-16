@@ -51,7 +51,7 @@ fn the_main_text_matches_this_version_and_names_its_references() {
         "{out}"
     );
     assert!(
-        out.contains("`kr skill --reference <name>`: decisions, json."),
+        out.contains("`kr skill --reference <name>`: decisions, json, locks."),
         "{out}"
     );
     assert!(out.contains("4 no verdict yet"), "{out}");
@@ -67,11 +67,21 @@ fn a_reference_is_read_on_demand_and_an_unknown_one_exits_2() {
     assert_eq!(code, Some(0));
     assert!(out.starts_with("# Decision points\n"), "{out}");
     assert!(out.contains("## failure_kind"), "{out}");
+    let (code, out, _) = s.kr(&["skill", "--reference", "locks"]);
+    assert_eq!(code, Some(0));
+    assert!(
+        out.contains("kr lock build --task legacy-build -- bash scripts/build.sh"),
+        "{out}"
+    );
+    assert!(
+        out.contains("including 4") && out.contains("128+n"),
+        "{out}"
+    );
 
     let (code, _, err) = s.kr(&["skill", "--reference", "nope"]);
     assert_eq!(code, Some(2));
     assert!(
-        err.contains("no reference `nope`; references: decisions, json"),
+        err.contains("no reference `nope`; references: decisions, json, locks"),
         "{err}"
     );
 }
@@ -106,7 +116,10 @@ fn project_and_owner_additions_follow_the_main_text() {
     let json: serde_json::Value = serde_json::from_str(&out).unwrap();
     assert_eq!(json["schema_version"], 1);
     assert_eq!(json["name"], "main");
-    assert_eq!(json["references"], serde_json::json!(["decisions", "json"]));
+    assert_eq!(
+        json["references"],
+        serde_json::json!(["decisions", "json", "locks"])
+    );
     assert_eq!(json["additions"][0]["kind"], "project");
     assert_eq!(json["additions"][1]["kind"], "owner");
 }

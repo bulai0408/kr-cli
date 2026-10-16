@@ -1,0 +1,779 @@
+kr39: acquired native lock
+    Checking kr-resource v0.1.0 (<repo>/crates/kr-resource)
+    Checking kr v0.1.0 (<repo>/crates/kr)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.95s
+   Compiling kr-resource v0.1.0 (<repo>/crates/kr-resource)
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.80s
+     Running unittests src/main.rs (target/debug/deps/kr-ac495f0b0b9bf96a)
+
+running 1 test
+test tests::cli_definition_is_valid ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/check.rs (target/debug/deps/check-0a3ef857ecab3fc9)
+
+running 13 tests
+test a_build_that_fails_again_with_a_clean_cache_fails_and_says_the_cache_is_not_the_cause ... ok
+test a_compile_error_fails_with_the_compiler_message_and_the_log_path ... ok
+test a_compile_error_with_the_cache_on_is_not_built_again ... ok
+test a_filter_naming_a_target_the_scheme_does_not_build_is_explained ... ok
+test a_clean_project_passes_with_timed_steps_under_a_build_slot ... ok
+test an_app_with_a_real_bundle_id_fails_the_isolation_check ... ok
+test a_build_that_fails_with_the_shared_cache_is_judged_again_with_a_clean_one ... ok
+test an_unknown_target_name_lists_the_known_ones ... ok
+test an_entitlement_outside_the_allowed_environments_fails_the_isolation_check ... ok
+test with_the_cache_off_builds_say_so ... ok
+test with_the_cache_on_every_build_of_the_project_shares_one_cache ... ok
+test a_filter_that_matches_no_test_points_at_its_line ... ok
+test with_the_cache_on_builds_record_the_hits_and_misses_xcode_reported ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+     Running tests/cli.rs (target/debug/deps/cli-19d1a4b0af82823f)
+
+running 6 tests
+test version_prints_the_crate_version ... ok
+test help_lists_commands_and_global_flags ... ok
+test config_human_output_starts_with_where_the_config_came_from ... ok
+test config_error_with_json_is_structured_on_stdout ... ok
+test config_json_shows_sources_and_merged_values ... ok
+test config_error_points_at_the_file_and_line ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/deliver.rs (target/debug/deps/deliver-3a4e4e7c1d61b2d2)
+
+running 8 tests
+test a_filter_that_selected_nothing_is_not_verified ... ok
+test an_item_that_started_but_never_ended_is_not_verified ... ok
+test an_unverified_result_is_listed_with_its_reason ... ok
+test an_unknown_run_says_where_runs_are_kept ... ok
+test the_latest_run_with_results_is_the_default ... ok
+test the_json_draft_lists_the_todos_it_can_see ... ok
+test without_a_base_the_draft_says_changed_files_were_not_checked ... ok
+test a_real_krill_run_drafts_three_parts ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/device.rs (target/debug/deps/device-89400654e4ef4de4)
+
+running 15 tests
+test an_app_signed_by_another_team_stops_before_installing ... ok
+test an_app_signed_for_icloud_production_stops_before_installing ... ok
+test a_device_lost_before_an_item_makes_it_unverified ... ok
+test a_cable_pulled_between_items_leaves_the_next_item_unverified ... ok
+test a_device_lost_during_an_item_makes_it_unverified_not_failed ... ok
+test a_cable_pulled_mid_run_makes_the_items_unverified_though_wifi_still_reaches_the_device ... ok
+test a_test_runner_the_device_refuses_fails_with_xcodebuilds_reason ... ok
+test an_unknown_device_name_lists_the_paired_devices ... ok
+test a_normal_run_builds_once_takes_the_device_and_passes ... ok
+test check_on_a_device_with_missing_prerequisites_refuses_before_building ... ok
+test doctor_json_has_the_device_and_says_ui_automation_cannot_be_read ... ok
+test doctor_says_to_unlock_a_locked_device ... ok
+test doctor_passes_a_ready_device_and_warns_that_its_ios_is_newer_than_the_sdk ... ok
+test doctor_says_what_to_do_on_the_device_for_each_missing_prerequisite ... ok
+test register_devices_lets_xcodebuild_register_the_device ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/doctor.rs (target/debug/deps/doctor-23ded88c1bbe6da5)
+
+running 6 tests
+test doctor_fails_when_the_required_xcode_is_missing ... ok
+test doctor_excludes_kr_owned_locks_and_explains_the_observation_limit ... ok
+test doctor_calibrates_the_work_mac_to_two_builds_without_hiding_config_overrides ... ok
+test doctor_shows_profile_capacity_and_pool_problems ... ok
+test doctor_json_says_where_each_capacity_comes_from ... ok
+test doctor_remembers_non_kr_legacy_owners_after_they_release_the_lock ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/lock.rs (target/debug/deps/lock-a789f88138ea80e9)
+
+running 18 tests
+test exit_code_of_the_command_is_passed_through ... ok
+test events_record_queueing_acquiring_and_releasing ... ok
+test nested_lock_in_the_holders_command_runs_without_queueing ... ok
+test sigterm_while_waiting_for_the_bridge_removes_its_ticket_without_starting_work ... ok
+test sigterm_to_kr_is_forwarded_to_the_command_and_the_slot_is_returned ... ok
+test slot_is_free_once_a_killed_holder_and_its_command_are_gone ... ok
+test with_the_bridge_on_a_killed_kr_leaves_a_stale_lock_the_next_kr_takes_over ... ok
+test with_the_bridge_on_an_old_script_cannot_take_the_machine_lock_while_kr_builds ... ok
+test replay_outer_legacy_holder_can_enter_kr_while_another_kr_waits ... ok
+test with_the_bridge_on_nested_kr_under_a_holder_does_not_wait_for_itself ... ok
+test capacity_two_runs_at_most_two_at_a_time ... ok
+test a_held_variable_from_a_non_ancestor_is_not_trusted ... ok
+test slot_stays_held_while_a_killed_holders_command_still_runs ... ok
+test capacity_one_runs_strictly_one_at_a_time ... ok
+test waiters_get_the_slot_in_arrival_order ... ok
+test with_the_bridge_on_kr_waits_for_an_old_script ... ok
+test queue_json_lists_holders_and_waiters_with_estimates ... ok
+test with_the_bridge_on_the_owner_names_the_running_command_so_a_killed_kr_is_not_stale ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.48s
+
+     Running tests/merge.rs (target/debug/deps/merge-fa318af433d2a885)
+
+running 28 tests
+test incremental_build_failure_is_not_a_pass ... ok
+test incremental_build_timeout_is_not_a_pass ... ok
+test changed_native_headers_also_require_incremental_compilation ... ok
+test clean_json_and_credential_references_pass_without_a_native_build ... ok
+test git_driver_keeps_a_real_same_key_conflict_unmerged ... ok
+test predict_orders_stacked_branches_ancestor_first_without_asking_about_shared_commits ... ok
+test clean_text_merge_of_same_file_still_needs_a_logical_decision ... ok
+test quick_check_allows_idempotent_drop_if_exists ... ok
+test install_enables_rerere_in_all_worktrees_and_warns_about_tracked_attributes ... ok
+test quick_check_allows_recreated_tables_independent_fixtures_and_commented_sql ... ok
+test predict_reports_text_and_logical_conflicts_with_tickets_and_records_a_resolution ... ok
+test quick_check_detects_scenario_drift_and_migration_order ... ok
+test real_history_xcstrings_text_conflict_merges_without_dropping_entries ... ok
+test quick_check_catches_the_original_batch6_duplicate_drop_in_upgrade_test ... ok
+test real_same_key_conflict_is_refused_without_changing_ours ... ok
+test quick_check_incrementally_builds_the_changed_module_with_recorded_xcode_output ... ok
+test quick_check_matches_registered_test_classes_without_requiring_a_name_suffix ... ok
+test quick_check_reports_invalid_json_and_credentials_without_printing_values ... ok
+test quick_check_catches_constructed_batch6_duplicate_drop_before_compilation ... ok
+test xcstrings_preserves_real_krill_entries_and_validates_before_replacing_ours ... ok
+test xcstrings_rejects_duplicate_keys_instead_of_losing_a_translation ... ok
+test xcstrings_validation_failure_never_replaces_ours_or_leaves_a_temp_file ... ok
+test xcstrings_same_key_delete_modify_and_metadata_disagreements_preserve_ours ... ok
+test predict_suggests_clean_branch_before_a_conflicting_pair_and_rejects_invalid_refs ... ok
+test resolution_failed_tests_are_recorded_as_unsupported ... ok
+test resolution_rejects_a_zero_test_run ... ok
+test resolution_is_reconciled_only_against_compiled_and_tested_merged_tree ... ok
+test resolution_rejects_tests_of_an_old_tree ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.94s
+
+     Running tests/plan.rs (target/debug/deps/plan-db58b4f201186979)
+
+running 6 tests
+test an_unknown_gate_lists_the_gates ... ok
+test a_fresh_checkout_needs_its_build_and_has_work_to_do ... ok
+test with_exit_code_work_to_do_exits_3_and_nothing_to_do_exits_0 ... ok
+test after_a_run_the_build_is_cached_and_the_estimate_comes_from_history ... ok
+test a_changed_input_says_why_it_builds ... ok
+test the_human_plan_starts_with_the_conclusion ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/pool.rs (target/debug/deps/pool-f8efb74275c44795)
+
+running 4 tests
+test pool_lease_of_an_unknown_kind_explains_the_kinds ... ok
+test pool_status_lists_pool_devices_only ... ok
+test pool_sync_creates_the_missing_device ... ok
+test pool_lease_runs_the_command_on_a_booted_pool_device ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/rejudge.rs (target/debug/deps/rejudge-23d191e96cdbad28)
+
+running 3 tests
+test evidence_bundles_are_read_once_on_a_copy_and_then_judged_from_the_cache ... ok
+test a_cached_verdict_from_older_rules_is_listed_as_changed ... ok
+test a_verdict_that_now_passes_says_which_reason_went_away ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/remote.rs (target/debug/deps/remote-ea0b3f0c2bc6942d)
+
+running 32 tests
+test a_device_problem_on_the_host_is_listed_here_with_what_to_do ... ok
+test a_gate_runs_remotely_by_name ... ok
+test a_device_on_the_host_runs_and_its_results_come_back ... ok
+test a_device_lost_on_the_host_leaves_its_items_unverified_here ... ok
+test a_host_that_cannot_sign_is_refused_with_what_to_do_there ... ok
+test a_host_run_waiting_for_decisions_keeps_them_and_exits_4_here ... ok
+test a_host_that_can_sign_runs_work_that_needs_a_developer_certificate ... ok
+test a_build_that_fails_on_the_host_fails_the_run_and_says_why ... ok
+test a_refusal_in_json_lists_each_problem_with_its_next_step ... ok
+test a_remote_run_names_its_requester_here_and_keeps_the_hosts_tests ... ok
+test a_linux_host_is_refused_as_not_macos ... ok
+test a_remote_run_reports_the_hosts_result_as_its_own ... ok
+test a_host_lost_in_json_says_why_and_what_next ... ok
+test an_undeclared_remote_names_the_declared_ones_and_the_file ... ok
+test an_unpushed_branch_says_how_to_push_it ... ok
+test an_unreachable_host_is_refused_with_how_to_reach_it ... ok
+test a_mac_without_xcode_or_with_another_kr_is_refused ... ok
+test a_branch_the_host_cannot_fetch_is_refused ... ok
+test events_of_a_remote_run_are_written_here_too ... ok
+test in_an_ssh_session_simulator_and_package_work_needs_no_trial_sign ... ok
+test real_linux_hosts_are_refused_as_not_macos ... ok
+test real_localhost_runs_the_whole_flow ... ok
+test every_problem_is_reported_at_once ... ok
+test in_an_ssh_session_this_mac_refuses_signing_work_it_cannot_sign ... ok
+test in_an_ssh_session_this_mac_goes_on_when_it_can_sign ... ok
+test kr_check_in_an_ssh_session_also_decides_by_the_trial_sign ... ok
+test simulator_work_on_a_host_needs_no_trial_sign ... ok
+test the_json_result_is_the_hosts_with_where_it_ran ... ok
+test remote_quarantined_failures_are_recorded_and_not_printed_as_passes ... ok
+test deliver_lists_items_of_a_lost_host_as_unverified ... ok
+test a_host_lost_during_the_run_leaves_every_item_unverified ... ok
+test a_stop_signal_during_a_remote_run_aborts_it ... ok
+
+test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests/report.rs (target/debug/deps/report-08a66f11694a89ac)
+
+running 9 tests
+test a_time_kr_cannot_read_is_a_bad_argument ... ok
+test a_passed_item_run_again_on_the_same_inputs_is_a_detour ... ok
+test every_invocation_is_logged_and_bad_arguments_are_counted ... ok
+test an_empty_range_says_so_and_how_to_widen_it ... ok
+test a_worktree_filter_keeps_its_runs_and_says_how_many_had_no_requester ... ok
+test detours_list_the_runs_that_went_around ... ok
+test the_batch_8_report_counts_time_rework_and_flaky_tests ... ok
+test the_batch_7_report_starts_with_the_conclusion ... ok
+test decisions_are_scored_per_kind_and_choice ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/run.rs (target/debug/deps/run-b49b818614b25e58)
+
+running 71 tests
+test a_filter_that_selects_zero_tests_on_the_device_fails_even_with_exit_zero ... ok
+test a_failed_test_has_a_signature_and_a_category ... ok
+test a_failed_swift_testing_test_named_test_is_rerun_with_its_parentheses ... ok
+test a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky ... ok
+test a_missing_result_bundle_fails_the_item_and_names_the_bundle ... ok
+test a_quarantined_failure_runs_and_stays_failed_but_does_not_block_the_gate ... ok
+test a_persistent_solo_failure_skips_the_whole_item_rerun_under_high_load ... ok
+test a_decision_handed_back_on_the_next_run_command_is_recorded_like_kr_decide ... ok
+test a_rerun_filter_that_selects_no_test_is_reported_and_not_run ... ok
+test a_result_bundle_with_fewer_tests_than_selected_fails ... ok
+test a_long_enumeration_output_is_read_whole_not_just_its_tail ... ok
+test a_decision_gives_the_verdict_without_running_again_and_a_later_run_reconciles_it ... ok
+test a_quarantine_removal_can_be_reviewed_and_reconciled_without_kr_editing_the_file ... ok
+test a_test_that_fails_again_on_its_rerun_fails_the_run ... ok
+test a_timeout_with_successful_solo_reruns_still_reruns_the_whole_item ... ok
+test a_second_run_with_unchanged_inputs_skips_the_build ... ok
+test an_environment_judgment_leaves_the_test_unverified_which_is_not_a_pass ... ok
+test a_wrong_decision_argument_exits_2_and_says_what_is_valid ... ok
+test a_verdict_recorded_under_another_rule_is_listed_as_changed ... ok
+test an_unknown_gate_lists_the_gates ... ok
+test an_item_start_records_what_else_held_the_machine ... ok
+test a_failed_solo_rerun_under_high_or_unknown_load_keeps_the_whole_item_rerun ... ok
+test an_item_end_names_what_it_ran_on_and_keeps_each_test ... ok
+test an_item_that_errors_fails_alone_and_the_others_still_get_a_verdict ... ok
+test an_unseen_failure_ends_the_run_without_a_verdict_and_with_a_decision_point ... ok
+test an_unquarantined_failure_still_needs_a_decision_and_quarantined_failures_stay_failed_after_it ... ok
+test command_reruns_preserve_the_first_log_and_record_both_paths ... ok
+test events_have_per_item_durations_and_the_rerun ... ok
+test changed_runs_keep_selection_and_quarantine_decisions_in_one_namespace ... ok
+test each_pick_of_the_scheduler_is_recorded_with_its_candidates_and_estimates ... ok
+test every_item_saves_its_parsed_results_and_rejudging_the_run_changes_nothing ... ok
+test changed_run_and_gate_default_efficiency_decisions_continue_and_record_pending_review ... ok
+test every_run_ends_with_a_run_end_event_even_when_kr_itself_fails ... ok
+test preparation_config_errors_name_the_file_and_key_path ... ok
+test preparation_context_variables_are_not_machine_config_keys ... ok
+test preparation_background_waits_until_ready_and_cleans_up ... ok
+test preparation_cleanup_failure_keeps_test_evidence_but_is_unverified ... ok
+test explain_without_changed_describes_explicit_and_gate_scenarios ... ok
+test preparation_failure_is_unverified_and_still_runs_cleanup ... ok
+test nine_clean_runs_or_a_recent_failure_or_flake_do_not_suggest_removal ... ok
+test preparation_shared_failure_marks_all_users_unverified_without_retry ... ok
+test preparation_offline_comparison_separates_environment_from_product_failure ... ok
+test preparation_shared_mismatch_names_both_scenarios ... ok
+test preparation_invalid_fields_have_actionable_config_errors ... ok
+test a_sigterm_stops_the_run_like_sigint_and_starts_no_new_item ... ok
+test preparation_success_is_reported_and_cleaned_before_the_item_ends ... ok
+test preparation_shared_instance_is_started_once_for_two_scenarios ... ok
+test quarantine_counts_flakes_by_run_start_like_report_and_excludes_whole_item_flakes ... ok
+test preparation_unused_shared_dependency_does_not_delay_cleanup_past_slot_release ... ok
+test quarantine_over_budget_is_rejected_before_execution_with_a_pr_fix ... ok
+test rejudge_does_not_apply_one_projects_quarantine_to_another_projects_saved_run ... ok
+test rejudge_applies_the_current_list_and_preserves_failed_test_outcomes ... ok
+test rejudge_raises_the_decision_points_of_runs_from_before_them ... ok
+test quarantine_is_scoped_to_the_item_and_observed_entries_and_exits_are_events ... ok
+test quarantine_preserves_preparation_and_cleanup_failures_as_unverified ... ok
+test selection_defaults_are_recorded_even_when_the_build_fails ... ok
+test repeated_flakes_suggest_a_repository_edit_without_changing_the_list ... ok
+test rejudge_shows_a_decision_point_with_its_decision_and_reconciliation ... ok
+test quarantine_never_unblocks_missing_results_timeouts_or_invalid_rerun_filters ... ok
+test ten_complete_clean_runs_suggest_removal_with_the_exact_entry ... ok
+test selection_review_and_a_failure_decision_have_distinct_ids_and_independent_verdicts ... ok
+test the_human_report_puts_the_decision_point_in_its_own_section_with_the_next_command ... ok
+test the_default_gate_passes_with_a_flaky_test_reported ... ok
+test the_machine_load_is_sampled_while_the_run_lasts ... ok
+test two_lanes_of_one_device_kind_both_run_and_every_item_gets_a_verdict ... ok
+test the_run_start_names_the_requester_and_its_previous_run ... ok
+test preparation_interruption_cleans_up_and_returns_unverified ... ok
+test ipad_lanes_take_their_simulator_slot_before_iphone_lanes ... ok
+test preparation_readiness_timeout_is_unverified_and_cleaned ... ok
+test test_products_still_missing_after_the_rebuild_fail_the_item_with_the_next_step ... ok
+test test_products_deleted_while_waiting_for_a_simulator_are_rebuilt_once ... ok
+
+test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.36s
+
+     Running tests/selection.rs (target/debug/deps/selection-25017af44ba28fb0)
+
+running 12 tests
+test an_owned_file_without_scenario_coverage_adds_candidates_instead_of_silently_skipping ... ok
+test explicit_scenarios_can_only_add_to_the_reverse_dependency_closure ... ok
+test additional_scenarios_include_project_scoped_cofailure_and_flaky_sample_counts ... ok
+test invalid_ignore_and_unknown_dependencies_name_the_config_key_and_fix ... ok
+test hash_explains_the_exact_inputs_used_by_plan_and_changes_with_file_content ... ok
+test an_unreadable_or_malformed_package_graph_defaults_to_additional_scenarios ... ok
+test ignore_globs_require_double_star_to_cross_directory_boundaries ... ok
+test deleted_and_untracked_paths_and_resource_only_targets_remain_selectable ... ok
+test shared_metadata_selects_favorites_through_detail_even_outside_the_gate ... ok
+test unknown_changes_add_candidates_but_declared_ignores_raise_no_decision ... ok
+test real_event_replay_counts_final_scenario_runs_and_flaky_runs ... ok
+test real_krill_commits_cover_batch_six_indirect_consumers_and_report_unknown_frequency ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+     Running tests/setup.rs (target/debug/deps/setup-a1f4a479421db60a)
+
+running 5 tests
+test setup_refuses_malformed_markers_or_a_foreign_skill_before_writing_anything ... ok
+test setup_uses_codex_home_and_the_effective_override_file ... ok
+test both_agents_share_imported_rules_instead_of_installing_a_duplicate_block ... ok
+test setup_preserves_every_byte_outside_the_markers_and_remove_restores_it ... ok
+test setup_installs_only_a_discovery_entry_is_idempotent_and_removes_both_scopes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/simulate.rs (target/debug/deps/simulate-02bafa89b62ae3bb)
+
+running 10 tests
+test no_recorded_run_says_what_to_do ... ok
+test a_cache_miss_needs_a_recorded_build_time ... ok
+test both_runs_together_rank_like_the_measurements ... ok
+test the_batch6_script_run_replays_within_ten_percent_of_its_measured_time ... ok
+test the_kr_gate_replays_within_ten_percent_of_its_measured_time ... ok
+test samples_from_several_runs_spread_p50_and_p90 ... ok
+test ipad_first_beats_the_old_lane_order_on_batch6 ... ok
+test a_capacity_the_runs_did_not_use_is_outside_calibration ... ok
+test a_cache_miss_adds_the_recorded_build_time ... ok
+test the_human_report_gives_calibration_then_one_line_per_setting ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/skill.rs (target/debug/deps/skill-4f5ac7db86c13b70)
+
+running 3 tests
+test the_main_text_matches_this_version_and_names_its_references ... ok
+test a_reference_is_read_on_demand_and_an_unknown_one_exits_2 ... ok
+test project_and_owner_additions_follow_the_main_text ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_config-4d5191cb5d3fca0a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/load.rs (target/debug/deps/load-7328ef6aee5f5768)
+
+running 15 tests
+test machine_file_defaults_to_xdg_config_home_then_home ... ok
+test a_remote_without_an_ssh_host_points_at_it ... ok
+test discovery_stops_at_the_repo_root ... ok
+test missing_files_are_not_an_error ... ok
+test non_config_kr_variables_are_ignored ... ok
+test discovery_finds_the_project_file_up_to_the_repo_root ... ok
+test later_machine_layers_override_earlier_ones ... ok
+test state_dir_defaults_to_xdg_state_home_then_home ... ok
+test per_machine_resources_override_general_ones ... ok
+test remote_machines_are_declared_ssh_hosts ... ok
+test remotes_in_the_project_file_are_rejected ... ok
+test a_bad_environment_value_names_the_variable ... ok
+test machine_settings_in_the_project_file_are_rejected ... ok
+test a_toml_syntax_error_points_at_the_file_and_line ... ok
+test an_unknown_key_points_at_the_key ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/project.rs (target/debug/deps/project-666fa16003efa013)
+
+running 14 tests
+test a_valid_project_loads ... ok
+test a_scenario_on_an_unknown_device_kind_points_at_the_device ... ok
+test a_scenario_without_tests_is_rejected ... ok
+test a_device_kind_without_a_runtime_is_rejected ... ok
+test a_gate_naming_an_unknown_scenario_points_at_it ... ok
+test a_missing_project_section_is_rejected ... ok
+test a_gate_naming_an_unknown_suite_points_at_it ... ok
+test an_unknown_suite_type_is_rejected ... ok
+test a_bad_timeout_points_at_the_value ... ok
+test timeouts_parse_like_15m ... ok
+test star_in_a_gate_means_every_scenario ... ok
+test several_problems_are_counted ... ok
+test pool_devices_are_named_after_the_project_and_kind ... ok
+test the_krill_example_is_valid ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_device-6fd871c67a8a7ef2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_events-195dbc2b0651a47b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/event_log.rs (target/debug/deps/event_log-651dda041792cfdb)
+
+running 6 tests
+test run_ids_sort_by_creation_time ... ok
+test unknown_event_types_from_newer_versions_still_read ... ok
+test concurrent_writer_child ... ok
+test append_writes_one_json_line_into_the_utc_day_file ... ok
+test read_since_returns_events_from_that_day_on_and_skips_bad_lines ... ok
+test concurrent_processes_never_interleave_lines ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_exec-23630c61b0a0bae7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/background.rs (target/debug/deps/background-629f6ca797458ecf)
+
+running 3 tests
+test a_cleanup_command_has_one_hard_deadline_even_if_it_ignores_term ... ok
+test dropping_a_background_service_stops_its_descendants_even_after_the_leader_exits ... ok
+test a_background_service_ignoring_term_is_killed_after_the_grace_period ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+
+     Running tests/logged.rs (target/debug/deps/logged-56f36bee26d7544b)
+
+running 4 tests
+test a_replayed_logged_run_writes_the_recorded_output_to_the_log ... ok
+test the_recording_runner_saves_each_call_sanitized_and_in_order ... ok
+test a_logged_run_streams_stdout_and_stderr_into_the_log_and_keeps_a_tail ... ok
+test a_logged_run_past_its_timeout_kills_the_whole_process_group ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.93s
+
+     Running tests/runner.rs (target/debug/deps/runner-69e846166da8b9b0)
+
+running 10 tests
+test replay_remembers_the_commands_it_answered_in_order ... ok
+test replay_rejects_an_unrecorded_command_and_names_it ... ok
+test replay_returns_repeated_calls_in_recorded_order ... ok
+test replay_returns_the_recorded_output_for_a_matching_command ... ok
+test sanitizer_also_cleans_json_escaped_paths ... ok
+test sanitizer_removes_the_user_name_from_other_paths_under_users ... ok
+test sanitizer_removes_home_and_secrets_but_keeps_words_containing_the_user_name ... ok
+test replay_loads_recordings_from_fixture_files ... ok
+test real_runner_captures_stdout_and_exit_status ... ok
+test replay_takes_as_long_as_the_recorded_duration ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/stop.rs (target/debug/deps/stop-da578db3397fe8b8)
+
+running 1 test
+test a_sigterm_stops_a_replayed_command_and_every_later_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_machine-326d1979a74fd0d7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/diagnose.rs (target/debug/deps/diagnose-bbb1693d80834ff5)
+
+running 7 tests
+test high_load_now_is_a_warning ... ok
+test low_disk_is_a_warning_then_an_error ... ok
+test the_krill_pool_on_this_imac_has_no_problems ... ok
+test missing_pool_devices_are_listed ... ok
+test a_missing_runtime_is_an_error_with_install_instructions ... ok
+test a_required_xcode_that_is_not_installed_is_an_error_with_the_installed_list ... ok
+test a_device_type_the_runtime_does_not_support_is_an_error ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/profile.rs (target/debug/deps/profile-97940434315e4b73)
+
+running 12 tests
+test reads_the_m3_imac_hardware ... ok
+test a_mac_without_performance_levels_counts_all_cores ... ok
+test high_end_m4_max_gets_more_slots ... ok
+test low_end_m3_gets_one_build_two_sims_one_light ... ok
+test load_is_high_above_the_factor_per_core_and_pressure_is_separate ... ok
+test by_default_only_critical_memory_pressure_blocks ... ok
+test the_load_factor_per_core_is_configurable ... ok
+test waiting_for_load_rechecks_until_it_drops ... ok
+test developer_dir_from_the_environment_wins ... ok
+test detect_reads_xcodes_runtimes_and_disk ... ok
+test required_xcode_matches_by_version_components ... ok
+test waiting_for_load_gives_up_after_the_limit ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_remote-7ee16f6c66b0d06e)
+
+running 8 tests
+test signing::tests::a_trial_sign_that_did_not_finish_gives_its_last_error_line ... ok
+test signing::tests::a_machine_that_signs_for_the_team_has_no_problem ... ok
+test signing::tests::a_locked_keychain_says_so_and_what_to_do_on_that_machine ... ok
+test tests::quoting_keeps_simple_words_and_escapes_the_rest ... ok
+test signing::tests::no_identity_and_another_team_are_told_apart ... ok
+test tests::the_note_ssh_prints_after_the_result_is_ignored ... ok
+test tests::kr_runs_in_the_login_shell_of_the_host ... ok
+test tests::the_result_is_the_last_json_object_after_other_output ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_resource-b2e29c01bc1f3a51)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/legacy.rs (target/debug/deps/legacy-1d14c98f2859a8db)
+
+running 10 tests
+test kr_waits_while_an_old_script_holds_it ... ok
+test an_older_live_waiter_goes_first ... ok
+test one_process_takes_it_once_for_several_slots ... ok
+test queue_files_of_dead_waiters_are_removed_and_order_is_kept ... ok
+test an_ownerless_lock_is_stale_only_after_a_minute ... ok
+test a_lock_whose_owner_died_is_taken_over ... ok
+test a_lock_held_by_an_ancestor_counts_as_held ... ok
+test rewriting_the_owner_pid_never_leaves_a_partial_file ... ok
+test threads_of_one_process_acquiring_together_share_the_lock ... ok
+test while_kr_holds_it_an_old_script_cannot_take_it ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.82s
+
+     Running tests/pool.rs (target/debug/deps/pool-ff1cc11475e2e681)
+
+running 9 tests
+test an_overdue_holder_is_expected_to_finish_now ... ok
+test free_slots_mean_no_wait ... ok
+test estimates_simulate_slots_freeing_up_in_order ... ok
+test an_acquired_slot_shows_its_holder_until_dropped ... ok
+test capacity_limits_concurrent_slots ... ok
+test a_ticket_left_by_a_dead_waiter_is_removed ... ok
+test only_the_first_waiter_may_take_a_freed_slot ... ok
+test waiters_are_listed_in_arrival_order_and_leave_when_dropped ... ok
+test lanes_of_one_process_joining_the_queue_at_once_each_get_a_ticket ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/processes.rs (target/debug/deps/processes-711e99c99780f780)
+
+running 3 tests
+test a_slot_left_by_a_dead_holder_with_no_command_is_free ... ok
+test the_current_process_parent_is_an_ancestor_and_a_child_is_not ... ok
+test a_slot_whose_command_group_still_runs_stays_held ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_run-8a7750eb18f8b894)
+
+running 4 tests
+test schedule::tests::lanes_are_capped_by_slots_devices_and_items ... ok
+test schedule::tests::a_lane_that_cannot_get_a_device_leaves_its_items_to_the_others ... ok
+test schedule::tests::by_name_the_ipad_lane_waits_until_an_iphone_lane_ends ... ok
+test schedule::tests::ipad_lanes_queue_first_and_the_last_lane_waits_for_a_slot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/decision.rs (target/debug/deps/decision-e64111794b03eb67)
+
+running 6 tests
+test a_later_outcome_on_the_same_inputs_supports_or_refutes_the_choice ... ok
+test one_seen_failure_fails_the_item_so_its_other_failures_are_not_asked_about ... ok
+test a_seen_signature_of_another_test_or_another_signature_is_still_unseen ... ok
+test kr_suggests_environment_only_when_the_message_names_it ... ok
+test only_unseen_failures_that_alone_fail_the_item_need_a_decision ... ok
+test options_are_named_as_kr_decide_takes_them ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/failure.rs (target/debug/deps/failure-dc82856e7fe7f895)
+
+running 3 tests
+test messages_fall_into_the_five_categories_and_unknown ... ok
+test each_test_has_its_time_and_failed_or_flaky_ones_their_failure ... ok
+test signatures_drop_numbers_addresses_and_identifiers ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/judge.rs (target/debug/deps/judge-c3d5e405dbdfd497)
+
+running 13 tests
+test a_failing_exit_code_without_failed_tests_is_a_failure ... ok
+test a_failure_that_fails_again_is_a_failure_with_its_message ... ok
+test a_swallowed_exit_code_does_not_hide_failed_tests ... ok
+test a_timeout_is_a_failure ... ok
+test a_failure_that_passes_on_its_rerun_is_flaky_and_the_scenario_passes ... ok
+test a_missing_result_bundle_is_named_when_known ... ok
+test a_missing_result_bundle_is_a_failure ... ok
+test all_enumerated_tests_passing_is_a_pass ... ok
+test an_enumeration_error_is_the_reason_not_the_filters ... ok
+test running_only_part_of_the_selection_is_a_failure ... ok
+test running_tests_outside_the_filter_is_a_failure ... ok
+test skipped_tests_are_reported_but_do_not_fail ... ok
+test zero_selected_tests_is_a_failure_even_with_exit_zero ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/plan.rs (target/debug/deps/plan-ab23397991b5d20b)
+
+running 3 tests
+test work_is_ordered_longest_first_with_unknown_durations_first ... ok
+test a_listed_file_that_was_deleted_still_hashes ... ok
+test the_input_hash_changes_with_file_contents_and_the_command_but_not_mtime ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rejudge.rs (target/debug/deps/rejudge-f6500c3c03b96ea4)
+
+running 6 tests
+test a_rule_that_ignores_reruns_turns_the_flaky_test_into_a_failure ... ok
+test enabled_tests_of_the_old_e2e_script_are_its_enumeration ... ok
+test the_rules_a_run_was_judged_with_change_nothing ... ok
+test a_saved_verdict_survives_a_round_trip_through_json ... ok
+test evidence_with_an_enumeration_shows_selected_tests_that_did_not_run ... ok
+test evidence_without_an_enumeration_counts_the_tests_that_ran_as_selected ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_sim-56640f6d37a027e7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integration.rs (target/debug/deps/integration-7a8e95aad1dde435)
+
+running 1 test
+test real_pool_sync_lease_and_release ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pool.rs (target/debug/deps/pool-7d01e39e1139de0b)
+
+running 9 tests
+test simctl_runs_with_the_projects_developer_dir ... ok
+test sync_creates_only_missing_pool_devices ... ok
+test a_device_left_booted_by_a_crashed_holder_is_shut_down_before_reuse ... ok
+test a_lease_boots_the_first_free_device_and_shuts_it_down_on_release ... ok
+test plan_finds_existing_pool_devices_by_name_and_runtime ... ok
+test sync_never_touches_devices_outside_the_pool ... ok
+test plan_flags_a_pool_name_with_the_wrong_device_type ... ok
+test sync_reports_a_failed_create_with_simctls_reason ... ok
+test a_second_lease_gets_the_next_device_and_a_third_waits ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running unittests src/lib.rs (target/debug/deps/kr_xcode-23bb8abc41b5f8ee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/results.rs (target/debug/deps/results-fe17edb4c097129f)
+
+running 8 tests
+test enumeration_lists_enabled_tests_in_full_form ... ok
+test a_swift_testing_function_named_test_keeps_its_parentheses ... ok
+test without_a_url_rerun_filters_fall_back_to_the_method_name ... ok
+test test_results_give_every_case_with_target_and_outcome ... ok
+test rerun_filters_follow_the_test_framework_of_each_case ... ok
+test a_rerun_result_has_just_the_rerun_test ... ok
+test a_parameterized_swift_testing_function_keeps_its_argument_labels ... ok
+test enumeration_tells_which_filters_hit_nothing ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/xcode.rs (target/debug/deps/xcode-eec6256437bc903e)
+
+running 10 tests
+test error_summary_falls_back_to_the_last_lines ... ok
+test error_summary_prefers_located_compiler_errors_over_driver_noise ... ok
+test error_summary_takes_the_first_three_distinct_compiler_errors ... ok
+test test_actions_never_collect_diagnostics_or_clone_simulators ... ok
+test xcodebuild_commands_carry_kr_defaults_in_a_stable_order ... ok
+test bundle_identifier_comes_from_the_built_info_plist ... ok
+test simulator_entitlements_are_read_from_the_otool_dump ... ok
+test symbols_answer_whether_a_filter_names_real_tests ... ok
+test the_xctestrun_of_a_scheme_is_picked_when_several_share_a_products_dir ... ok
+test xctestrun_lists_test_targets_with_resolved_paths ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_config
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_device
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_events
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_exec
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_machine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_remote
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_resource
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_run
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_sim
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests kr_xcode
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling kr-resource v0.1.0 (<repo>/crates/kr-resource)
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `release` profile [optimized] target(s) in 9.34s

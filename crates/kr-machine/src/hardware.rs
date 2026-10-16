@@ -191,24 +191,25 @@ pub struct Suggestion {
     pub light: Derived,
 }
 
-/// Capacities from P (performance cores) and M (memory in GB). A heavy build uses
-/// every core and ~16 GB; a simulator with its test runner ~2 cores and ~4 GB.
+/// Capacities from P (performance cores) and M (memory in GB). ADR 0022 calibrates
+/// two builds on 10 performance cores; retain 16 GB per build and the tested cap.
+/// A simulator with its test runner budgets ~2 cores and ~4 GB.
 pub fn suggest(hw: &Hardware) -> Suggestion {
     let p = hw.perf_cores as u64;
     let m = hw.memory_gb();
-    let build_raw = (p / 6).min(m / 16);
+    let build_raw = (p / 5).min(m / 16);
     let sim_raw = (p / 2).min(m.saturating_sub(8) / 4);
     let light_raw = p / 4;
     let clamp = |v: u64, max: u64| v.clamp(1, max) as u32;
-    let build = clamp(build_raw, 4);
+    let build = clamp(build_raw, 2);
     let sim = clamp(sim_raw, 6);
     let light = clamp(light_raw, 4);
     Suggestion {
         build: Derived {
             value: build,
             formula: format!(
-                "clamp(min(P/6, M/16), 1, 4) with P={p}, M={m} → min({}, {}) → {build}",
-                p / 6,
+                "clamp(min(P/5, M/16), 1, 2) with P={p}, M={m} → min({}, {}) → {build}",
+                p / 5,
                 m / 16
             ),
         },
