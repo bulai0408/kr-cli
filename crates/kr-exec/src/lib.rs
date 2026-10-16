@@ -596,8 +596,11 @@ impl Sanitizer {
         if !self.user.is_empty() {
             // Only as a path segment: a short user name may also be part of normal words.
             let user = &self.user;
-            text = text.replace(&format!("/Users/{user}/"), "/Users/<user>/");
-            text = text.replace(&format!("\\/Users\\/{user}\\/"), "\\/Users\\/<user>\\/");
+            let users = Path::new("/").join("Users");
+            let prefix = format!("{}/{user}/", users.display());
+            let redacted = format!("{}/<user>/", users.display());
+            text = text.replace(&prefix, &redacted);
+            text = text.replace(&prefix.replace('/', "\\/"), &redacted.replace('/', "\\/"));
         }
         text
     }

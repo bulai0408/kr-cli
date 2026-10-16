@@ -130,6 +130,21 @@ fn sanitizer_also_cleans_json_escaped_paths() {
 }
 
 #[test]
+fn sanitizer_scrubs_plain_and_escaped_user_paths_without_changing_similar_names() {
+    let sanitizer = Sanitizer::new("/Volumes/Home/alice", "alice");
+    let rec = recording(
+        "ls",
+        &[],
+        0,
+        r"malice /Users/alice/plain \/Users\/alice\/escaped /Users/alice2/keep",
+    );
+    assert_eq!(
+        sanitizer.sanitize(rec).stdout,
+        r"malice /Users/<user>/plain \/Users\/<user>\/escaped /Users/alice2/keep"
+    );
+}
+
+#[test]
 fn replay_remembers_the_commands_it_answered_in_order() {
     let runner = ReplayRunner::new(vec![
         recording("a", &["1"], 0, ""),

@@ -331,3 +331,76 @@ SIGINT/SIGTERM/SIGHUP 会转发到子进程组，退出后归还槽位。嵌套�
 桥接期间继续保留机器 `[legacy]`；新版本先取旧锁再取槽位，允许旧脚本持锁调用
 kr。`kr doctor` 会列出七天内观察到的非 kr 使用者及下一步。观察不到不代表未接入
 的脚本不存在，删除前须核对 [迁移步骤](docs/research/machine-concurrency.md)。
+
+## 发版
+
+源码仓库保持私有。公开的 `bulai0408/homebrew-tap` 只接收安装说明、
+`Formula/kr.rb` 和 Release 二进制附件；本仓库的源码、测试素材、docs、Git 历史、
+构建日志和私有词表都不公开。公开仓库的创建和第一次发布由协调者在 owner 确认后执行。
+
+发版脚本需要 macOS Apple Silicon、Python 3.11+、Rust stable、`aarch64-apple-darwin`
+target、已安装的 kr 和（仅发布时）gh。只支持稳定版 `MAJOR.MINOR.PATCH`。
+不注入假版本：先把 workspace 的 Cargo 版本改成待发布版本并提交，协调者再创建
+对应的 `v<version>` tag。脚本从该 tag 的已跟踪源码快照构建，要求 Cargo 版本和
+`kr --version` 都等于版本参数。不会把未提交改动放进二进制。
+
+1. 在仓库之外建立权限为 `600` 的 UTF-8 私有词表，每行一个要拦截的姓名、
+   拼音变体、账户名或已知团队 ID。设置 `KR46_DENY_FILE` 指向它；不要提交词表，
+   不要把词放到命令参数或日志里。脚本要求词表存在且非空，但不能自动证明名单完整。
+2. 本地准备：`scripts/release.sh 0.1.0`。它要求本地 `v0.1.0` tag 已存在，
+   经 `kr lock build --task kr46-release -- cargo build ...` 排队。输出目录默认为
+   `target/release-dist/0.1.0`，必须不存在；失败产物保留供检查，再次执行使用新的
+   `--output` 目录。
+3. 本票的无 tag 演练：`scripts/release.sh 0.1.0 --ref HEAD --dry-run`。
+   它仍构建和检查本地产物，只打印公开操作，不创建仓库、推送或上传。
+   非 tag ref 只允许在 `--dry-run` 下使用；`--publish` 与 `--dry-run` 不能并用。
+4. 运行 `python3 -m unittest discover -s scripts -p test_release.py -v`。
+   再运行 `python3 scripts/rehearse-release.py target/release-dist/0.1.0`：
+   临时 HOME、无 Rust 的 PATH、临时本地 tap、`file://` 二进制安装、
+   `kr --version`、`kr skill`、`brew test`、临时全局 `kr setup`、
+   `kr doctor --json`、移除入口、卸载和删除 tap。已有 brew 版 kr 时停止，
+   不替换用户的安装。演练会临时写 Homebrew 的 tap 和 Cellar，不更改机器配置；
+   不使用真实的 agent 配置目录。它不能证明无仓库访问权限的新用户或新 agent 已验收。
+5. 已有二进制可独立检查：
+   `scripts/release.sh 0.1.0 --verify-only target/release-dist/0.1.0/kr`。
+   README 里的每个 `kr <子命令>` 必须存在于该二进制 `--help`。
+   缺 `kr init` 或 `kr skill --reference config` 明确打印 `pending #47`；
+   本地准备和 dry-run 允许 pending，`--publish` 拒绝。其他缺失命令一律失败。
+
+隐私检查先做 remap，再检查真实产物。编译时清除继承的 Rust flags，用
+`--remap-path-prefix` 映射源码、HOME、Cargo home 和 Rustup home，并去掉符号。
+`strings -a` 检查 `/Users/`、`/home/`、Cargo/Rustup 本机路径、邮箱和带上下文的
+团队 ID；运行时读取构建机器的 HOME 和 `id -un` 用户名，明确拦截这些值；
+私有词表再做大小写不敏感的 strings 检查与原始 UTF-8 字节检查。
+团队 ID 不能直接用裸 `[A-Z0-9]{10}` 拦截：随机字节和符号常命中，误报太多；
+已知 ID 放入词表，通用规则只拦 `TeamIdentifier=` / `DEVELOPMENT_TEAM=` 上下文。
+命中时只输出规则名，不输出私有值。tar 只含 `kr`，清除 uid/gid 和用户/组名。
+现有日志脱敏器通过运行时组合路径生成替换前缀，保持原有脱敏行为，避免把
+用于替换的 `/Users/` 字面量编进二进制；这不是隐私检查的豁免。
+这些检查不能代替人工审查；未知姓名拼写、拆开的字节或其他私密格式可能漏检。
+
+默认只构建 Apple Silicon。不签 Developer ID，也不公证。Homebrew formula 安装通常
+不带浏览器下载的隔离属性；浏览器下载可能被 Gatekeeper 阻止，公开 README 提示先核对
+校验和，再由用户决定是否在系统设置中允许打开，不能自动关闭 Gatekeeper。
+Intel 需额外安装 target、完整编译一套依赖并在 Intel Mac 上验收，构建时间和产物约为
+再加一份，当前未实测。GitHub Actions 还需私有构建环境与跨仓库最小权限上传凭证，
+会增加托管分钟、凭证配置和供应链维护成本；本票不新增 workflow，由 owner 决定。
+
+协调者首次发布清单（本票不执行）：
+
+- 等 #47 合入并重新构建、检查，完成真实新用户/agent 的 setup、init decisions、
+  doctor、check 验收；按仓库规定完成 main/release 的全量门禁和审查。
+- owner 确认后执行 `gh repo create bulai0408/homebrew-tap --public`。
+  在私有 kr-cli 仓库提交正确版本后执行
+  `git tag v0.1.0 <已验收的提交>`；如版本不是 0.1.0，所有命令使用同一版本。
+- 先执行 `scripts/release.sh 0.1.0 --dry-run --output target/release-preview/0.1.0`，
+  检查 `tap/README.md`、`tap/Formula/kr.rb`、tar 内容与校验和，再由协调者显式执行
+  `scripts/release.sh 0.1.0 --publish --output target/release-publish/0.1.0`。
+  gh 使用既有认证，脚本不读或打印令牌。这个分支会 clone **已有**公开 tap，
+  只 add 两个公开文件、commit、push `HEAD:main`，再执行
+  `gh release create v0.1.0 <tar.gz> <SHA256SUMS> --repo bulai0408/homebrew-tap ...`。
+  首次仓库可以为空；该顺序先建立 main，Release 创建失败时 Formula 会暂时指向缺失附件，
+  必须保留失败日志，由协调者检查远端状态后补全，不可盲目重复发布。
+- 公开文件白名单：Git 的 `README.md`、`Formula/kr.rb`；Release 的
+  `kr-0.1.0-aarch64-apple-darwin.tar.gz`、`SHA256SUMS`。`source-commit.txt`、
+  裸 `kr`、本地日志和其他文件全部留在私有工作区。脚本不会创建公开仓库或推送私有仓库。
