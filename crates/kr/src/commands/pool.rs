@@ -27,14 +27,23 @@ enum PoolCommand {
     Sync,
     /// Take a `sim` slot, lease and boot a pool device, run a command, then shut it down.
     /// The command gets KR_SIM_UDID and KR_SIM_NAME.
+    /// With --json, lease notices go to stderr; command stdout and exit code pass through.
     Lease(LeaseArgs),
 }
 
 #[derive(Debug, Args)]
 struct LeaseArgs {
-    /// Device kind from [simulators.devices]. Default: `default`.
-    #[arg(long, default_value = DEFAULT_DEVICE)]
-    kind: String,
+    /// Device kind from [simulators.devices]. Default: `default`. Conflicts with --name/--udid.
+    #[arg(long, conflicts_with_all = ["name", "udid"])]
+    kind: Option<String>,
+
+    /// Lease only this pool device; wait for it when busy. Conflicts with --kind/--udid.
+    #[arg(long, conflicts_with = "udid")]
+    name: Option<String>,
+
+    /// Lease only this pool UDID; wait for it when busy. Conflicts with --kind/--name.
+    #[arg(long)]
+    udid: Option<String>,
 
     /// Task name shown in `kr queue` and `kr pool`. Default: the command line.
     #[arg(long)]
@@ -167,7 +176,9 @@ fn lease_and_run(
     runner: &dyn kr_exec::Runner,
     args: LeaseArgs,
 ) -> Result<ExitCode> {
-    if !project.simulators.devices.contains_key(&args.kind) {
+    let kind = args.kind.as_deref().unwrap_or(DEFAULT_DEVICE);
+    if args.name.is_none() && args.udid.is_none() && !project.simulators.devices.contains_key(kind)
+    {
         let kinds: Vec<&str> = project
             .simulators
             .devices
@@ -176,14 +187,45 @@ fn lease_and_run(
             .collect();
         bail!(
             "no simulator kind `{}` in .kr.toml; known kinds: {}",
-            args.kind,
+            kind,
             kinds.join(", ")
         );
     }
-    let task = args.task.clone().unwrap_or_else(|| args.command.join(" "));
+    let mut task = args.task.clone().unwrap_or_else(|| args.command.join(" "));
     let run_id = RunId::new();
-    let devices = kr_sim::plan(project, &simctl.runtimes()?, &simctl.devices()?)?;
-    let taken = slots::take(ctx, loaded, runner, run_id, Resource::Sim, &task)?;
+    let mut devices = kr_sim::plan(project, &simctl.runtimes()?, &simctl.devices()?)?;
+    let (by, value) = if let Some(name) = args.name.as_deref() {
+        ("name", name)
+    } else if let Some(udid) = args.udid.as_deref() {
+        ("udid", udid)
+    } else {
+        ("kind", kind)
+    };
+    let selection = json!({ "by": by, "value": value });
+    if by != "kind" {
+        devices.retain(|d| {
+            if by == "name" {
+                d.name == value
+            } else {
+                d.udid.as_deref() == Some(value)
+            }
+        });
+        if devices.is_empty() {
+            return Err(crate::output::BadArguments(format!(
+                "no pool device with {by} `{value}` in this project; run `kr pool status` to see pool devices"
+            )).into());
+        }
+        let device = &devices[0];
+        task.push_str(&format!(
+            " [{by}={value}; device={} udid={}]",
+            device.name,
+            device.udid.as_deref().unwrap_or("missing")
+        ));
+    }
+    let kind = devices
+        .first()
+        .filter(|_| by != "kind")
+        .map_or(kind, |d| d.kind.as_str());
     let holder = LeaseHolder {
         project: Some(project.project.name.clone()),
         task: task.clone(),
@@ -191,9 +233,39 @@ fn lease_and_run(
         started: Timestamp::now(),
     };
     let locks = DeviceLocks::new(kr_sim::locks_dir(&loaded.state_dir));
+    let mut announced = false;
+    let mut notice = |device: &kr_sim::PoolDevice, current: Option<LeaseHolder>| {
+        if by == "kind" || announced {
+            return;
+        }
+        announced = true;
+        let udid = device.udid.as_deref().unwrap_or("missing");
+        if ctx.json {
+            eprintln!(
+                "{}",
+                json!({
+                    "waiting": "pool_device", "device": device.name, "udid": udid,
+                    "holder": current, "selection": selection,
+                })
+            );
+        } else {
+            let task = current.as_ref().map_or("unknown", |h| h.task.as_str());
+            eprintln!(
+                "waiting for pool device {} ({udid}): held by {task}; only this device was requested (see `kr queue sim`)",
+                device.name
+            );
+        }
+    };
+    if by != "kind" {
+        let device = &devices[0];
+        if let Some(current) = device.udid.as_deref().and_then(|u| locks.holder(u)) {
+            notice(device, Some(current));
+        }
+    }
+    let taken = slots::take(ctx, loaded, runner, run_id, Resource::Sim, &task)?;
     let booting = Instant::now();
-    let lease = match kr_sim::lease(
-        simctl, &locks, &devices, &args.kind, &holder, LEASE_POLL, None,
+    let lease = match kr_sim::lease_with_wait_notice(
+        simctl, &locks, &devices, kind, &holder, LEASE_POLL, None, notice,
     ) {
         Ok(lease) => lease,
         Err(e) => {
@@ -202,11 +274,21 @@ fn lease_and_run(
         }
     };
     let log = loaded.events();
+    if ctx.json {
+        eprintln!(
+            "{}",
+            json!({
+                "schema_version": crate::output::SCHEMA_VERSION,
+                "type": "sim_leased", "device": lease.name(), "udid": lease.udid(),
+                "selection": selection,
+            })
+        );
+    }
     log.append(&Event::now(
         run_id,
         loaded.project(),
         EventKind::SimLeased,
-        json!({ "device": lease.name(), "udid": lease.udid(), "task": task, "boot_ms": booting.elapsed().as_millis() as u64 }),
+        json!({ "device": lease.name(), "udid": lease.udid(), "task": task, "selection": selection, "boot_ms": booting.elapsed().as_millis() as u64 }),
     ))?;
     let held_since = Instant::now();
     let mut held = parse_held(ctx.env_var("KR_HELD").unwrap_or(""));
@@ -227,7 +309,7 @@ fn lease_and_run(
         run_id,
         loaded.project(),
         EventKind::SimReleased,
-        json!({ "device": name, "udid": udid, "held_ms": held_since.elapsed().as_millis() as u64 }),
+        json!({ "device": name, "udid": udid, "selection": selection, "held_ms": held_since.elapsed().as_millis() as u64 }),
     ))?;
     slots::give_back(loaded, run_id, taken, result.as_ref().ok().copied())?;
     released?;

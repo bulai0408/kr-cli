@@ -53,7 +53,7 @@ fn rule_edit(path: PathBuf, remove: bool) -> Result<Edit> {
     let before = read(&path)?;
     let text = before.as_deref().unwrap_or("");
     let markers: Vec<_> = text.match_indices(MARKER).map(|(i, _)| i).collect();
-    let after = match markers.as_slice() {
+    let mut after = match markers.as_slice() {
         [] if remove => text.to_owned(),
         [] => format!("{text}{RULE}"),
         [start, end] => format!(
@@ -67,6 +67,13 @@ fn rule_edit(path: PathBuf, remove: bool) -> Result<Edit> {
             path.display()
         ),
     };
+    // A standalone installed block still removes the rule file, including its final LF.
+    if remove && markers.first() == Some(&0) && after == "\n" {
+        after.clear();
+    }
+    if (!remove || !markers.is_empty()) && !after.is_empty() && !after.ends_with('\n') {
+        after.push('\n');
+    }
     Ok(Edit {
         path,
         before,
