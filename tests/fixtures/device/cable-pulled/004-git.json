@@ -1,0 +1,10 @@
+{
+ "program": "git",
+ "args": [
+  "rev-parse",
+  "HEAD^{tree}"
+ ],
+ "status": 0,
+ "stdout": "d3f7148d4f5e667365aa1fedbc029fdd169cd09c\n",
+ "stderr": ""
+}

@@ -53,7 +53,7 @@ fn low_end_m3_gets_one_build_two_sims_one_light() {
     assert_eq!((s.build.value, s.sim.value, s.light.value), (1, 2, 1));
     assert_eq!(
         s.build.formula,
-        "clamp(min(P/6, M/16), 1, 4) with P=4, M=24 → min(0, 1) → 1"
+        "clamp(min(P/5, M/16), 1, 2) with P=4, M=24 → min(0, 1) → 1"
     );
     assert_eq!(
         s.sim.formula,

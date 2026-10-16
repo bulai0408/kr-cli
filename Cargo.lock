@@ -121,7 +121,7 @@ dependencies = [
  "addr2line",
  "cfg-if",
  "libc",
- "miniz_oxide",
+ "miniz_oxide 0.8.9",
  "object",
  "rustc-demangle",
  "windows-link",
@@ -279,6 +279,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crc32fast"
+version = "1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "01a7799fd6b852db0e61728dde9a204c423b44d689dbd432522543614b490e78"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -381,6 +390,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
+name = "flate2"
+version = "1.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
+dependencies = [
+ "crc32fast",
+ "miniz_oxide 0.9.1",
+ "zlib-rs",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -420,6 +440,19 @@ name = "gimli"
 version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
+
+[[package]]
+name = "globset"
+version = "0.4.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07c34a9410465b45bd9787443bc7370f37735bad04b0f0cd57ff1a3186c98988"
+dependencies = [
+ "aho-corasick",
+ "bstr",
+ "log",
+ "regex-automata",
+ "regex-syntax",
+]
 
 [[package]]
 name = "hashbrown"
@@ -642,12 +675,16 @@ dependencies = [
  "assert_cmd",
  "blake3",
  "clap",
+ "flate2",
+ "globset",
  "insta",
  "jiff",
  "kr-config",
+ "kr-device",
  "kr-events",
  "kr-exec",
  "kr-machine",
+ "kr-remote",
  "kr-resource",
  "kr-run",
  "kr-sim",
@@ -655,6 +692,7 @@ dependencies = [
  "libc",
  "miette",
  "plist",
+ "regex",
  "serde",
  "serde_json",
  "signal-hook",
@@ -668,12 +706,23 @@ name = "kr-config"
 version = "0.1.0"
 dependencies = [
  "figment",
+ "globset",
  "insta",
  "miette",
  "serde",
  "tempfile",
  "thiserror",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "kr-device"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kr-exec",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -708,10 +757,22 @@ dependencies = [
  "insta",
  "kr-config",
  "kr-exec",
+ "libc",
  "plist",
  "serde",
  "serde_json",
  "toml 1.1.8+spec-1.1.0",
+]
+
+[[package]]
+name = "kr-remote"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kr-config",
+ "kr-exec",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -848,6 +909,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
  "adler2",
+]
+
+[[package]]
+name = "miniz_oxide"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
+dependencies = [
+ "adler2",
+ "simd-adler32",
 ]
 
 [[package]]
@@ -1188,6 +1259,12 @@ dependencies = [
  "errno",
  "libc",
 ]
+
+[[package]]
+name = "simd-adler32"
+version = "0.3.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
 name = "similar"
@@ -1776,6 +1853,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
 
 [[package]]
 name = "zmij"

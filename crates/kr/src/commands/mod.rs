@@ -1,10 +1,24 @@
 pub mod check;
 pub mod config;
+pub mod decide;
+pub mod deliver;
+pub mod device;
 pub mod doctor;
+pub mod hash;
 pub mod lock;
+pub mod merge;
+pub mod plan;
 pub mod pool;
+mod prepare;
+pub(crate) mod quarantine;
 pub mod queue;
+pub mod rejudge;
+pub mod remote;
+pub mod report;
 pub mod run;
+pub mod setup;
+pub mod simulate;
+pub mod skill;
 
 use clap::builder::TypedValueParser;
 use kr_resource::Resource;

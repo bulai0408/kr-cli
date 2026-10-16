@@ -1,0 +1,15 @@
+{
+ "program": "xcrun",
+ "args": [
+  "xcresulttool",
+  "get",
+  "test-results",
+  "tests",
+  "--path",
+  "build/kr/results/slow/run.xcresult",
+  "--compact"
+ ],
+ "status": 0,
+ "stdout": "{\"devices\":[{\"architecture\":\"arm64e\",\"deviceId\":\"00008130-00AA00AA00AA001C\",\"deviceName\":\"蔡煜恒的 iPad Mini\",\"modelName\":\"iPad mini (A17 Pro)\",\"osBuildNumber\":\"24B5099f\",\"osVersion\":\"27.2\",\"platform\":\"iOS\"}],\"testNodes\":[{\"children\":[{\"children\":[{\"children\":[{\"duration\":\"18分钟\",\"durationInSeconds\":1093.2029039859772,\"name\":\"testStaysOnScreen()\",\"nodeIdentifier\":\"SlowUITests/testStaysOnScreen()\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests/SlowUITests/testStaysOnScreen\",\"nodeType\":\"Test Case\",\"result\":\"Passed\"}],\"name\":\"SlowUITests\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests/SlowUITests\",\"nodeType\":\"Test Suite\",\"result\":\"Passed\"}],\"name\":\"KrSampleUITests\",\"nodeIdentifierURL\":\"test://com.apple.xcode/KrSample/KrSampleUITests\",\"nodeType\":\"UI test bundle\",\"result\":\"Passed\"}],\"name\":\"KrSample\",\"nodeType\":\"Test Plan\",\"result\":\"Passed\"}],\"testPlanConfigurations\":[{\"configurationId\":\"1\",\"configurationName\":\"Test Scheme Action\"}]}\n",
+ "stderr": ""
+}

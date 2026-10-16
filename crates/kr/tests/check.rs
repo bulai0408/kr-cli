@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
+use kr_exec::Recording;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -47,6 +48,41 @@ impl Sample {
             .map(|e| e.unwrap().path().display().to_string())
             .collect();
         files.sort();
+        self.check_files(files, args)
+    }
+
+    /// Like [`Sample::check`], with every call of a recording edited (and possibly
+    /// repeated) by `edit` first.
+    fn check_edited(
+        &self,
+        recording: &str,
+        args: &[&str],
+        edit: impl Fn(Recording) -> Vec<Recording>,
+    ) -> (Option<i32>, String) {
+        let dir = root().join("tests/fixtures/check").join(recording);
+        let mut paths: Vec<PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        paths.sort();
+        let edited = self.home.path().join("recordings");
+        std::fs::create_dir_all(&edited).unwrap();
+        let mut files = Vec::new();
+        for path in paths {
+            for rec in edit(kr_exec::read_recording(&path).unwrap()) {
+                let file = edited.join(format!("{:03}.json", files.len()));
+                std::fs::write(&file, serde_json::to_string(&rec).unwrap()).unwrap();
+                files.push(file.display().to_string());
+            }
+        }
+        self.check_files(files, args)
+    }
+
+    fn state(&self) -> PathBuf {
+        self.home.path().join(".local/state/kr")
+    }
+
+    fn check_files(&self, files: Vec<String>, args: &[&str]) -> (Option<i32>, String) {
         let out = Command::cargo_bin("kr")
             .unwrap()
             .env_clear()
@@ -218,5 +254,214 @@ fn an_unknown_target_name_lists_the_known_ones() {
         err.contains("`lunch` is neither a scenario nor a suite")
             && err.contains("launch, settings, unit"),
         "{err}"
+    );
+}
+
+/// `.kr.toml` with the shared compilation cache turned on.
+fn with_cache(config: String) -> String {
+    config.replace(
+        "platforms = [\"iOS\"]",
+        "platforms = [\"iOS\"]\ncompilation_cache = true",
+    )
+}
+
+/// The settings kr adds to a build when the cache is on (ADR 0013), with the cache at
+/// `cas`, for the repo in `s`.
+fn cache_settings(s: &Sample, cas: &Path) -> Vec<String> {
+    // The repo root kr finds is the canonical path (/private/var/… on macOS).
+    let root = s.home.path().canonicalize().unwrap().join("repo");
+    vec![
+        "COMPILATION_CACHE_ENABLE_CACHING=YES".to_owned(),
+        format!("COMPILATION_CACHE_CAS_PATH={}", cas.display()),
+        "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES".to_owned(),
+        "SWIFT_ENABLE_PREFIX_MAPPING=YES".to_owned(),
+        "SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
+        "CLANG_ENABLE_PREFIX_MAPPING=YES".to_owned(),
+        "CLANG_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
+        format!("SWIFT_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
+        format!("CLANG_OTHER_PREFIX_MAPPINGS={}=/^worktree", root.display()),
+    ]
+}
+
+fn build_steps(events: &[serde_json::Value]) -> Vec<&serde_json::Value> {
+    events
+        .iter()
+        .filter(|e| {
+            e["type"] == "step_end"
+                && e["fields"]["step"]
+                    .as_str()
+                    .is_some_and(|s| s.starts_with("build "))
+        })
+        .collect()
+}
+
+#[test]
+fn with_the_cache_on_every_build_of_the_project_shares_one_cache() {
+    let s = Sample::new(with_cache);
+    let cas = s.state().join("cache/KrSample/compilation");
+    let (code, out) = s.check_edited("pass", &[], |mut r| {
+        if r.program == "xcodebuild" {
+            r.args.extend(cache_settings(&s, &cas));
+        }
+        vec![r]
+    });
+    assert_eq!(code, Some(0), "{out}");
+    let events = s.events();
+    let builds = build_steps(&events);
+    assert_eq!(builds.len(), 1);
+    assert_eq!(builds[0]["fields"]["compilation_cache"]["enabled"], true);
+}
+
+#[test]
+fn with_the_cache_on_builds_record_the_hits_and_misses_xcode_reported() {
+    let s = Sample::new(with_cache);
+    let cas = s.state().join("cache/KrSample/compilation");
+    // The activity log the build writes (a recording cannot write files, so it is put
+    // there before, dated after the build starts).
+    let logs = s.home.path().join("repo/build/kr/DerivedData/Logs/Build");
+    std::fs::create_dir_all(&logs).unwrap();
+    let log = logs.join("A2A00082.xcactivitylog");
+    std::fs::copy(
+        root().join("tests/fixtures/xcode/activity/cache-remarks.xcactivitylog"),
+        &log,
+    )
+    .unwrap();
+    std::fs::File::options()
+        .write(true)
+        .open(&log)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+        .unwrap();
+    let (code, out) = s.check_edited("pass", &[], |mut r| {
+        if r.program == "xcodebuild" {
+            r.args.extend(cache_settings(&s, &cas));
+        }
+        vec![r]
+    });
+    assert_eq!(code, Some(0), "{out}");
+    let events = s.events();
+    let cache = &build_steps(&events)[0]["fields"]["compilation_cache"];
+    assert_eq!(cache["hits"], 6, "{cache}");
+    assert_eq!(cache["misses"], 3, "{cache}");
+}
+
+#[test]
+fn with_the_cache_off_builds_say_so() {
+    let s = Sample::new(|c| c);
+    let (code, out) = s.check("pass", &[]);
+    assert_eq!(code, Some(0), "{out}");
+    let events = s.events();
+    let builds = build_steps(&events);
+    assert_eq!(builds[0]["fields"]["compilation_cache"]["enabled"], false);
+}
+
+/// The `pass` recording with the cache on, where the build with the shared cache ends
+/// with `failure` (exit 65), followed by a build with a clean cache that ends with
+/// `second` (`None`: passes as recorded).
+fn failing_with_the_shared_cache(
+    s: &Sample,
+    failure: &'static str,
+    second: Option<&'static str>,
+) -> (Option<i32>, String) {
+    let shared = s.state().join("cache/KrSample/compilation");
+    // The repo root kr finds is the canonical path (/private/var/… on macOS).
+    let clean = s
+        .home
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("repo/build/kr/CleanCompilationCache");
+    s.check_edited("pass", &[], |r| {
+        if r.program != "xcodebuild" || r.args[0] != "build-for-testing" {
+            return vec![r];
+        }
+        let mut first = r.clone();
+        first.args.extend(cache_settings(s, &shared));
+        first.status = Some(65);
+        first.stdout = failure.to_owned();
+        let mut retry = r;
+        retry.args.extend(cache_settings(s, &clean));
+        if let Some(out) = second {
+            retry.status = Some(65);
+            retry.stdout = out.to_owned();
+        }
+        vec![first, retry]
+    })
+}
+
+const CACHE_FAILURE: &str = "error: failed to load cached output: llvmcas://0123abcd: No such file or directory (in target 'KrSample' from project 'KrSample')\n** TEST BUILD FAILED **\n";
+
+#[test]
+fn a_build_that_fails_with_the_shared_cache_is_judged_again_with_a_clean_one() {
+    let s = Sample::new(with_cache);
+    let (code, out) = failing_with_the_shared_cache(&s, CACHE_FAILURE, None);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("passed with a clean compilation cache after failing with the shared one"),
+        "{out}"
+    );
+    let events = s.events();
+    let builds = build_steps(&events);
+    assert_eq!(builds.len(), 2, "both attempts are recorded");
+    assert_eq!(builds[0]["fields"]["ok"], false);
+    assert_eq!(builds[0]["fields"]["compilation_cache"]["clean"], false);
+    assert_eq!(builds[1]["fields"]["ok"], true);
+    assert_eq!(builds[1]["fields"]["compilation_cache"]["clean"], true);
+    let retry = events
+        .iter()
+        .find(|e| e["type"] == "compilation_cache_retry")
+        .expect("a retry event");
+    assert_eq!(retry["fields"]["first_ok"], false);
+    assert_eq!(retry["fields"]["ok"], true);
+    assert_eq!(retry["fields"]["cache_caused"], true);
+    assert!(
+        !s.home
+            .path()
+            .join("repo/build/kr/CleanCompilationCache")
+            .exists(),
+        "the clean cache is removed afterwards"
+    );
+}
+
+#[test]
+fn a_build_that_fails_again_with_a_clean_cache_fails_and_says_the_cache_is_not_the_cause() {
+    let s = Sample::new(with_cache);
+    let (code, out) = failing_with_the_shared_cache(&s, CACHE_FAILURE, Some(CACHE_FAILURE));
+    assert_eq!(code, Some(1), "{out}");
+    assert!(out.starts_with("FAIL: check · build "), "{out}");
+    assert!(
+        out.contains("failed again with a clean compilation cache"),
+        "{out}"
+    );
+    let events = s.events();
+    assert_eq!(build_steps(&events).len(), 2);
+    let retry = events
+        .iter()
+        .find(|e| e["type"] == "compilation_cache_retry")
+        .unwrap();
+    assert_eq!(retry["fields"]["cache_caused"], false);
+}
+
+#[test]
+fn a_compile_error_with_the_cache_on_is_not_built_again() {
+    let s = Sample::new(with_cache);
+    let shared = s.state().join("cache/KrSample/compilation");
+    let (code, out) = s.check_edited("compile-error", &[], |mut r| {
+        if r.program == "xcodebuild" {
+            r.args.extend(cache_settings(&s, &shared));
+        }
+        vec![r]
+    });
+    assert_eq!(code, Some(1), "{out}");
+    assert!(
+        out.contains("error: cannot find 'missingHelper' in scope"),
+        "{out}"
+    );
+    let events = s.events();
+    assert_eq!(build_steps(&events).len(), 1);
+    assert!(
+        events
+            .iter()
+            .all(|e| e["type"] != "compilation_cache_retry")
     );
 }

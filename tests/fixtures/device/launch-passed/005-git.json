@@ -1,0 +1,12 @@
+{
+ "program": "git",
+ "args": [
+  "ls-files",
+  "-co",
+  "--exclude-standard",
+  "-z"
+ ],
+ "status": 0,
+ "stdout": ".gitignore\u0000.kr.toml\u0000App/KrSampleApp.swift\u0000Tests/GreetingTests.swift\u0000UITests/LaunchUITests.swift\u0000project.yml\u0000",
+ "stderr": ""
+}

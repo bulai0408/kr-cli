@@ -61,14 +61,37 @@ pub enum EventKind {
     MachineLock,
     /// A build was skipped: its inputs match its last successful build. Fields: job, hash.
     BuildCacheHit,
-    /// A step of a command finished. Fields: command, step, ok, `duration_ms`.
+    /// A step of a command finished. Fields: command, step, ok, `duration_ms`. Build
+    /// steps also have `compilation_cache` (ADR 0013): enabled, and when it is on, clean
+    /// (the build used an empty cache), hits and misses (null if Xcode wrote no activity
+    /// log).
     StepEnd,
-    /// A scenario or suite started. Fields: item, kind, device.
+    /// A scenario or suite started. Fields: item, kind, device, concurrency (what held
+    /// the machine then: `build` and `sim` slots held by anyone, this run included, and
+    /// `legacy_holder`, the holder of the old machine-wide lock if the bridge is on).
     ItemStart,
+    /// A dependency preparation began; fields include step, shared, scenarios and logs.
+    PreparationStart,
+    /// A dependency was cleaned up; same fields plus status, reason, cleanup and duration.
+    PreparationEnd,
     /// A scenario or suite finished. Fields: item, kind, passed, `duration_ms`, device,
     /// tests (counts per outcome), flaky.
+    ///
+    /// The outcome "unverified" (the device or host was lost during the run) is written
+    /// as an `unverified` count in `tests`, next to passed / failed / flaky / skipped,
+    /// with the reason in `unverified_reason` (a string, may be missing). An item with
+    /// unverified tests does not count as passed. `kr deliver` reads this.
+    ///
+    /// Since #29 also (ADR 0010): xcresult (the bundle the verdict came from); cases
+    /// (each test: id, outcome, `duration_s`, and for failed or flaky tests signature and
+    /// category); identity (`input_hash`, tree, xcode {version, build}, runtime,
+    /// `device_type`, `kr_version`, `config_hash`; a value kr could not find is null).
     ItemEnd,
-    /// A failed test was run again on its own. Fields: item, test, passed.
+    /// A failed test was run again on its own. Fields: item, test, passed, filter
+    /// (`-only-testing:…`), `filter_invalid` (the filter selected no test, so it did not
+    /// run), attempt (2: the first run was 1), xcresult (null if it did not run).
+    /// A whole item run again after a failure under high load: item, `whole_item`,
+    /// reason, attempt, xcresult.
     Rerun,
     /// A filter passed the static check but selected nothing on the device.
     FilterMismatch,
@@ -76,6 +99,66 @@ pub enum EventKind {
     SimLeased,
     /// A leased simulator was shut down and freed. Fields: device, udid, `held_ms`.
     SimReleased,
+    /// A run (`kr run` / `kr gate`) ended without being aborted, also when kr itself
+    /// failed. Fields: label, ok, passed, total, `duration_ms`, `build_failed` (if the
+    /// build failed), error (if kr failed), `decisions_pending` (if it ended without a
+    /// verdict: the number of decision points; ok is false until [`EventKind::RunDecided`]).
+    RunEnd,
+    /// A run stopped on SIGINT, SIGTERM or SIGHUP. Fields: signal ("SIGTERM"),
+    /// interrupted (items stopped midway), `not_started`, finished.
+    RunAborted,
+    /// The test products of an item were gone when it was about to start. Fields: item,
+    /// products (directory).
+    ProductsMissing,
+    /// The run rebuilt missing test products (once per build). Fields: item, ok.
+    ProductsRebuilt,
+    /// A run started. Fields: label, targets, requester {agent (`KR_REQUESTER`, else
+    /// `AI_AGENT`), worktree (repo root), `parent_pid`}, previous (the last run from the
+    /// same worktree: `run_id`, `ended_ms_ago`, null if it has not ended; null if none).
+    RunStart,
+    /// The machine load during a run, every 15 s from its start. Fields: load {one, five,
+    /// fifteen}, pressure.
+    LoadSample,
+    /// The scheduler gave a simulator lane its next item. Fields: lane, kind (device
+    /// kind), item, `estimate_ms` (null without history), candidates (the kind's queue
+    /// before the pick: item, `estimate_ms`), rule ("longest_first").
+    ScheduleDecision,
+    /// A build failed with the shared compilation cache in a way the cache may cause,
+    /// and was built once more with a clean cache (ADR 0013). Fields: step, reason,
+    /// `first_ok` (false), `first_log`, ok, log, `cache_caused` (the clean build passed).
+    CompilationCacheRetry,
+    /// A run reached a point its rules do not cover and left it to the calling agent
+    /// (ADR 0011, ADR 0015). Fields: the decision as `--json` shows it: id, kind,
+    /// affects ("conclusion": the run ended without a verdict, exit 4; "efficiency"),
+    /// question, item, test, options [{name, means}], evidence, default {option, reason}.
+    DecisionPoint,
+    /// A decision point was decided. Fields: id, kind, item, test, choice, reason,
+    /// via ("kr decide", "kr run --decide", "kr gate --decide"; "default" for an
+    /// efficiency decision kr took itself, with `review: "pending"`), by {agent,
+    /// worktree, `parent_pid`}, evidence (what the decision point showed). Written with
+    /// the run ID of the run it decides.
+    Decision,
+    /// Every decision point of a run is decided, and the run has its verdict now,
+    /// from the results it had (nothing ran again). Fields: label, ok, passed, total,
+    /// decisions (IDs).
+    RunDecided,
+    /// A decision set against what happened later (ADR 0011 §4): a later run of the
+    /// same test on the same build inputs. Fields: id, `decided_run`, kind, item, test,
+    /// choice, later {`run_id`, outcome}, `input_hash`, supported (the outcome agrees
+    /// with the choice), rule.
+    Reconciliation,
+    /// One kr call, in the invocation log (`<state dir>/invocations/`), not the event
+    /// log (ADR 0016). Fields: command (the subcommand; when parsing failed, the first
+    /// argument not starting with `-`, may be null), args (all but the program name),
+    /// `exit_code`, `duration_ms`, error (the first line of the error, if it failed),
+    /// requester {agent, worktree, `parent_pid`}. `--help` and `--version` are not logged.
+    Invocation,
+    /// Repository quarantine entries observed on this worktree (ADR 0021).
+    QuarantineObserved,
+    /// An entry entered the observed repository list.
+    QuarantineEnter,
+    /// An entry left the observed repository list.
+    QuarantineExit,
     /// A kind written by a newer kr.
     #[serde(other)]
     Other,

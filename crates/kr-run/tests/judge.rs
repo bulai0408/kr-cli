@@ -17,6 +17,7 @@ fn case(id: &str, outcome: TestOutcome) -> TestCase {
         outcome,
         duration_s: 1.0,
         failure: (outcome == TestOutcome::Failed).then(|| format!("{id} broke")),
+        filter: id.trim_end_matches("()").into(),
     }
 }
 
@@ -29,6 +30,7 @@ fn attempt(exit: i32, cases: Vec<TestCase>) -> Attempt {
         exit: Some(exit),
         timed_out: false,
         results: Some(cases),
+        bundle: None,
     }
 }
 
@@ -51,6 +53,24 @@ fn zero_selected_tests_is_a_failure_even_with_exit_zero() {
     let v = judge(&enumeration(&[]), &attempt(0, vec![]), &[]);
     assert!(!v.passed());
     assert_eq!(v.reasons, ["the filters select 0 tests"]);
+}
+
+#[test]
+fn an_enumeration_error_is_the_reason_not_the_filters() {
+    // Real, on an iPad whose profile did not include it (2026-10-15).
+    let error = "KrSampleUITests-Runner encountered an error. (Underlying Error: Failed to install or launch the test runner. (Underlying Error: Failed to install embedded profile for dev.kr.KrSampleUITests.xctrunner : 0xe8008012 (This provisioning profile cannot be installed on this device.)))";
+    // The failed enumeration still lists the test target.
+    let e = Enumeration {
+        enabled: vec!["KrSampleUITests".to_owned()],
+        errors: vec![error.to_owned()],
+        ..Enumeration::default()
+    };
+    let v = judge(&e, &attempt(0, vec![]), &[]);
+    assert!(!v.passed());
+    assert_eq!(
+        v.reasons,
+        [format!("xcodebuild could not list the tests: {error}")]
+    );
 }
 
 #[test]
@@ -158,6 +178,7 @@ fn a_timeout_is_a_failure() {
         exit: None,
         timed_out: true,
         results: None,
+        bundle: None,
     };
     let v = judge(&enumeration(&[A]), &a, &[]);
     assert!(!v.passed());
@@ -170,10 +191,26 @@ fn a_missing_result_bundle_is_a_failure() {
         exit: Some(0),
         timed_out: false,
         results: None,
+        bundle: None,
     };
     let v = judge(&enumeration(&[A]), &a, &[]);
     assert_eq!(
         v.reasons,
         ["no test results (the result bundle is missing or unreadable)"]
+    );
+}
+
+#[test]
+fn a_missing_result_bundle_is_named_when_known() {
+    let a = Attempt {
+        exit: Some(0),
+        timed_out: false,
+        results: None,
+        bundle: Some("/repo/build/kr/results/login/run.xcresult".into()),
+    };
+    let v = judge(&enumeration(&[A]), &a, &[]);
+    assert_eq!(
+        v.reasons,
+        ["no test results: /repo/build/kr/results/login/run.xcresult is missing or unreadable"]
     );
 }

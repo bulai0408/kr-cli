@@ -194,22 +194,30 @@ impl XcTestRun {
     /// The `.xctestrun` that `build-for-testing` wrote for `scheme`
     /// (`<scheme>_<platform…>.xctestrun`); several schemes may share a products dir.
     pub fn find(products: &Path, scheme: &str) -> Result<PathBuf> {
+        Self::find_for(products, scheme, false)
+    }
+
+    /// Like [`XcTestRun::find`], for a build for real iOS devices (`<scheme>_iphoneos…`)
+    /// or for anything else. Both can share a products dir.
+    pub fn find_for(products: &Path, scheme: &str, device: bool) -> Result<PathBuf> {
         let prefix = format!("{scheme}_");
+        let device_prefix = format!("{scheme}_iphoneos");
         let mut found: Vec<PathBuf> = std::fs::read_dir(products)
             .with_context(|| format!("no build products in {}", products.display()))?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
             .filter(|p| {
                 p.extension().is_some_and(|x| x == "xctestrun")
-                    && p.file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with(&prefix))
+                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                        n.starts_with(&prefix) && n.starts_with(&device_prefix) == device
+                    })
             })
             .collect();
         found.sort();
         found.pop().with_context(|| {
             format!(
-                "no {scheme}_*.xctestrun in {}; build-for-testing of {scheme} did not finish",
+                "no {scheme}_*.xctestrun{} in {}; build-for-testing of {scheme} did not finish",
+                if device { " for iOS devices" } else { "" },
                 products.display()
             )
         })
@@ -417,4 +425,49 @@ pub fn parse_entitlements_dump(dump: &str) -> Result<plist::Dictionary> {
     }
     let end = bytes.iter().rposition(|b| *b != 0).map_or(0, |i| i + 1);
     plist::from_bytes(&bytes[..end]).context("the __entitlements section is not a plist")
+}
+
+/// Command that prints a signed bundle's signature details on stderr, among them
+/// `TeamIdentifier=<team>` (`not set` for an ad hoc signature).
+pub fn signature_command(bundle: &Path) -> Command {
+    Command::new("codesign").args([
+        "-d".to_owned(),
+        "--verbose=2".to_owned(),
+        bundle.display().to_string(),
+    ])
+}
+
+/// The team a bundle is signed by, from [`signature_command`]'s output; `None` for an
+/// ad hoc signature or none.
+pub fn team_identifier(details: &str) -> Option<String> {
+    details
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("TeamIdentifier="))
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && *t != "not set")
+        .map(str::to_owned)
+}
+
+/// Command that prints the entitlements in a signed bundle's signature as an XML plist
+/// on stdout (nothing if it has none). Device builds carry them here; simulator builds
+/// in the executable (see [`entitlements_command`]).
+pub fn signed_entitlements_command(bundle: &Path) -> Command {
+    Command::new("codesign").args([
+        "-d".to_owned(),
+        "--entitlements".to_owned(),
+        "-".to_owned(),
+        "--xml".to_owned(),
+        bundle.display().to_string(),
+    ])
+}
+
+/// Parses [`signed_entitlements_command`]'s output.
+pub fn parse_signed_entitlements(xml: &str) -> Result<plist::Dictionary> {
+    let start = match xml.find("<?xml").or_else(|| xml.find("<plist")) {
+        Some(start) => start,
+        None if xml.trim().is_empty() => return Ok(plist::Dictionary::new()),
+        None => bail!("codesign printed no entitlements plist"),
+    };
+    plist::from_bytes(xml[start..].trim_end().as_bytes())
+        .context("codesign's entitlements are not a plist")
 }

@@ -144,6 +144,9 @@ impl Loaded {
     /// Slots of `res`: `[machines.<host>.resources]`, else `[resources]`, else
     /// suggested from the machine profile. Reads only what it needs.
     pub fn capacity(&self, res: Resource, runner: &dyn Runner) -> Result<u32> {
+        if res == Resource::Device {
+            return Ok(1);
+        }
         let host = if self.config.machine.machines.is_empty() {
             None
         } else {
@@ -172,6 +175,7 @@ impl Loaded {
             Resource::Build => r.build,
             Resource::Sim => r.sim,
             Resource::Light => r.light,
+            Resource::Device => Some(1),
         };
         if let Some(host) = host
             && let Some(value) = machine.machines.get(host).and_then(|m| pick(&m.resources))
@@ -196,6 +200,10 @@ fn suggested(res: Resource, hardware: &kr_machine::Hardware) -> Capacity {
         Resource::Build => s.build,
         Resource::Sim => s.sim,
         Resource::Light => s.light,
+        Resource::Device => kr_machine::Derived {
+            value: 1,
+            formula: "one test run per device".to_owned(),
+        },
     };
     Capacity {
         value: derived.value,

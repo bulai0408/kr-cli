@@ -1,24 +1,33 @@
 //! Decisions of `kr run` that do not touch the machine (ADR 0005): whether a scenario
 //! passed, what the build inputs hash to, and in which order work goes to simulators.
 
-use std::path::Path;
+pub mod decision;
+mod failure;
+pub mod rejudge;
+pub mod schedule;
+
+pub use failure::{Case, Category, cases, failure_category, signature};
+
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Result;
 use kr_xcode::{Enumeration, TestCase, TestOutcome};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// One `test-without-building` run and what it left behind.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attempt {
     pub exit: Option<i32>,
     pub timed_out: bool,
     /// Test cases from the result bundle; `None` if it is missing or unreadable.
     pub results: Option<Vec<TestCase>>,
+    /// Where the result bundle should be, to name it when it is missing.
+    pub bundle: Option<PathBuf>,
 }
 
 /// The four results a test can end with.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Final {
     Passed,
@@ -28,7 +37,7 @@ pub enum Final {
     Skipped,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestVerdict {
     pub id: String,
     pub outcome: Final,
@@ -36,7 +45,7 @@ pub struct TestVerdict {
     pub duration_s: f64,
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Verdict {
     /// Why the run as a whole cannot be trusted, if it cannot.
     pub reasons: Vec<String>,
@@ -89,12 +98,23 @@ pub fn judge(enumeration: &Enumeration, first: &Attempt, reruns: &[Option<Attemp
     if first.timed_out {
         v.reasons.push("timed out".to_owned());
     }
+    if let Some(error) = enumeration.errors.first() {
+        // e.g. the test runner could not be installed: nothing was listed or run.
+        v.reasons
+            .push(format!("xcodebuild could not list the tests: {error}"));
+        return v;
+    }
     if enumeration.enabled.is_empty() {
         v.reasons.push("the filters select 0 tests".to_owned());
     }
     let Some(results) = &first.results else {
-        v.reasons
-            .push("no test results (the result bundle is missing or unreadable)".to_owned());
+        v.reasons.push(match &first.bundle {
+            Some(bundle) => format!(
+                "no test results: {} is missing or unreadable",
+                bundle.display()
+            ),
+            None => "no test results (the result bundle is missing or unreadable)".to_owned(),
+        });
         return v;
     };
 

@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "status",
+    "--porcelain",
+    "--untracked-files=no"
+  ],
+  "status": 0,
+  "stdout": "",
+  "stderr": ""
+}

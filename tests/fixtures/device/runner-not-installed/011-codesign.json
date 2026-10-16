@@ -1,0 +1,11 @@
+{
+ "program": "codesign",
+ "args": [
+  "-d",
+  "--verbose=2",
+  "Debug-iphoneos/KrSample.app"
+ ],
+ "status": 0,
+ "stdout": "",
+ "stderr": "Executable=/tmp/sample/build/kr/DerivedData/Build/Products/Debug-iphoneos/KrSample.app/KrSample\nIdentifier=dev.kr.sample.e2e\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20400 size=501 flags=0x0(none) hashes=5+7 location=embedded\nSignature size=4781\nAuthority=Apple Development: Kr Sample (0000000000)\nAuthority=Apple Worldwide Developer Relations Certification Authority\nAuthority=Apple Root CA\nSigned Time=Oct 15, 2026 at 16:42:47\nInfo.plist entries=21\nTeamIdentifier=K4AXH95DCF\nSealed Resources version=2 rules=10 files=9\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+}

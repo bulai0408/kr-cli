@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/remote.rs
+assertion_line: 432
+expression: out.stderr
+---
+error: cannot run on localhost
+  - branch v0/integration is not on origin; the remote host fetches it from there
+    next: push it: `git push -u origin v0/integration`

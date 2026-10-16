@@ -1,0 +1,18 @@
+{
+  "program": "ssh",
+  "args": [
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=15",
+    "-o",
+    "ServerAliveInterval=15",
+    "-o",
+    "ServerAliveCountMax=4",
+    "work",
+    "sh -c 'f=$(mktemp \"${TMPDIR:-/tmp}/kr-trial-sign.XXXXXX\") || exit 1\ntrap '\\''rm -f \"$f\"'\\'' EXIT\necho kr > \"$f\"\nn=0\nfor id in $(security find-identity -v -p codesigning 2>/dev/null | awk '\\''/\"Apple Development: /{print $2}'\\''); do\n  n=$((n+1))\n  short=$(printf %s \"$id\" | cut -c1-8)\n  if out=$(codesign --force --sign \"$id\" \"$f\" 2>&1); then\n    echo \"identity $n $short signed team=$(codesign -dv \"$f\" 2>&1 | sed -n '\\''s/^TeamIdentifier=//p'\\'')\"\n  else\n    echo \"identity $n $short failed $(printf %s \"${out##*: }\" | tail -n 1)\"\n  fi\ndone\necho \"identities=$n\"'"
+  ],
+  "status": 0,
+  "stdout": "identity 1 AAAA1111 signed team=K4AXH95DCF\nidentity 2 BBBB2222 signed team=K4AXH95DCF\nidentities=2\n",
+  "stderr": ""
+}

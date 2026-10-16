@@ -32,6 +32,7 @@ pub struct LockArgs {
 const HELD_VAR: &str = "KR_HELD";
 
 pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
+    kr_exec::catch_stop_signals()?;
     let loaded = ctx.load()?;
     let pool = loaded.pool();
     let log = loaded.events();
@@ -99,6 +100,9 @@ pub(crate) fn run_command(
     held: &[(Resource, u32)],
     extra_env: &[(&str, &str)],
 ) -> Result<i32> {
+    if let Some(signal) = kr_exec::stop_signal() {
+        return Ok(128 + signal);
+    }
     let (program, args) = command.split_first().context("missing command")?;
     let pending = Arc::new(AtomicUsize::new(0));
     for signal in [

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "integration_commit": "d39ba71c98c872c8fc474c00c097778d5894cad4",
+  "checks": [
+    {
+      "command": "cargo fmt --check",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo clippy --all-targets -- -D warnings",
+      "exit_code": 0
+    },
+    {
+      "command": "cargo test",
+      "exit_code": 0,
+      "passed": 410,
+      "failed": 0,
+      "ignored_by_harness": 0
+    }
+  ],
+  "native_integration_enabled": false,
+  "native_integration_note": "KR_INTEGRATION not set; opt-in native test bodies did not execute; harness totals are not native acceptance",
+  "new_tests": [
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "a_quarantine_removal_can_be_reviewed_and_reconciled_without_kr_editing_the_file"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "a_quarantined_failure_runs_and_stays_failed_but_does_not_block_the_gate"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "an_unquarantined_failure_still_needs_a_decision_and_quarantined_failures_stay_failed_after_it"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "changed_runs_keep_selection_and_quarantine_decisions_in_one_namespace"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "nine_clean_runs_or_a_recent_failure_or_flake_do_not_suggest_removal"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_counts_flakes_by_run_start_like_report_and_excludes_whole_item_flakes"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_is_scoped_to_the_item_and_observed_entries_and_exits_are_events"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_never_unblocks_missing_results_timeouts_or_invalid_rerun_filters"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_over_budget_is_rejected_before_execution_with_a_pr_fix"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "rejudge_applies_the_current_list_and_preserves_failed_test_outcomes"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "rejudge_does_not_apply_one_projects_quarantine_to_another_projects_saved_run"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "repeated_flakes_suggest_a_repository_edit_without_changing_the_list"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "ten_complete_clean_runs_suggest_removal_with_the_exact_entry"
+    },
+    {
+      "file": "crates/kr/tests/remote.rs",
+      "name": "remote_quarantined_failures_are_recorded_and_not_printed_as_passes"
+    },
+    {
+      "file": "crates/kr/tests/run.rs",
+      "name": "quarantine_preserves_preparation_and_cleanup_failures_as_unverified"
+    }
+  ],
+  "rejudge_controlled_changes": {
+    "enable": 1,
+    "unchanged": 0,
+    "remove": 1,
+    "difference_from_expected": 0
+  },
+  "krill_saved_verdict_coverage": 0,
+  "prepare_merge_comparison": {
+    "method": "ADR 0010 level 3 deterministic CLI replay",
+    "paths": [
+      "prepare failure",
+      "cleanup failure",
+      "successful preparation and cleanup"
+    ],
+    "difference_from_expected": 0
+  }
+}

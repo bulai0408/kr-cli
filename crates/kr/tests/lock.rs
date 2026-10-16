@@ -398,6 +398,11 @@ fn bridged(m: &Machine, res: &str, script: &str) -> Child {
         )
         .env("KR_LEGACY__QUEUE", m.dir.path().join("native-build.queue"))
         .env("KR_LEGACY__POLL", "1s")
+        .env(
+            "KR_REPLAY",
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/fixtures/sysctl/m3-imac.json"),
+        )
         .env("LOG", m.log())
         .env("KR", env!("CARGO_BIN_EXE_kr"))
         .env("LOCK", m.dir.path().join("native-build.lock"))
@@ -456,6 +461,110 @@ fn with_the_bridge_on_kr_waits_for_an_old_script() {
     }));
     script.kill().unwrap();
     script.wait().unwrap();
+}
+
+#[test]
+fn replay_outer_legacy_holder_can_enter_kr_while_another_kr_waits() {
+    use std::os::unix::process::CommandExt;
+    let m = Machine::new();
+    let lock = m.dir.path().join("native-build.lock");
+    let go = m.dir.path().join("go");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/sysctl/m3-imac.json");
+    let mut outer = m.kr();
+    // Replay #36: old script owns the machine lock, a competing kr arrives, then
+    // the script calls kr. Neither may hold a slot while waiting for the old lock.
+    outer
+        .args([
+            "lock",
+            "light",
+            "--",
+            "sh",
+            "-c",
+            r#"
+mkdir "$LOCK"
+echo "krill-e2e outer $$ 2026-10-16T00:00:00Z" > "$LOCK/owner"
+echo outer-ready >> "$LOG"
+while [ ! -f "$GO" ]; do sleep 0.05; done
+"$KR" lock build -- sh -c 'echo inner >> "$LOG"'
+status=$?
+rm "$LOCK/owner"; rmdir "$LOCK"
+exit "$status"
+"#,
+        ])
+        .env("KR_RESOURCES__BUILD", "1")
+        .env("KR_RESOURCES__LIGHT", "1")
+        .env("KR_LEGACY__MACHINE_LOCK", &lock)
+        .env("KR_LEGACY__QUEUE", m.dir.path().join("native-build.queue"))
+        .env("KR_LEGACY__POLL", "1s")
+        .env("KR_REPLAY", &fixture)
+        .env("LOCK", &lock)
+        .env("GO", &go)
+        .env("LOG", m.log())
+        .env("KR", env!("CARGO_BIN_EXE_kr"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0);
+    let mut outer = outer.spawn().unwrap();
+    m.wait_for_line("outer-ready");
+    let mut contender = bridged(&m, "build", "echo contender >> \"$LOG\"");
+    wait_until(Duration::from_secs(5), || {
+        std::fs::read_dir(m.dir.path().join("native-build.queue"))
+            .is_ok_and(|entries| entries.count() > 0)
+    });
+    std::fs::write(&go, "").unwrap();
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if m.lines().contains(&"contender".to_owned()) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let progressed =
+        m.lines().contains(&"inner".to_owned()) && m.lines().contains(&"contender".to_owned());
+    if !progressed {
+        let _ = contender.kill();
+        // The script runs in its own group (kr lock), and the nested kr has not
+        // started work in the deadlock, so stop that group as well as the wrapper.
+        if let Some(pid) = m.queue_json()["resources"][2]["holders"][0]["child_pid"].as_i64() {
+            kill_group(pid);
+        }
+        let _ = outer.kill();
+    }
+    let _ = contender.wait();
+    let _ = outer.wait();
+    assert!(progressed, "lock-order deadlock: {:?}", m.lines());
+    assert_eq!(m.lines(), ["outer-ready", "inner", "contender"]);
+}
+
+#[test]
+fn sigterm_while_waiting_for_the_bridge_removes_its_ticket_without_starting_work() {
+    let m = Machine::new();
+    let lock = m.dir.path().join("native-build.lock");
+    let mut old_script = Command::new("sleep").arg("30").spawn().unwrap();
+    std::fs::create_dir(&lock).unwrap();
+    std::fs::write(
+        lock.join("owner"),
+        format!("conflux-build shell {} now\n", old_script.id()),
+    )
+    .unwrap();
+    let kr = bridged(&m, "build", "echo unexpected >> \"$LOG\"");
+    let queue = m.dir.path().join("native-build.queue");
+    wait_until(Duration::from_secs(5), || {
+        std::fs::read_dir(&queue).is_ok_and(|e| e.count() > 0)
+    });
+    Command::new("kill")
+        .args(["-TERM", &kr.id().to_string()])
+        .status()
+        .unwrap();
+    let code = finish(kr, Duration::from_secs(3));
+    let tickets = std::fs::read_dir(&queue).unwrap().count();
+    old_script.kill().unwrap();
+    old_script.wait().unwrap();
+    assert_eq!(code, 1, "cancelling a queued command is a kr error");
+    assert_eq!(tickets, 0, "cancelled waiters must leave the legacy queue");
+    assert!(lock.exists(), "must not release another script's lock");
+    assert!(m.lines().is_empty());
 }
 
 #[test]

@@ -67,6 +67,7 @@ fn a_replayed_logged_run_writes_the_recorded_output_to_the_log() {
         stdout: "A.swift:1:1: error: boom\n".into(),
         stderr: "** BUILD FAILED **\n".into(),
         timed_out: false,
+        duration_ms: None,
     }]);
 
     let out = runner

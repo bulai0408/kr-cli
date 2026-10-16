@@ -17,6 +17,7 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "per_core": 4.0
       },
       "machines": {},
+      "remotes": {},
       "resources": {
         "build": 1,
         "light": null,
@@ -30,8 +31,10 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "bundle_ids": [],
         "entitlements": {}
       },
+      "modules": {},
       "project": {
         "build_settings": {},
+        "compilation_cache": false,
         "configuration": null,
         "generate": null,
         "name": "krill",
@@ -42,6 +45,13 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
         "xcodeproj": null
       },
       "scenarios": {},
+      "selection": {
+        "ignore": []
+      },
+      "signing": {
+        "register_devices": false,
+        "team": null
+      },
       "simulators": {
         "devices": {},
         "runtime": null
@@ -49,6 +59,8 @@ expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string(
       "suites": {}
     }
   },
+  "decisions": [],
+  "schema_version": 1,
   "sources": {
     "machine": "<home>/.config/kr/config.toml",
     "project": "<home>/repo/.kr.toml"

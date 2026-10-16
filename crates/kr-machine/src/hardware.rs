@@ -45,6 +45,42 @@ pub enum Pressure {
     Critical,
 }
 
+/// Load and memory pressure now, from the kernel instead of a command: cheap enough to
+/// sample every few seconds while a run lasts (ADR 0010), and not part of what replayed
+/// recordings answer.
+pub fn sample_load() -> Option<(Load, Pressure)> {
+    let mut avg = [0f64; 3];
+    // SAFETY: getloadavg writes at most 3 values into `avg`.
+    if unsafe { libc::getloadavg(avg.as_mut_ptr(), 3) } != 3 {
+        return None;
+    }
+    let mut level: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is NUL-terminated; `level` and `size` describe one c_int.
+    let read = unsafe {
+        libc::sysctlbyname(
+            c"kern.memorystatus_vm_pressure_level".as_ptr(),
+            (&raw mut level).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    let pressure = match (read, level) {
+        (0, 4) => Pressure::Critical,
+        (0, 2) => Pressure::Warn,
+        _ => Pressure::Normal,
+    };
+    Some((
+        Load {
+            one: avg[0],
+            five: avg[1],
+            fifteen: avg[2],
+        },
+        pressure,
+    ))
+}
+
 /// One `sysctl` call. Keys a Mac does not have (e.g. performance levels on Intel) are
 /// reported on stderr and skipped.
 pub fn read_hardware(runner: &dyn Runner) -> Result<Hardware> {
@@ -155,24 +191,25 @@ pub struct Suggestion {
     pub light: Derived,
 }
 
-/// Capacities from P (performance cores) and M (memory in GB). A heavy build uses
-/// every core and ~16 GB; a simulator with its test runner ~2 cores and ~4 GB.
+/// Capacities from P (performance cores) and M (memory in GB). ADR 0022 calibrates
+/// two builds on 10 performance cores; retain 16 GB per build and the tested cap.
+/// A simulator with its test runner budgets ~2 cores and ~4 GB.
 pub fn suggest(hw: &Hardware) -> Suggestion {
     let p = hw.perf_cores as u64;
     let m = hw.memory_gb();
-    let build_raw = (p / 6).min(m / 16);
+    let build_raw = (p / 5).min(m / 16);
     let sim_raw = (p / 2).min(m.saturating_sub(8) / 4);
     let light_raw = p / 4;
     let clamp = |v: u64, max: u64| v.clamp(1, max) as u32;
-    let build = clamp(build_raw, 4);
+    let build = clamp(build_raw, 2);
     let sim = clamp(sim_raw, 6);
     let light = clamp(light_raw, 4);
     Suggestion {
         build: Derived {
             value: build,
             formula: format!(
-                "clamp(min(P/6, M/16), 1, 4) with P={p}, M={m} → min({}, {}) → {build}",
-                p / 6,
+                "clamp(min(P/5, M/16), 1, 2) with P={p}, M={m} → min({}, {}) → {build}",
+                p / 5,
                 m / 16
             ),
         },

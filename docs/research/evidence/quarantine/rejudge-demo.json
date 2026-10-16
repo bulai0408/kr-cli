@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "method": "ADR 0010 layer 3; recorded real KrSample broken run; controlled list, no Xcode execution",
+  "before": {
+    "exit_code": 1,
+    "output": {
+      "aborted": null,
+      "build": {
+        "cached": [],
+        "steps": [
+          {
+            "duration_ms": 0,
+            "log": "<demo>/home/.local/state/kr/runs/01a14062-8433-70f2-bfcb-b2de517397e8/generate.log",
+            "ok": true,
+            "step": "generate",
+            "summary": []
+          },
+          {
+            "duration_ms": 0,
+            "log": "<demo>/home/.local/state/kr/runs/01a14062-8433-70f2-bfcb-b2de517397e8/build_build-for-testing_KrSample__generic_platform_iOS_Simulator_.log",
+            "ok": true,
+            "step": "build build-for-testing KrSample (generic/platform=iOS Simulator)",
+            "summary": []
+          },
+          {
+            "duration_ms": 2,
+            "log": null,
+            "ok": true,
+            "step": "filters",
+            "summary": []
+          },
+          {
+            "duration_ms": 1,
+            "log": null,
+            "ok": true,
+            "step": "isolation",
+            "summary": []
+          }
+        ]
+      },
+      "concluded": true,
+      "decisions": [],
+      "duration_ms": 32,
+      "items": [
+        {
+          "blocking": true,
+          "cases": [
+            {
+              "category": "assertion",
+              "duration_s": 0.286592960357666,
+              "id": "KrSampleUITests/SettingsUITests/testFailsOnRequest()",
+              "outcome": "failed",
+              "signature": "failed - asked to fail"
+            }
+          ],
+          "device": "KrSample-Verify-1",
+          "duration_ms": 3,
+          "flaky": [],
+          "high_load": null,
+          "kind": "scenario",
+          "load": {
+            "end": null,
+            "start": null
+          },
+          "log": "<demo>/home/.local/state/kr/runs/01a14062-8433-70f2-bfcb-b2de517397e8/broken",
+          "name": "broken",
+          "notes": [],
+          "passed": false,
+          "quarantined": [],
+          "summary": [
+            "KrSampleUITests/SettingsUITests/testFailsOnRequest(): failed - asked to fail"
+          ],
+          "tests": {
+            "failed": 1,
+            "flaky": 0,
+            "passed": 0,
+            "skipped": 0
+          },
+          "xcresult": "/private<demo>/repo/build/kr/results/broken/run.xcresult"
+        }
+      ],
+      "label": "run",
+      "ok": false,
+      "passed": 0,
+      "quarantined": 0,
+      "schema_version": 1,
+      "selection": null,
+      "total": 1
+    }
+  },
+  "rejudge_enabled": {
+    "exit_code": 0,
+    "output": {
+      "changed": 1,
+      "changes": [
+        {
+          "after": {
+            "passed": true,
+            "reasons": []
+          },
+          "before": {
+            "passed": false,
+            "reasons": []
+          },
+          "item": "broken",
+          "run_id": "01a14062-8433-70f2-bfcb-b2de517397e8",
+          "source": "run",
+          "tests": []
+        }
+      ],
+      "decision_points": [],
+      "decisions": [],
+      "evidence": null,
+      "items": 1,
+      "runs": 1,
+      "schema_version": 1,
+      "unreadable": []
+    }
+  },
+  "after": {
+    "exit_code": 0,
+    "output": {
+      "aborted": null,
+      "build": {
+        "cached": [
+          "build-for-testing KrSample (generic/platform=iOS Simulator)"
+        ],
+        "steps": [
+          {
+            "duration_ms": 1,
+            "log": null,
+            "ok": true,
+            "step": "filters",
+            "summary": []
+          },
+          {
+            "duration_ms": 1,
+            "log": null,
+            "ok": true,
+            "step": "isolation",
+            "summary": []
+          }
+        ]
+      },
+      "concluded": true,
+      "decisions": [],
+      "duration_ms": 15,
+      "items": [
+        {
+          "blocking": false,
+          "cases": [
+            {
+              "category": "assertion",
+              "duration_s": 0.286592960357666,
+              "id": "KrSampleUITests/SettingsUITests/testFailsOnRequest()",
+              "outcome": "failed",
+              "signature": "failed - asked to fail"
+            }
+          ],
+          "device": "KrSample-Verify-1",
+          "duration_ms": 2,
+          "flaky": [],
+          "high_load": null,
+          "kind": "scenario",
+          "load": {
+            "end": null,
+            "start": null
+          },
+          "log": "<demo>/home/.local/state/kr/runs/01a14062-8476-74e7-9b6d-d8cb7132fb0c/broken",
+          "name": "broken",
+          "notes": [],
+          "passed": false,
+          "quarantined": [
+            "KrSampleUITests/SettingsUITests/testFailsOnRequest()"
+          ],
+          "summary": [
+            "KrSampleUITests/SettingsUITests/testFailsOnRequest(): failed - asked to fail"
+          ],
+          "tests": {
+            "failed": 1,
+            "flaky": 0,
+            "passed": 0,
+            "skipped": 0
+          },
+          "xcresult": "/private<demo>/repo/build/kr/results/broken/run.xcresult"
+        }
+      ],
+      "label": "run",
+      "ok": true,
+      "passed": 0,
+      "quarantined": 1,
+      "schema_version": 1,
+      "selection": null,
+      "total": 1
+    }
+  },
+  "rejudge_unchanged": {
+    "exit_code": 0,
+    "output": {
+      "changed": 0,
+      "changes": [],
+      "decision_points": [],
+      "decisions": [],
+      "evidence": null,
+      "items": 1,
+      "runs": 1,
+      "schema_version": 1,
+      "unreadable": []
+    }
+  },
+  "rejudge_removed": {
+    "exit_code": 0,
+    "output": {
+      "changed": 1,
+      "changes": [
+        {
+          "after": {
+            "passed": false,
+            "reasons": []
+          },
+          "before": {
+            "passed": true,
+            "reasons": []
+          },
+          "item": "broken",
+          "run_id": "01a14062-8476-74e7-9b6d-d8cb7132fb0c",
+          "source": "run",
+          "tests": []
+        }
+      ],
+      "decision_points": [],
+      "decisions": [],
+      "evidence": null,
+      "items": 1,
+      "runs": 1,
+      "schema_version": 1,
+      "unreadable": []
+    }
+  }
+}

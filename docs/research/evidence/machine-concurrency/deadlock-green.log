@@ -1,0 +1,10 @@
+kr39: acquired native lock
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.97s
+     Running tests/lock.rs (target/debug/deps/lock-a789f88138ea80e9)
+
+running 1 test
+test replay_outer_legacy_holder_can_enter_kr_while_another_kr_waits ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 1.78s
+

@@ -19,7 +19,7 @@ pub fn run(ctx: &Ctx) -> Result<ExitCode> {
             "state_dir": state_dir,
             "config": config,
         });
-        println!("{}", serde_json::to_string_pretty(&out)?);
+        crate::output::print_json(&out)?;
     } else {
         let show = |p: &Option<std::path::PathBuf>| {
             p.as_ref()

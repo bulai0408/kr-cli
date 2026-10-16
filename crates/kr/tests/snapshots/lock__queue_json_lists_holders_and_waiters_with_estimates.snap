@@ -1,9 +1,10 @@
 ---
 source: crates/kr/tests/lock.rs
-assertion_line: 295
+assertion_line: 383
 expression: json
 ---
 {
+  "decisions": [],
   "resources": [
     {
       "avg_hold_seconds": "<avg>",
@@ -46,5 +47,6 @@ expression: json
       "resource": "light",
       "waiters": []
     }
-  ]
+  ],
+  "schema_version": 1
 }

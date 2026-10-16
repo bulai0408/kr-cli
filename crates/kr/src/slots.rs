@@ -36,10 +36,55 @@ pub fn take(
     res: Resource,
     task: &str,
 ) -> Result<Taken> {
-    let pool = loaded.pool();
+    let capacity = loaded.capacity(res, runner)?;
+    take_in(
+        ctx,
+        loaded,
+        runner,
+        run_id,
+        &loaded.pool(),
+        res,
+        capacity,
+        task,
+    )
+}
+
+/// Queues for the one slot of the real device `udid`, like [`take`]: a test run on a
+/// device is heavy work, so it also waits for the load and takes the old machine lock.
+pub fn take_device(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    runner: &dyn Runner,
+    run_id: RunId,
+    udid: &str,
+    task: &str,
+) -> Result<Taken> {
+    let pool = loaded.pool().device(udid);
+    take_in(
+        ctx,
+        loaded,
+        runner,
+        run_id,
+        &pool,
+        Resource::Device,
+        1,
+        task,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn take_in(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    runner: &dyn Runner,
+    run_id: RunId,
+    pool: &kr_resource::Pool,
+    res: Resource,
+    capacity: u32,
+    task: &str,
+) -> Result<Taken> {
     let log = loaded.events();
     let project = loaded.project();
-    let capacity = loaded.capacity(res, runner)?;
     let holder = Holder {
         project: project.map(str::to_owned),
         task: task.to_owned(),
@@ -54,15 +99,28 @@ pub fn take(
         json!({ "resource": res, "task": task, "capacity": capacity }),
     ))?;
     let queued = Instant::now();
+    let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
+    // Old scripts enter kr while holding the machine lock. Never occupy a slot
+    // while waiting for that lock, or their nested kr can wait for our slot.
+    let legacy = if heavy {
+        wait_for_load(ctx, loaded, runner, run_id, res)?;
+        machine_lock(ctx, loaded, run_id, task)?
+    } else {
+        None
+    };
     let ticket = pool.enqueue(res, &holder)?;
     let mut announced = false;
     let slot = loop {
+        // Only commands that catch stop signals (see kr_exec) see one here.
+        if let Some(signal) = kr_exec::stop_signal() {
+            anyhow::bail!("stopped by signal {signal} while waiting for {res}");
+        }
         if let Some(slot) = ticket.try_acquire(capacity)? {
             break slot;
         }
         if !announced {
             announced = true;
-            announce_wait(ctx, loaded, res, capacity)?;
+            announce_wait(ctx, loaded, pool, res, capacity)?;
         }
         std::thread::sleep(POLL);
     };
@@ -73,17 +131,6 @@ pub fn take(
         EventKind::SlotAcquired,
         json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
     ))?;
-    let heavy = matches!(res, Resource::Build | Resource::Sim);
-    // Wait (for critical memory pressure, or high load if `[load] block`) before taking
-    // the machine-wide lock, so a busy machine does not also block other projects' queue.
-    if heavy {
-        wait_for_load(ctx, loaded, runner, run_id, res)?;
-    }
-    let legacy = if heavy {
-        machine_lock(ctx, loaded, run_id, task)?
-    } else {
-        None
-    };
     Ok(Taken {
         slot,
         task: task.to_owned(),
@@ -111,9 +158,28 @@ pub fn give_back(
             "exit_code": exit_code,
         }),
     ))?;
-    drop(taken.legacy);
     drop(taken.slot);
+    drop(taken.legacy);
     Ok(())
+}
+
+/// What holds the machine now (ADR 0010): `build` and `sim` slots held by any project,
+/// and the holder of the old machine-wide lock if the bridge is configured.
+pub fn concurrency(loaded: &Loaded) -> serde_json::Value {
+    let pool = loaded.pool();
+    let held = |res| pool.status(res, 0).map_or(0, |s| s.holders.len());
+    let legacy = &loaded.config.machine.legacy;
+    let legacy_holder = legacy
+        .machine_lock
+        .as_ref()
+        .zip(legacy.queue.as_ref())
+        .and_then(|(lock, queue)| LegacyLock::new(lock, queue).owner())
+        .map(|o| format!("{} (pid {}, since {})", o.task, o.pid, o.started));
+    json!({
+        "build": held(Resource::Build),
+        "sim": held(Resource::Sim),
+        "legacy_holder": legacy_holder,
+    })
 }
 
 /// Takes the old machine-wide lock too, if the bridge is configured (ADR 0009).
@@ -132,27 +198,33 @@ fn machine_lock(
         .as_deref()
         .and_then(kr_config::parse_timeout)
         .unwrap_or(kr_resource::legacy::DEFAULT_POLL);
-    let bridge = LegacyLock::new(lock, queue).with_poll(poll);
+    let bridge = LegacyLock::new(lock, queue)
+        .with_poll(poll)
+        .with_history(loaded.state_dir.join("legacy-observations.json"));
     let start = Instant::now();
     let mut waited_for = None;
-    let guard = bridge.acquire(&format!("kr-{task}"), |owner| {
-        let who = owner.map_or_else(
-            || "unknown".to_owned(),
-            |o| format!("{} (pid {}, since {})", o.task, o.pid, o.started),
-        );
-        waited_for = Some(who.clone());
-        if ctx.json {
-            eprintln!(
-                "{}",
-                json!({ "waiting": "machine_lock", "lock": lock, "holder": who })
+    let guard = bridge.acquire_interruptible(
+        &format!("kr-{task}"),
+        |owner| {
+            let who = owner.map_or_else(
+                || "unknown".to_owned(),
+                |o| format!("{} (pid {}, since {})", o.task, o.pid, o.started),
             );
-        } else {
-            eprintln!(
-                "waiting for the machine lock {}: held by {who}",
-                lock.display()
-            );
-        }
-    })?;
+            waited_for = Some(who.clone());
+            if ctx.json {
+                eprintln!(
+                    "{}",
+                    json!({ "waiting": "machine_lock", "lock": lock, "holder": who })
+                );
+            } else {
+                eprintln!(
+                    "waiting for the machine lock {}: held by {who}",
+                    lock.display()
+                );
+            }
+        },
+        kr_exec::stop_signal,
+    )?;
     loaded.events().append(&Event::now(
         run_id,
         loaded.project(),
@@ -168,7 +240,7 @@ fn machine_lock(
     Ok(Some(guard))
 }
 
-/// Waits (holding the slot) while the machine is overloaded, and records it.
+/// Waits before taking locks while the machine is overloaded, and records it.
 fn wait_for_load(
     ctx: &Ctx,
     loaded: &Loaded,
@@ -227,8 +299,13 @@ fn wait_for_load(
     Ok(())
 }
 
-fn announce_wait(ctx: &Ctx, loaded: &Loaded, res: Resource, capacity: u32) -> Result<()> {
-    let pool = loaded.pool();
+fn announce_wait(
+    ctx: &Ctx,
+    loaded: &Loaded,
+    pool: &kr_resource::Pool,
+    res: Resource,
+    capacity: u32,
+) -> Result<()> {
     let status = pool.status(res, capacity)?;
     let me = std::process::id();
     let position = status

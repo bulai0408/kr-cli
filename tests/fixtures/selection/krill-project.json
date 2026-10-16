@@ -1,0 +1,288 @@
+{
+  "options" : {
+    "minimumXcodeGenVersion" : "2.46.0",
+    "bundleIdPrefix" : "com.kami",
+    "developmentLanguage" : "en",
+    "deploymentTarget" : {
+      "iOS" : "18.0"
+    },
+    "preGenCommand" : "python3 scripts\/generate-module-encryption-keys.py --configuration Debug"
+  },
+  "name" : "Krill",
+  "settings" : {
+    "base" : {
+      "TARGETED_DEVICE_FAMILY" : "1,2",
+      "SWIFT_UPCOMING_FEATURE_EXISTENTIAL_ANY" : true,
+      "CURRENT_PROJECT_VERSION" : "1",
+      "DEVELOPMENT_TEAM" : "K4AXH95DCF",
+      "SWIFT_EMIT_LOC_STRINGS" : true,
+      "MARKETING_VERSION" : "0.1.0",
+      "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY" : true,
+      "SWIFT_VERSION" : "6.0",
+      "SWIFT_APPROACHABLE_CONCURRENCY" : true,
+      "SWIFT_DEFAULT_ACTOR_ISOLATION" : "MainActor",
+      "CODE_SIGN_STYLE" : "Automatic",
+      "LOCALIZATION_PREFERS_STRING_CATALOGS" : true
+    }
+  },
+  "configs" : {
+    "Debug" : "debug",
+    "DebugUIAcceptance" : "debug",
+    "Release" : "release"
+  },
+  "targets" : {
+    "Krill" : {
+      "type" : "application",
+      "platform" : "iOS",
+      "sources" : [
+        {
+          "path" : "Krill",
+          "excludes" : [
+            "Info.plist"
+          ]
+        },
+        {
+          "path" : "build\/module-encryption\/ModuleEncryptionBuildKeys.swift"
+        },
+        {
+          "path" : "docs\/legal",
+          "buildPhase" : "resources",
+          "includes" : [
+            "*.zh.md",
+            "*.en.md"
+          ]
+        }
+      ],
+      "dependencies" : [
+        {
+          "package" : "KrillKit",
+          "product" : "Domain"
+        },
+        {
+          "package" : "KrillKit",
+          "product" : "Library"
+        },
+        {
+          "package" : "KrillKit",
+          "product" : "Sources"
+        },
+        {
+          "product" : "Metadata",
+          "package" : "KrillKit"
+        },
+        {
+          "package" : "KrillKit",
+          "product" : "Player"
+        },
+        {
+          "package" : "KrillKit",
+          "product" : "UserState"
+        },
+        {
+          "product" : "Analytics",
+          "package" : "KrillKit"
+        },
+        {
+          "product" : "Modules",
+          "package" : "KrillKit"
+        },
+        {
+          "package" : "SQLiteData"
+        }
+      ],
+      "preBuildScripts" : [
+        {
+          "basedOnDependencyAnalysis" : false,
+          "script" : "python3 \"$SRCROOT\/scripts\/generate-module-encryption-keys.py\" --configuration \"$CONFIGURATION\"",
+          "name" : "Provision Module encryption keys"
+        }
+      ],
+      "settings" : {
+        "base" : {
+          "INFOPLIST_FILE" : "Krill\/Info.plist",
+          "GENERATE_INFOPLIST_FILE" : true,
+          "INFOPLIST_KEY_UIApplicationSceneManifest_Generation" : true,
+          "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad" : "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight",
+          "INFOPLIST_KEY_CFBundleDisplayName" : "Krill",
+          "INFOPLIST_KEY_KrillDirectoryOrigin" : "https:\/\/krill-hub.kami.asia",
+          "CODE_SIGN_ENTITLEMENTS" : "Krill\/Krill.entitlements",
+          "INFOPLIST_KEY_LSApplicationCategoryType" : "public.app-category.entertainment",
+          "ASSETCATALOG_COMPILER_APPICON_NAME" : "AppIcon",
+          "INFOPLIST_KEY_UISupportedInterfaceOrientations" : "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight",
+          "INFOPLIST_KEY_UILaunchScreen_Generation" : true,
+          "PRODUCT_BUNDLE_IDENTIFIER" : "com.kami.krill"
+        },
+        "configs" : {
+          "DebugUIAcceptance" : {
+            "INFOPLIST_KEY_KrillDirectoryOrigin" : "http:\/\/192.168.31.222:8811",
+            "PRODUCT_BUNDLE_IDENTIFIER" : "$(KRILL_ACCEPTANCE_BUNDLE_ID)",
+            "KRILL_ACCEPTANCE_BUNDLE_ID" : "com.kami.krill.webdav40",
+            "SWIFT_ACTIVE_COMPILATION_CONDITIONS" : "DEBUG"
+          }
+        }
+      }
+    },
+    "KrillUITests" : {
+      "type" : "bundle.ui-testing",
+      "settings" : {
+        "configs" : {
+          "DebugUIAcceptance" : {
+            "PRODUCT_BUNDLE_IDENTIFIER" : "$(KRILL_ACCEPTANCE_BUNDLE_ID).uitests",
+            "KRILL_ACCEPTANCE_BUNDLE_ID" : "com.kami.krill.webdav40"
+          }
+        },
+        "base" : {
+          "TEST_TARGET_NAME" : "Krill",
+          "PRODUCT_BUNDLE_IDENTIFIER" : "com.kami.krill.uitests",
+          "GENERATE_INFOPLIST_FILE" : true
+        }
+      },
+      "sources" : [
+        {
+          "path" : "KrillUITests"
+        }
+      ],
+      "dependencies" : [
+        {
+          "target" : "Krill"
+        }
+      ],
+      "platform" : "iOS"
+    },
+    "KrillTests" : {
+      "settings" : {
+        "base" : {
+          "PRODUCT_BUNDLE_IDENTIFIER" : "com.kami.krill.tests",
+          "GENERATE_INFOPLIST_FILE" : true
+        },
+        "configs" : {
+          "DebugUIAcceptance" : {
+            "PRODUCT_BUNDLE_IDENTIFIER" : "$(KRILL_ACCEPTANCE_BUNDLE_ID).tests",
+            "KRILL_ACCEPTANCE_BUNDLE_ID" : "com.kami.krill.icloud46"
+          }
+        }
+      },
+      "type" : "bundle.unit-test",
+      "sources" : [
+        {
+          "path" : "KrillTests"
+        }
+      ],
+      "dependencies" : [
+        {
+          "target" : "Krill"
+        }
+      ],
+      "platform" : "iOS"
+    }
+  },
+  "packages" : {
+    "SQLiteData" : {
+      "exactVersion" : "1.12.1",
+      "url" : "https:\/\/github.com\/pointfreeco\/sqlite-data"
+    },
+    "KrillKit" : {
+      "path" : "KrillKit"
+    }
+  },
+  "schemes" : {
+    "KrillFNOSUI" : {
+      "test" : {
+        "config" : "Debug",
+        "targets" : [
+          "KrillUITests"
+        ]
+      },
+      "build" : {
+        "targets" : {
+          "KrillUITests" : [
+            "test"
+          ],
+          "Krill" : "all"
+        }
+      }
+    },
+    "Krill" : {
+      "build" : {
+        "targets" : {
+          "KrillTests" : [
+            "test"
+          ],
+          "Krill" : "all"
+        }
+      },
+      "archive" : {
+        "config" : "Release"
+      },
+      "run" : {
+        "config" : "Debug"
+      },
+      "test" : {
+        "environmentVariables" : {
+          "KRILL46_CLOUDKIT_HANDOFF_ROLE" : "$(KRILL46_CLOUDKIT_HANDOFF_ROLE)",
+          "KRILL46_CLOUDKIT_DEVELOPMENT" : "$(KRILL46_CLOUDKIT_DEVELOPMENT)",
+          "KRILL46_CLOUDKIT_HANDOFF_ZONE" : "$(KRILL46_CLOUDKIT_HANDOFF_ZONE)"
+        },
+        "config" : "Debug",
+        "targets" : [
+          "KrillTests"
+        ]
+      }
+    },
+    "KrillSubtitles" : {
+      "build" : {
+        "targets" : {
+          "Krill" : "all",
+          "KrillTests" : [
+            "test"
+          ],
+          "KrillUITests" : [
+            "test"
+          ]
+        }
+      },
+      "test" : {
+        "targets" : [
+          {
+            "package" : "KrillKit\/ModulesTests"
+          },
+          "KrillTests",
+          "KrillUITests"
+        ],
+        "config" : "DebugUIAcceptance"
+      }
+    },
+    "KrillPlayerControls" : {
+      "build" : {
+        "targets" : {
+          "KrillUITests" : [
+            "test"
+          ],
+          "Krill" : "all",
+          "KrillTests" : [
+            "test"
+          ]
+        }
+      },
+      "test" : {
+        "targets" : [
+          {
+            "package" : "KrillKit\/ModulesTests"
+          },
+          {
+            "package" : "KrillKit\/UserStateTests"
+          },
+          {
+            "package" : "KrillKit\/SourcesTests"
+          },
+          {
+            "package" : "KrillKit\/LibraryTests"
+          },
+          "KrillTests",
+          "KrillUITests"
+        ],
+        "config" : "DebugUIAcceptance"
+      }
+    }
+  }
+}

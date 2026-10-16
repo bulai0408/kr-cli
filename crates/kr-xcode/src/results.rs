@@ -8,7 +8,8 @@ use kr_exec::Command;
 use serde::{Deserialize, Serialize};
 
 /// The tests a filter selects, from `-test-enumeration-format json`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Enumeration {
     /// Full identifiers, e.g. "KrSampleUITests/LaunchUITests/testShowsGreeting()".
     pub enabled: Vec<String>,
@@ -71,7 +72,7 @@ pub enum TestOutcome {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TestCase {
     /// "Target/Class/method()", the same form as the enumeration.
     pub id: String,
@@ -79,6 +80,8 @@ pub struct TestCase {
     pub duration_s: f64,
     /// The first failure message, if it failed.
     pub failure: Option<String>,
+    /// The identifier that selects just this test with `-only-testing`.
+    pub filter: String,
 }
 
 #[derive(Deserialize)]
@@ -89,6 +92,8 @@ struct Node {
     #[serde(default)]
     node_type: String,
     node_identifier: Option<String>,
+    #[serde(rename = "nodeIdentifierURL")]
+    node_identifier_url: Option<String>,
     result: Option<String>,
     duration_in_seconds: Option<f64>,
     #[serde(default)]
@@ -129,11 +134,13 @@ fn walk(node: &Node, target: Option<&str>, out: &mut Vec<TestCase>) {
             .iter()
             .find(|c| c.node_type == "Failure Message")
             .map(|c| c.name.clone());
+        let id = match target {
+            Some(t) => format!("{t}/{local}"),
+            None => local.to_owned(),
+        };
         out.push(TestCase {
-            id: match target {
-                Some(t) => format!("{t}/{local}"),
-                None => local.to_owned(),
-            },
+            filter: only_testing_id(&id, node.node_identifier_url.as_deref()),
+            id,
             outcome,
             duration_s: node.duration_in_seconds.unwrap_or(0.0),
             failure,
@@ -145,11 +152,18 @@ fn walk(node: &Node, target: Option<&str>, out: &mut Vec<TestCase>) {
     }
 }
 
-/// The identifier to pass to `-only-testing` for one test. XCTest methods (named
-/// `test…`) are given without "()"; Swift Testing functions keep it.
-pub fn only_testing_id(id: &str) -> String {
+/// The identifier to pass to `-only-testing` for one test (`id` as in the
+/// enumeration). XCTest methods are given without "()"; Swift Testing functions keep
+/// their parentheses and argument labels, e.g. `greets(name:)`. The framework shows in
+/// the xcresult `url`: only a Swift Testing URL ends with ")". Without a URL, methods
+/// named `test…` count as XCTest.
+pub fn only_testing_id(id: &str, url: Option<&str>) -> String {
     let method = id.rsplit('/').next().unwrap_or(id);
-    if method.starts_with("test") {
+    let xctest = match url {
+        Some(url) => !url.ends_with(')'),
+        None => method.starts_with("test"),
+    };
+    if xctest {
         id.trim_end_matches("()").to_owned()
     } else {
         id.to_owned()

@@ -11,8 +11,8 @@ use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, Once};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -27,6 +27,8 @@ pub struct Command {
     pub env: Vec<(String, String)>,
     /// Hard limit for [`Runner::run_logged`]: the process group is terminated after it.
     pub timeout: Option<Duration>,
+    /// Cleanup must run even after kr received a stop signal.
+    pub cleanup: bool,
 }
 
 impl Command {
@@ -37,6 +39,7 @@ impl Command {
             cwd: None,
             env: Vec::new(),
             timeout: None,
+            cleanup: false,
         }
     }
 
@@ -127,6 +130,60 @@ pub fn notify_spawn(event: Spawn) {
     }
 }
 
+/// The first stop signal (SIGINT, SIGTERM, SIGHUP) kr received; 0 if none.
+static STOP: AtomicUsize = AtomicUsize::new(0);
+static CATCH: Once = Once::new();
+
+/// From now on, SIGINT, SIGTERM and SIGHUP no longer kill kr: they are recorded, passed
+/// on to the command that is running, and every later logged command fails at once
+/// instead of starting. Callers check [`stop_signal`] to wind down. Idempotent.
+pub fn catch_stop_signals() -> Result<()> {
+    let mut result = Ok(());
+    CATCH.call_once(|| {
+        for signal in [
+            signal_hook::consts::SIGINT,
+            signal_hook::consts::SIGTERM,
+            signal_hook::consts::SIGHUP,
+        ] {
+            // SAFETY: the action only does an atomic compare-and-swap, which is
+            // async-signal-safe.
+            let registered = unsafe {
+                signal_hook::low_level::register(signal, move || {
+                    let _ = STOP.compare_exchange(
+                        0,
+                        signal as usize,
+                        Ordering::SeqCst,
+                        Ordering::SeqCst,
+                    );
+                })
+            };
+            if let Err(e) = registered {
+                result = Err(e.into());
+                return;
+            }
+        }
+    });
+    result
+}
+
+/// The stop signal kr received, if any (see [`catch_stop_signals`]).
+pub fn stop_signal() -> Option<i32> {
+    match STOP.load(Ordering::SeqCst) {
+        0 => None,
+        signal => i32::try_from(signal).ok(),
+    }
+}
+
+fn interrupted_err(cmd: &Command, signal: i32, log: Option<&Path>) -> anyhow::Error {
+    match log {
+        Some(log) => anyhow::anyhow!(
+            "`{cmd}` was interrupted (signal {signal}); its log is {}",
+            log.display()
+        ),
+        None => anyhow::anyhow!("`{cmd}` was interrupted (signal {signal})"),
+    }
+}
+
 /// How much of a logged run's output is kept in memory.
 pub const TAIL_BYTES: u64 = 64 * 1024;
 /// After a timeout: time between SIGTERM and SIGKILL.
@@ -135,6 +192,11 @@ pub const KILL_GRACE: Duration = Duration::from_secs(5);
 /// Runs external commands. Every call to an external tool goes through this trait.
 pub trait Runner: Send + Sync {
     fn run(&self, cmd: &Command) -> Result<Output>;
+
+    /// Starts an owned background process group, streaming its output to `log`.
+    fn start(&self, _cmd: &Command, _log: &Path) -> Result<Box<dyn Background>> {
+        bail!("this command runner does not support background processes")
+    }
 
     /// Runs a long command (e.g. xcodebuild) with stdout and stderr streamed into
     /// `log`, honouring `cmd.timeout`. Only a tail of the output is kept in memory.
@@ -147,6 +209,63 @@ pub trait Runner: Send + Sync {
             stderr: String::new(),
             ..out
         })
+    }
+}
+
+/// An owned dependency process group. Dropping it must terminate its descendants.
+pub trait Background: Send {
+    fn exited(&mut self) -> Result<bool>;
+    fn stop(&mut self) -> Result<()>;
+}
+
+struct ProcessGroup {
+    child: std::process::Child,
+    pgid: libc::pid_t,
+    stopped: bool,
+}
+
+impl Background for ProcessGroup {
+    fn exited(&mut self) -> Result<bool> {
+        Ok(self.child.try_wait()?.is_some())
+    }
+
+    fn stop(&mut self) -> Result<()> {
+        if self.stopped {
+            return Ok(());
+        }
+        kill_group(self.pgid, libc::SIGTERM);
+        let started = Instant::now();
+        while started.elapsed() < KILL_GRACE {
+            let _ = self.child.try_wait()?;
+            // SAFETY: probe only the process group created by this instance.
+            if unsafe { libc::kill(-self.pgid, 0) } != 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        kill_group(self.pgid, libc::SIGKILL);
+        self.child.wait()?;
+        self.stopped = true;
+        Ok(())
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        let _ = self.stop();
+    }
+}
+
+struct ReplayedBackground {
+    exited: bool,
+}
+impl Background for ReplayedBackground {
+    fn exited(&mut self) -> Result<bool> {
+        Ok(self.exited)
+    }
+    fn stop(&mut self) -> Result<()> {
+        self.exited = true;
+        Ok(())
     }
 }
 
@@ -181,6 +300,36 @@ fn kill_group(pgid: libc::pid_t, signal: libc::c_int) {
 pub struct RealRunner;
 
 impl Runner for RealRunner {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        catch_stop_signals()?;
+        if let Some(signal) = stop_signal() {
+            return Err(interrupted_err(cmd, signal, Some(log)));
+        }
+        if let Some(dir) = log.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = File::create(log)?;
+        let mut command = std::process::Command::new(&cmd.program);
+        command
+            .args(&cmd.args)
+            .envs(cmd.env.iter().cloned())
+            .stdin(Stdio::null())
+            .stdout(file.try_clone()?)
+            .stderr(file)
+            .process_group(0);
+        if let Some(dir) = &cmd.cwd {
+            command.current_dir(dir);
+        }
+        let child = command
+            .spawn()
+            .with_context(|| format!("failed to start `{cmd}`"))?;
+        let pgid = libc::pid_t::try_from(child.id())?;
+        Ok(Box::new(ProcessGroup {
+            child,
+            pgid,
+            stopped: false,
+        }))
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let mut command = std::process::Command::new(&cmd.program);
         command.args(&cmd.args).envs(cmd.env.iter().cloned());
@@ -199,9 +348,14 @@ impl Runner for RealRunner {
     }
 
     /// The command leads its own process group, so a timeout or a forwarded signal
-    /// reaches everything it started. SIGINT, SIGTERM and SIGHUP sent to kr meanwhile
-    /// are passed on, and the call returns an error once the command has stopped.
+    /// reaches everything it started. A stop signal sent to kr (see
+    /// [`catch_stop_signals`]) is passed on, and the call returns an error once the
+    /// command has stopped; after one, logged commands no longer start.
     fn run_logged(&self, cmd: &Command, log: &Path) -> Result<Output> {
+        catch_stop_signals()?;
+        if let Some(signal) = stop_signal().filter(|_| !cmd.cleanup) {
+            return Err(interrupted_err(cmd, signal, None));
+        }
         if let Some(dir) = log.parent() {
             std::fs::create_dir_all(dir)?;
         }
@@ -218,69 +372,54 @@ impl Runner for RealRunner {
         if let Some(dir) = &cmd.cwd {
             command.current_dir(dir);
         }
-        let pending = Arc::new(AtomicUsize::new(0));
-        let mut hooks = Vec::new();
-        for signal in [
-            signal_hook::consts::SIGINT,
-            signal_hook::consts::SIGTERM,
-            signal_hook::consts::SIGHUP,
-        ] {
-            hooks.push(signal_hook::flag::register_usize(
-                signal,
-                Arc::clone(&pending),
-                signal as usize,
-            )?);
-        }
-        let result = (|| {
-            let mut child = command
-                .spawn()
-                .with_context(|| format!("failed to start `{cmd}`"))?;
-            let pgid = libc::pid_t::try_from(child.id())?;
-            notify_spawn(Spawn::Started(child.id()));
-            let deadline = cmd.timeout.map(|t| Instant::now() + t);
-            let mut terminated_at: Option<Instant> = None;
-            let mut interrupted = None;
-            let status = loop {
-                if let Some(status) = child.try_wait()? {
-                    break status;
-                }
-                let signal = pending.swap(0, Ordering::SeqCst);
-                if signal != 0 {
-                    interrupted = Some(signal);
-                    kill_group(pgid, signal as libc::c_int);
-                }
-                match terminated_at {
-                    None if deadline.is_some_and(|d| Instant::now() >= d) => {
-                        kill_group(pgid, libc::SIGTERM);
-                        terminated_at = Some(Instant::now());
-                    }
-                    Some(at) if at.elapsed() >= KILL_GRACE => kill_group(pgid, libc::SIGKILL),
-                    _ => {}
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            };
-            notify_spawn(Spawn::Finished(child.id()));
-            // Whatever the command left behind in its group goes too.
-            if terminated_at.is_some() || interrupted.is_some() {
-                kill_group(pgid, libc::SIGKILL);
+        let mut child = command
+            .spawn()
+            .with_context(|| format!("failed to start `{cmd}`"))?;
+        let pgid = libc::pid_t::try_from(child.id())?;
+        notify_spawn(Spawn::Started(child.id()));
+        let deadline = cmd.timeout.map(|t| Instant::now() + t);
+        let mut terminated_at: Option<Instant> = None;
+        let mut interrupted = None;
+        let status = loop {
+            if let Some(status) = child.try_wait()? {
+                break status;
             }
-            if let Some(signal) = interrupted {
-                bail!(
-                    "`{cmd}` was interrupted (signal {signal}); its log is {}",
-                    log.display()
-                );
+            if let (None, Some(signal)) = (interrupted, stop_signal().filter(|_| !cmd.cleanup)) {
+                interrupted = Some(signal);
+                kill_group(pgid, signal);
+                terminated_at = Some(Instant::now());
             }
-            Ok(Output {
-                status: status.code().or_else(|| status.signal().map(|s| 128 + s)),
-                stdout: tail(log)?,
-                stderr: String::new(),
-                timed_out: terminated_at.is_some(),
-            })
-        })();
-        for hook in hooks {
-            signal_hook::low_level::unregister(hook);
+            match terminated_at {
+                None if deadline.is_some_and(|d| Instant::now() >= d) => {
+                    kill_group(
+                        pgid,
+                        if cmd.cleanup {
+                            libc::SIGKILL
+                        } else {
+                            libc::SIGTERM
+                        },
+                    );
+                    terminated_at = Some(Instant::now());
+                }
+                Some(at) if at.elapsed() >= KILL_GRACE => kill_group(pgid, libc::SIGKILL),
+                _ => {}
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        notify_spawn(Spawn::Finished(child.id()));
+        // Whatever the command left behind in its group goes too.
+        if terminated_at.is_some() || interrupted.is_some() {
+            kill_group(pgid, libc::SIGKILL);
         }
-        result
+        if let Some(signal) = interrupted {
+            return Err(interrupted_err(cmd, signal, Some(log)));
+        }
+        Ok(Output {
+            status: status.code().or_else(|| status.signal().map(|s| 128 + s)),
+            stdout: tail(log)?,
+            stderr: String::new(),
+            timed_out: terminated_at.is_some(),
+        })
     }
 }
 
@@ -295,6 +434,10 @@ pub struct Recording {
     pub stderr: String,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
+    /// How long a replay of this call takes, for tests of what happens while a command
+    /// runs (e.g. a stop signal). Recording does not set it: replays stay instant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 impl Recording {
@@ -356,13 +499,31 @@ pub fn read_recording(path: &Path) -> Result<Recording> {
 }
 
 impl Runner for ReplayRunner {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        let out = self.run_logged(cmd, log)?;
+        Ok(Box::new(ReplayedBackground {
+            exited: !out.success() || out.timed_out,
+        }))
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let mut pending = self.pending.lock().unwrap();
         if let Some(i) = pending.iter().position(|r| r.matches(cmd)) {
             let rec = pending.remove(i).unwrap();
+            drop(pending);
             let out = rec.output();
+            let duration = rec.duration_ms.map(Duration::from_millis);
             self.calls.lock().unwrap().push(cmd.to_string());
             self.used.lock().unwrap().push(rec);
+            // Like a real command, a replayed one ends early on a stop signal.
+            if let Some(duration) = duration {
+                let started = Instant::now();
+                while started.elapsed() < duration {
+                    if let Some(signal) = stop_signal().filter(|_| !cmd.cleanup) {
+                        return Err(interrupted_err(cmd, signal, None));
+                    }
+                    std::thread::sleep(Duration::from_millis(20).min(duration));
+                }
+            }
             return Ok(out);
         }
         let times = self
@@ -418,6 +579,7 @@ impl Sanitizer {
             stdout: self.clean(&rec.stdout),
             stderr: self.clean(&rec.stderr),
             timed_out: rec.timed_out,
+            duration_ms: rec.duration_ms,
         }
     }
 
@@ -473,6 +635,7 @@ impl<R: Runner> RecordingRunner<R> {
             stdout: combined.unwrap_or_else(|| out.stdout.clone()),
             stderr: out.stderr.clone(),
             timed_out: out.timed_out,
+            duration_ms: None,
         });
         std::fs::create_dir_all(&self.dir)?;
         let path = self.dir.join(format!("{n:03}-{name}.json"));
@@ -482,6 +645,20 @@ impl<R: Runner> RecordingRunner<R> {
 }
 
 impl<R: Runner> Runner for RecordingRunner<R> {
+    fn start(&self, cmd: &Command, log: &Path) -> Result<Box<dyn Background>> {
+        let process = self.inner.start(cmd, log)?;
+        self.save(
+            cmd,
+            &Output {
+                status: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+                timed_out: false,
+            },
+            None,
+        )?;
+        Ok(process)
+    }
     fn run(&self, cmd: &Command) -> Result<Output> {
         let out = self.inner.run(cmd)?;
         self.save(cmd, &out, None)?;

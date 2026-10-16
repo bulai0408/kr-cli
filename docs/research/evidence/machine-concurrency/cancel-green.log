@@ -1,0 +1,11 @@
+kr39: acquired native lock
+   Compiling kr-resource v0.1.0 (<repo>/crates/kr-resource)
+   Compiling kr v0.1.0 (<repo>/crates/kr)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.85s
+     Running tests/lock.rs (target/debug/deps/lock-a789f88138ea80e9)
+
+running 1 test
+test sigterm_while_waiting_for_the_bridge_removes_its_ticket_without_starting_work ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.85s
+

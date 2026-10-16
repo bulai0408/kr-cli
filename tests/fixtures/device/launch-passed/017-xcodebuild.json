@@ -1,0 +1,22 @@
+{
+ "program": "xcodebuild",
+ "args": [
+  "test-without-building",
+  "-quiet",
+  "-skipMacroValidation",
+  "-destination",
+  "id=00008130-00AA00AA00AA001C",
+  "-xctestrun",
+  "build/kr/DerivedData/Build/Products/KrSample_iphoneos27.1-arm64.xctestrun",
+  "-collect-test-diagnostics",
+  "never",
+  "-parallel-testing-enabled",
+  "NO",
+  "-only-testing:KrSampleUITests/LaunchUITests",
+  "-resultBundlePath",
+  "build/kr/results/launch/run.xcresult"
+ ],
+ "status": 0,
+ "stdout": "Writing result bundle at path:\n\t/tmp/sample/build/kr/results/launch/run.xcresult\n\n--- xcodebuild: WARNING: Using the first of multiple matching destinations:\n{ platform:iOS, arch:arm64e, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64e, variant:DriverKit, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64, variant:DriverKit, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n2026-10-15 17:27:39.618 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:40.653 xcodebuild[41497:39908337] [MT] IDELaunchParametersSnapshot: debugger version lookup failed for path '<nil>': noURL\n2026-10-15 17:27:40.653 xcodebuild[41497:39908337] [MT] IDELaunchParametersSnapshot: no debugger version\n2026-10-15 17:27:41.966 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.609 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.610 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.610 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.623 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.623 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.623 xcodebuild[41497:39908337] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:27:44.885 xcodebuild[41497:39908337] [MT] IDETestOperationsObserverDebug: 6.663 elapsed -- Testing started completed.\n2026-10-15 17:27:44.885 xcodebuild[41497:39908337] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start\n2026-10-15 17:27:44.885 xcodebuild[41497:39908337] [MT] IDETestOperationsObserverDebug: 6.663 sec, +6.663 sec -- end\nTesting started\n",
+ "stderr": ""
+}

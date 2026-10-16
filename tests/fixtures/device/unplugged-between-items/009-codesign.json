@@ -1,0 +1,13 @@
+{
+ "program": "codesign",
+ "args": [
+  "-d",
+  "--entitlements",
+  "-",
+  "--xml",
+  "Debug-iphoneos/KrSample.app"
+ ],
+ "status": 0,
+ "stdout": "<?xml version=\"1.0\" encoding=\"UTF-8\"?><!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"https://www.apple.com/DTDs/PropertyList-1.0.dtd\"><plist version=\"1.0\"><dict><key>application-identifier</key><string>K4AXH95DCF.dev.kr.sample.e2e</string><key>com.apple.developer.team-identifier</key><string>K4AXH95DCF</string><key>get-task-allow</key><true/></dict></plist>\n",
+ "stderr": "Executable=/tmp/sample/build/kr/DerivedData/Build/Products/Debug-iphoneos/KrSample.app/KrSample\n"
+}

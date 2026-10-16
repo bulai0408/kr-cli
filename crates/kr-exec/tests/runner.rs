@@ -8,6 +8,7 @@ fn recording(program: &str, args: &[&str], status: i32, stdout: &str) -> Recordi
         stdout: stdout.into(),
         stderr: String::new(),
         timed_out: false,
+        duration_ms: None,
     }
 }
 
@@ -137,4 +138,14 @@ fn replay_remembers_the_commands_it_answered_in_order() {
     runner.run(&Command::new("b")).unwrap();
     runner.run(&Command::new("a").arg("1")).unwrap();
     assert_eq!(runner.calls(), ["b", "a 1"]);
+}
+
+#[test]
+fn replay_takes_as_long_as_the_recorded_duration() {
+    let mut rec = recording("xcodebuild", &["test"], 0, "");
+    rec.duration_ms = Some(300);
+    let runner = ReplayRunner::new(vec![rec]);
+    let started = std::time::Instant::now();
+    runner.run(&Command::new("xcodebuild").arg("test")).unwrap();
+    assert!(started.elapsed() >= std::time::Duration::from_millis(300));
 }

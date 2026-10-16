@@ -11,11 +11,15 @@ publish = false
 [dependencies]
 anyhow.workspace = true
 blake3.workspace = true
+flate2.workspace = true
+globset.workspace = true
 clap.workspace = true
 kr-config.workspace = true
+kr-device.workspace = true
 kr-events.workspace = true
 kr-exec.workspace = true
 kr-machine.workspace = true
+kr-remote.workspace = true
 kr-resource.workspace = true
 kr-run.workspace = true
 kr-sim.workspace = true
@@ -26,12 +30,16 @@ miette.workspace = true
 plist.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+regex = "1"
 signal-hook.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]
 kr-exec.workspace = true
+kr-resource.workspace = true
+jiff.workspace = true
+libc.workspace = true
 assert_cmd.workspace = true
 insta.workspace = true
 tempfile.workspace = true

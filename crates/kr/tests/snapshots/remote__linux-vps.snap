@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/remote.rs
+assertion_line: 287
+expression: out.stderr
+---
+error: cannot run on vps
+  - vps runs Linux, not macOS: remote runs need a Mac with Xcode
+    next: run on a Mac: declare one in [remotes] of the machine config (~/.config/kr/config.toml)

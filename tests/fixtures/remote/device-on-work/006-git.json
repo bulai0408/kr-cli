@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "ls-remote",
+    "origin",
+    "refs/heads/kr38-device"
+  ],
+  "status": 0,
+  "stdout": "4fdad5f453c1f8d721eab14d93635073a3826cd4\trefs/heads/kr38-device\n",
+  "stderr": ""
+}

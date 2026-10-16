@@ -211,3 +211,58 @@ fn non_config_kr_variables_are_ignored() {
     .unwrap();
     assert_eq!(config, Config::default());
 }
+
+#[test]
+fn remote_machines_are_declared_ssh_hosts() {
+    let dir = tempfile::tempdir().unwrap();
+    let machine = write(
+        &dir.path().join("config.toml"),
+        "[remotes.mini]\nssh = \"mini.local\"\n\n[remotes.studio]\nssh = \"studio\"\ndir = \"~/builds\"\nkr = \"~/.cargo/bin/kr\"\n",
+    );
+    let config = Sources {
+        machine: Some(machine),
+        ..Sources::default()
+    }
+    .load()
+    .unwrap();
+
+    let mini = &config.machine.remotes["mini"];
+    assert_eq!(mini.ssh, "mini.local");
+    assert_eq!((mini.dir(), mini.kr()), ("~/kr-remote", "kr"));
+    let studio = &config.machine.remotes["studio"];
+    assert_eq!((studio.dir(), studio.kr()), ("~/builds", "~/.cargo/bin/kr"));
+}
+
+#[test]
+fn a_remote_without_an_ssh_host_points_at_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let machine = write(
+        &dir.path().join("config.toml"),
+        "[remotes.mini]\ndir = \"~/builds\"\n",
+    );
+    let err = Sources {
+        machine: Some(machine),
+        ..Sources::default()
+    }
+    .load()
+    .unwrap_err();
+    let text = render(&err);
+    assert!(text.contains("missing field `ssh`"), "{text}");
+    assert!(text.contains("config.toml:1:1"), "{text}");
+}
+
+#[test]
+fn remotes_in_the_project_file_are_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = write(
+        &dir.path().join(".kr.toml"),
+        "[project]\nname = \"krill\"\n\n[remotes.mini]\nssh = \"mini\"\n",
+    );
+    let err = Sources {
+        project: Some(project),
+        ..Sources::default()
+    }
+    .load()
+    .unwrap_err();
+    assert!(render(&err).contains("`remotes` is a machine setting"));
+}

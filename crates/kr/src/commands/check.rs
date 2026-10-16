@@ -17,7 +17,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::human_duration;
-use crate::{Ctx, Loaded, slots};
+use crate::{Ctx, Loaded, compilation_cache, slots};
 
 #[derive(Debug, Args)]
 pub struct CheckArgs {
@@ -27,6 +27,11 @@ pub struct CheckArgs {
     /// Check the scenarios and suites of this gate.
     #[arg(long, conflicts_with = "targets")]
     gate: Option<String>,
+
+    /// Check for a run on this real device (name, UDID or CoreDevice identifier): its
+    /// prerequisites first, then build for iOS devices and read the signing back.
+    #[arg(long, value_name = "NAME")]
+    device: Option<String>,
 }
 
 /// Where kr builds, relative to the directory xcodebuild runs in.
@@ -35,9 +40,16 @@ const GENERATE_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 /// What to check.
+#[derive(Clone)]
 pub struct Selection {
     pub scenarios: Vec<String>,
     pub suites: Vec<String>,
+    /// Scenarios and simulator suites run on a real device: build them for iOS devices.
+    pub on_device: bool,
+    /// The UDID of that device once it is found: builds go to it, so automatic signing
+    /// makes a profile that includes it.
+    pub device: Option<String>,
+    pub selection: Option<crate::selection::SelectionReport>,
 }
 
 pub fn select(
@@ -49,6 +61,9 @@ pub fn select(
         let mut sel = Selection {
             scenarios: Vec::new(),
             suites: Vec::new(),
+            on_device: false,
+            device: None,
+            selection: None,
         };
         for t in targets {
             if project.scenarios.contains_key(t) {
@@ -75,6 +90,9 @@ pub fn select(
         Some(g) => Ok(Selection {
             scenarios: project.gate_scenarios(g),
             suites: g.suites.clone(),
+            on_device: false,
+            device: None,
+            selection: None,
         }),
         None if gate.is_some() => {
             let known: Vec<&str> = project.gates.keys().map(String::as_str).collect();
@@ -86,6 +104,9 @@ pub fn select(
         None => Ok(Selection {
             scenarios: project.scenarios.keys().cloned().collect(),
             suites: project.suites.keys().cloned().collect(),
+            on_device: false,
+            device: None,
+            selection: None,
         }),
     }
 }
@@ -110,6 +131,17 @@ pub struct Filter {
     /// Key path in .kr.toml, e.g. ["scenarios", "ratings", "only"], and the index.
     pub path: Vec<String>,
     pub index: usize,
+}
+
+/// Where builds for real iOS devices go before the device is known.
+pub const DEVICE_DESTINATION: &str = "generic/platform=iOS";
+
+/// Where builds for the selected real device go.
+fn device_destination(sel: &Selection) -> String {
+    sel.device.as_deref().map_or_else(
+        || DEVICE_DESTINATION.to_owned(),
+        |udid| format!("platform=iOS,id={udid}"),
+    )
 }
 
 /// "iOS 18.6" → the generic simulator destination of its platform.
@@ -167,12 +199,17 @@ pub fn build_jobs(project: &ProjectConfig, sel: &Selection) -> Result<Vec<BuildJ
             bail!("scenarios need [project].scheme in .kr.toml");
         };
         let runtime = runtime_of(project, scenario.device.as_deref()).unwrap_or("iOS");
+        let destination = if sel.on_device {
+            device_destination(sel)
+        } else {
+            simulator_destination(runtime)
+        };
         add(
             BuildJob {
                 dir: PathBuf::new(),
                 action: "build-for-testing",
                 scheme: scheme.clone(),
-                destination: simulator_destination(runtime),
+                destination,
                 filters: filters("scenarios", name, &scenario.only, &scenario.skip),
                 scenarios: true,
             },
@@ -216,6 +253,7 @@ pub fn build_jobs(project: &ProjectConfig, sel: &Selection) -> Result<Vec<BuildJ
                 ..
             } => {
                 let destination = match destination {
+                    Destination::Simulator if sel.on_device => device_destination(sel),
                     Destination::Simulator => simulator_destination(
                         runtime_of(project, device.as_deref()).unwrap_or("iOS"),
                     ),
@@ -255,7 +293,26 @@ impl BuildJob {
                 .configuration(info.configuration.as_deref())
                 .settings(info.build_settings.clone());
         }
+        if self.for_device() {
+            // Automatic signing may need a profile that includes the device.
+            xb = xb.args(["-allowProvisioningUpdates"]);
+            if project.signing.register_devices {
+                xb = xb.args(["-allowProvisioningDeviceRegistration"]);
+            }
+        }
         xb.command().current_dir(root.join(&self.dir))
+    }
+
+    /// Test products for real iOS devices, signed with a developer certificate.
+    pub fn for_device(&self) -> bool {
+        self.action == "build-for-testing"
+            && (self.destination == DEVICE_DESTINATION
+                || self.destination.starts_with("platform=iOS,id="))
+    }
+
+    /// The `.xctestrun` this job wrote.
+    pub fn xctestrun(&self, root: &Path) -> Result<PathBuf> {
+        XcTestRun::find_for(&self.products(root), &self.scheme, self.for_device())
     }
 
     /// Records the input hash of the last successful build of this job.
@@ -293,6 +350,10 @@ pub struct StepResult {
     /// At most three lines on failure.
     pub summary: Vec<String>,
     pub log: Option<PathBuf>,
+    /// Something to know whether the step passed or not, e.g. that it passed only
+    /// with a clean compilation cache.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// Records each step as an event and keeps the results for the report.
@@ -314,12 +375,30 @@ impl Steps<'_> {
         summary: Vec<String>,
         log: Option<PathBuf>,
     ) -> Result<bool> {
+        self.finish_with(step, started, ok, summary, log, json!({}))
+    }
+
+    /// Like [`Steps::finish`], with more fields for the event.
+    pub fn finish_with(
+        &mut self,
+        step: &str,
+        started: Instant,
+        ok: bool,
+        summary: Vec<String>,
+        log: Option<PathBuf>,
+        extra: serde_json::Value,
+    ) -> Result<bool> {
         let duration_ms = started.elapsed().as_millis() as u64;
+        let mut fields =
+            json!({ "command": self.command, "step": step, "ok": ok, "duration_ms": duration_ms });
+        if let (Some(fields), Some(extra)) = (fields.as_object_mut(), extra.as_object()) {
+            fields.extend(extra.clone());
+        }
         self.loaded.events().append(&Event::now(
             self.run_id,
             self.loaded.project(),
             EventKind::StepEnd,
-            json!({ "command": self.command, "step": step, "ok": ok, "duration_ms": duration_ms }),
+            fields,
         ))?;
         self.results.push(StepResult {
             step: step.to_owned(),
@@ -327,12 +406,24 @@ impl Steps<'_> {
             duration_ms,
             summary,
             log,
+            note: None,
         });
         Ok(ok)
     }
 
     /// Runs a long command into `<run dir>/<step>.log` and records the step.
     pub fn run_logged(&mut self, runner: &dyn Runner, step: &str, cmd: &Command) -> Result<bool> {
+        self.run_logged_with(runner, step, cmd, |_| json!({}))
+    }
+
+    /// Like [`Steps::run_logged`]; `extra` reads the finished log for more event fields.
+    pub fn run_logged_with(
+        &mut self,
+        runner: &dyn Runner,
+        step: &str,
+        cmd: &Command,
+        extra: impl FnOnce(&Path) -> serde_json::Value,
+    ) -> Result<bool> {
         let started = Instant::now();
         let log = self
             .loaded
@@ -350,7 +441,8 @@ impl Steps<'_> {
         } else {
             error_summary(&format!("{}{}", out.stdout, out.stderr))
         };
-        self.finish(step, started, ok, summary, Some(log))
+        let extra = extra(&log);
+        self.finish_with(step, started, ok, summary, Some(log), extra)
     }
 }
 
@@ -369,9 +461,16 @@ fn file_name(step: &str) -> String {
 pub fn run(ctx: &Ctx, args: CheckArgs) -> Result<ExitCode> {
     let loaded = ctx.load()?;
     let (project, root) = loaded.require_project()?;
-    let sel = select(project, &args.targets, args.gate.as_deref())?;
-    let jobs = build_jobs(project, &sel)?;
+    let mut sel = select(project, &args.targets, args.gate.as_deref())?;
+    sel.on_device = args.device.is_some();
+    super::remote::check_signing_in_ssh_session(ctx, project, &sel)?;
     let runner = ctx.runner()?;
+    if let Some(name) = &args.device {
+        let inspected = super::device::inspect(ctx, &loaded, runner.as_ref(), name)?;
+        inspected.require()?;
+        sel.device = inspected.device.udid;
+    }
+    let jobs = build_jobs(project, &sel)?;
     let run_id = RunId::new();
     let developer_dir = loaded.developer_dir(ctx)?;
     let task = format!("check {}", describe(&sel));
@@ -473,9 +572,18 @@ pub fn build(
             return Ok(false);
         }
     }
+    let cache = compilation_cache::dir(project, steps.loaded);
     for (job, hash) in todo {
         let cmd = with_xcode(job.command(project, root), developer_dir).timeout(BUILD_TIMEOUT);
-        if !steps.run_logged(runner, &format!("build {}", job.label()), &cmd)? {
+        let step = format!("build {}", job.label());
+        let built = match &cache {
+            Some(dir) => {
+                let clean = root.join("build/kr/CleanCompilationCache");
+                compilation_cache::build(runner, steps, &step, &cmd, root, dir, &clean)?
+            }
+            None => steps.run_logged_with(runner, &step, &cmd, |_| compilation_cache::off())?,
+        };
+        if !built {
             return Ok(false);
         }
         if let Some(hash) = hash {
@@ -524,13 +632,37 @@ pub fn verify(
         return Ok(false);
     }
     let iso = &project.isolation;
-    if iso.bundle_ids.is_empty() && iso.entitlements.is_empty() {
+    if !(iso.bundle_ids.is_empty() && iso.entitlements.is_empty()) {
+        let started = Instant::now();
+        let mut problems = Vec::new();
+        for job in jobs.iter().filter(|j| j.scenarios) {
+            problems.extend(check_isolation(
+                project,
+                job,
+                root,
+                runner,
+                developer_dir,
+                project_file,
+            )?);
+        }
+        if !steps.finish(
+            "isolation",
+            started,
+            problems.is_empty(),
+            first_three(&problems),
+            None,
+        )? {
+            return Ok(false);
+        }
+    }
+    if !jobs.iter().any(BuildJob::for_device) {
         return Ok(true);
     }
+    // Before anything is installed on a device: what the build is signed with.
     let started = Instant::now();
     let mut problems = Vec::new();
-    for job in jobs.iter().filter(|j| j.scenarios) {
-        problems.extend(check_isolation(
+    for job in jobs.iter().filter(|j| j.for_device()) {
+        problems.extend(check_signing(
             project,
             job,
             root,
@@ -540,12 +672,132 @@ pub fn verify(
         )?);
     }
     steps.finish(
-        "isolation",
+        "signing",
         started,
         problems.is_empty(),
         first_three(&problems),
         None,
     )
+}
+
+const ICLOUD_ENVIRONMENT: &str = "com.apple.developer.icloud-container-environment";
+
+/// Reads back what a device build's apps are signed with (pitfalls P4): the team
+/// ([signing].team), the entitlements ([isolation].entitlements) and, for an app with
+/// iCloud entitlements, the iCloud container environment (Development unless
+/// [isolation].entitlements allows otherwise).
+fn check_signing(
+    project: &ProjectConfig,
+    job: &BuildJob,
+    root: &Path,
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    project_file: Option<&Path>,
+) -> Result<Vec<String>> {
+    let products = job.products(root);
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
+    let mut apps: Vec<&Path> = run
+        .targets
+        .iter()
+        .filter_map(|t| t.app.as_deref())
+        .collect();
+    apps.sort();
+    apps.dedup();
+    let expected = project.signing.team.as_deref();
+    let at_team = at(project_file, &["signing".into(), "team".into()], None);
+    let mut problems = Vec::new();
+    for app in apps {
+        let name = app.display();
+        let run_codesign =
+            |cmd: Command| runner.run(&with_xcode(cmd, developer_dir).current_dir(&products));
+        let details = run_codesign(kr_xcode::signature_command(app))?;
+        let team = kr_xcode::team_identifier(&format!("{}{}", details.stdout, details.stderr));
+        match (team.as_deref(), expected) {
+            (None, _) => problems.push(format!(
+                "{name} is not signed by a team (ad hoc or unsigned), so a device will not install it; set DEVELOPMENT_TEAM{} and automatic signing for the app, then run again",
+                expected.map(|t| format!(" = {t}")).unwrap_or_default()
+            )),
+            (Some(team), None) => problems.push(format!(
+                "{name} is signed by team {team}, but .kr.toml does not say which team to expect; if {team} is right, add [signing] team = \"{team}\"{}",
+                project_file.map(|f| format!(" to {}", f.display())).unwrap_or_default()
+            )),
+            (Some(team), Some(want)) if team != want => problems.push(format!(
+                "{name} is signed by team {team}, not {want}{at_team}; set DEVELOPMENT_TEAM = {want} for the app (or in [project].build_settings), then run again"
+            )),
+            _ => {}
+        }
+        let out = run_codesign(kr_xcode::signed_entitlements_command(app))?;
+        if !out.success() {
+            problems.push(format!(
+                "cannot read the entitlements {name} is signed with: {}",
+                out.stderr.trim()
+            ));
+            continue;
+        }
+        let entitlements = kr_xcode::parse_signed_entitlements(&out.stdout)?;
+        for (key, allowed) in project
+            .isolation
+            .entitlements
+            .iter()
+            .filter(|(k, _)| *k != ICLOUD_ENVIRONMENT)
+        {
+            let Some(value) = entitlements.get(key) else {
+                continue;
+            };
+            for v in plist_strings(value).iter().filter(|v| !allowed.contains(v)) {
+                problems.push(format!(
+                    "{name} is signed with entitlement {key} = `{v}`, allowed: {allowed:?}{}",
+                    at(
+                        project_file,
+                        &["isolation".into(), "entitlements".into(), key.clone()],
+                        None
+                    )
+                ));
+            }
+        }
+        let uses_icloud = entitlements
+            .keys()
+            .any(|k| k.starts_with("com.apple.developer.icloud-") && k != ICLOUD_ENVIRONMENT);
+        if !uses_icloud {
+            continue;
+        }
+        let allowed = project
+            .isolation
+            .entitlements
+            .get(ICLOUD_ENVIRONMENT)
+            .cloned()
+            .unwrap_or_else(|| vec!["Development".to_owned()]);
+        let at_env = at(
+            project_file,
+            &[
+                "isolation".into(),
+                "entitlements".into(),
+                ICLOUD_ENVIRONMENT.into(),
+            ],
+            None,
+        );
+        match entitlements.get(ICLOUD_ENVIRONMENT).and_then(|v| v.as_string()) {
+            None => problems.push(format!(
+                "{name} has iCloud entitlements but is signed without {ICLOUD_ENVIRONMENT}, so kr cannot tell which iCloud environment it uses; add it with `Development` to the app's entitlements file, then run again"
+            )),
+            Some(env) if !allowed.iter().any(|a| a == env) => problems.push(format!(
+                "{name} is signed for the iCloud {env} environment; tests may only use {allowed:?}{at_env}; set {ICLOUD_ENVIRONMENT} to `Development` in the app's entitlements file, then run again"
+            )),
+            Some(_) => {}
+        }
+    }
+    Ok(problems)
+}
+
+fn plist_strings(value: &plist::Value) -> Vec<String> {
+    match value {
+        plist::Value::String(s) => vec![s.clone()],
+        plist::Value::Array(a) => a
+            .iter()
+            .filter_map(|v| v.as_string().map(str::to_owned))
+            .collect(),
+        other => vec![format!("{other:?}")],
+    }
 }
 
 /// Input hashes of the jobs: files git knows about in the job's directory (tracked and
@@ -558,6 +810,55 @@ pub fn job_hashes(
     runner: &dyn Runner,
     developer_dir: Option<&Path>,
 ) -> Vec<Option<String>> {
+    calculate_job_inputs(project, root, jobs, runner, developer_dir, false)
+        .into_iter()
+        .map(|job| job.map(|j| j.hash))
+        .collect()
+}
+
+#[derive(Debug, Serialize)]
+pub struct JobHash {
+    pub job: String,
+    pub hash: String,
+    pub inputs: HashInputs,
+}
+
+#[derive(Debug, Serialize)]
+pub struct HashInputs {
+    pub files: Vec<FileInput>,
+    pub command: Vec<String>,
+    pub developer_dir: String,
+    pub generate: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FileInput {
+    pub path: String,
+    pub content_hash: Option<String>,
+    pub bytes: Option<usize>,
+    pub missing: bool,
+}
+
+/// The same inputs as the cache, exposed by `kr hash`. A missing file has the
+/// `<missing>` marker in `input_hash`, and is explicit in this diagnostic view.
+pub fn job_inputs(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+) -> Vec<Option<JobHash>> {
+    calculate_job_inputs(project, root, jobs, runner, developer_dir, true)
+}
+
+fn calculate_job_inputs(
+    project: &ProjectConfig,
+    root: &Path,
+    jobs: &[BuildJob],
+    runner: &dyn Runner,
+    developer_dir: Option<&Path>,
+    explain: bool,
+) -> Vec<Option<JobHash>> {
     let list = Command::new("git")
         .args(["ls-files", "-co", "--exclude-standard", "-z"])
         .current_dir(root);
@@ -575,11 +876,36 @@ pub fn job_hashes(
             let xcode = developer_dir
                 .map(|d| d.display().to_string())
                 .unwrap_or_default();
-            let mut parts: Vec<&str> = vec![cmd.program.as_str()];
-            parts.extend(cmd.args.iter().map(String::as_str));
-            parts.push(&xcode);
-            parts.push(project.project.generate.as_deref().unwrap_or(""));
-            kr_run::input_hash(root, files, &parts).ok()
+            let generate = project.project.generate.clone().unwrap_or_default();
+            let mut command = vec![cmd.program];
+            command.extend(cmd.args);
+            let mut parts: Vec<&str> = command.iter().map(String::as_str).collect();
+            parts.extend([xcode.as_str(), generate.as_str()]);
+            let hash = kr_run::input_hash(root, files, &parts).ok()?;
+            let mut files: Vec<_> = files
+                .iter()
+                .filter(|_| explain)
+                .map(|file| {
+                    let bytes = std::fs::read(root.join(file)).ok();
+                    FileInput {
+                        path: file.clone(),
+                        content_hash: bytes.as_ref().map(|b| blake3::hash(b).to_hex().to_string()),
+                        bytes: bytes.as_ref().map(Vec::len),
+                        missing: bytes.is_none(),
+                    }
+                })
+                .collect();
+            files.sort_by(|a, b| a.path.cmp(&b.path));
+            Some(JobHash {
+                job: job.label(),
+                hash,
+                inputs: HashInputs {
+                    files,
+                    command,
+                    developer_dir: xcode,
+                    generate,
+                },
+            })
         })
         .collect()
 }
@@ -587,15 +913,28 @@ pub fn job_hashes(
 /// True if the job's last successful build had these inputs (and, for
 /// build-for-testing, its products are still there).
 pub fn is_fresh(job: &BuildJob, root: &Path, hash: Option<&str>) -> bool {
+    why_stale(job, root, hash).is_none()
+}
+
+/// Why the job needs building, or `None` if it is fresh.
+pub fn why_stale(job: &BuildJob, root: &Path, hash: Option<&str>) -> Option<&'static str> {
     let Some(hash) = hash else {
-        return false;
+        return Some("git cannot list the files; kr always builds then");
     };
-    let stored = std::fs::read_to_string(job.marker(root))
+    let Some(stored) = std::fs::read_to_string(job.marker(root))
         .ok()
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .and_then(|v| v["hash"].as_str().map(str::to_owned));
-    stored.as_deref() == Some(hash)
-        && (job.action == "build" || XcTestRun::find(&job.products(root), &job.scheme).is_ok())
+        .and_then(|v| v["hash"].as_str().map(str::to_owned))
+    else {
+        return Some("never built with kr here");
+    };
+    if stored != hash {
+        return Some("inputs changed since the last build");
+    }
+    if job.action != "build" && job.xctestrun(root).is_err() {
+        return Some("test products are missing");
+    }
+    None
 }
 
 /// The jobs that need building; records a cache hit (once) for the others.
@@ -647,7 +986,7 @@ fn check_filters(
     project_file: Option<&Path>,
 ) -> Result<Vec<String>> {
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
     let mut symbols = TestSymbols::default();
     let mut problems = Vec::new();
     let wanted: std::collections::BTreeSet<&str> = job
@@ -707,7 +1046,7 @@ fn check_isolation(
 ) -> Result<Vec<String>> {
     let iso = &project.isolation;
     let products = job.products(root);
-    let run = XcTestRun::read(&XcTestRun::find(&products, &job.scheme)?)?;
+    let run = XcTestRun::read(&job.xctestrun(root)?)?;
     let mut apps: Vec<&Path> = run
         .targets
         .iter()
@@ -726,7 +1065,8 @@ fn check_isolation(
                 at(project_file, &["isolation".into(), "bundle_ids".into()], None)
             ));
         }
-        if iso.entitlements.is_empty() {
+        // A device build's entitlements are in its signature: the signing step reads them.
+        if iso.entitlements.is_empty() || job.for_device() {
             continue;
         }
         let exe = kr_xcode::executable(&products.join(app))?;
@@ -765,10 +1105,7 @@ fn check_isolation(
 
 fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
     if ctx.json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json!({ "ok": ok, "steps": steps }))?
-        );
+        crate::output::print_json(&json!({ "ok": ok, "steps": steps }))?;
         return Ok(());
     }
     let times: Vec<String> = steps
@@ -783,6 +1120,9 @@ fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
         .collect();
     if ok {
         println!("PASS: check · {}", times.join(" · "));
+        for note in steps.iter().filter_map(|s| s.note.as_ref()) {
+            println!("  {note}");
+        }
         return Ok(());
     }
     let failed = steps.iter().find(|s| !s.ok).expect("a step failed");
@@ -793,6 +1133,9 @@ fn report(ctx: &Ctx, steps: &[StepResult], ok: bool) -> Result<()> {
     );
     for line in &failed.summary {
         println!("  {line}");
+    }
+    if let Some(note) = &failed.note {
+        println!("  {note}");
     }
     if let Some(log) = &failed.log {
         println!("  log: {}", log.display());

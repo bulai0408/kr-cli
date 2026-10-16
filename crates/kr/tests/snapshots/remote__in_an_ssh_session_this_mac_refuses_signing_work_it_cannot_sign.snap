@@ -1,0 +1,7 @@
+---
+source: crates/kr/tests/remote.rs
+expression: out.stderr
+---
+error: refused: this Mac cannot sign work that needs a developer certificate in this SSH session
+  - `mac-tests` (generic/platform=macOS) needs a developer certificate; this Mac cannot sign in this session: identity #1 (AAAA1111): errSecInternalComponent; #2 (BBBB2222): errSecInternalComponent (the login keychain is locked in this session)
+    next: on this Mac: make the login keychain usable in SSH sessions (unlocked at SSH login), or run this in a login session on this Mac; kr does not unlock keychains

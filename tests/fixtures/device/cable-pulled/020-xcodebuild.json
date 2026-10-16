@@ -1,0 +1,25 @@
+{
+ "program": "xcodebuild",
+ "args": [
+  "test-without-building",
+  "-quiet",
+  "-skipMacroValidation",
+  "-destination",
+  "id=00008130-00AA00AA00AA001C",
+  "-xctestrun",
+  "build/kr/DerivedData/Build/Products/KrSample_iphoneos27.1-arm64.xctestrun",
+  "-collect-test-diagnostics",
+  "never",
+  "-parallel-testing-enabled",
+  "NO",
+  "-enumerate-tests",
+  "-test-enumeration-style",
+  "flat",
+  "-test-enumeration-format",
+  "json",
+  "-only-testing:KrSampleUITests/KrSampleUITests-Runner (4922) encountered an error"
+ ],
+ "status": 0,
+ "stdout": "--- xcodebuild: WARNING: Using the first of multiple matching destinations:\n{ platform:iOS, arch:arm64e, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64e, variant:DriverKit, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n{ platform:iOS, arch:arm64, variant:DriverKit, id:00008130-00AA00AA00AA001C, name:蔡煜恒的 iPad Mini }\n2026-10-15 17:58:58.272 xcodebuild[97405:40331444] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:59:16.993 xcodebuild[97405:40331444] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:59:16.993 xcodebuild[97405:40331444] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n2026-10-15 17:59:16.993 xcodebuild[97405:40331444] [MT] IDESchemeActionSDKRecord: operatingSystemBuild = <DVTBuildVersion 24A94403>, error = invalidDigitCount(94403).\n{\n  \"errors\" : [\n    \"KrSampleUITests-Runner (4935) encountered an error. (Underlying Error: Early unexpected exit, operation never finished bootstrapping - no restart will be attempted. (Underlying Error: The test runner exited with code 74 before establishing connection.))\"\n  ],\n  \"values\" : [\n    {\n      \"disabledTests\" : [\n\n      ],\n      \"enabledTests\" : [\n        {\n          \"identifier\" : \"KrSampleUITests\"\n        }\n      ],\n      \"testPlan\" : \"KrSample\"\n    }\n  ]\n}\n",
+ "stderr": ""
+}

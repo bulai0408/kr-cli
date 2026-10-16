@@ -5,7 +5,7 @@
 //!
 //! ```text
 //! <resource>/slot-<N>.lock       held with File::try_lock; content = holder JSON
-//! <resource>/queue/<ns>-<pid>.json  one ticket per waiter, locked by its owner
+//! <resource>/queue/<ns>-<pid>-<seq>.json  one ticket per waiter, locked by its owner
 //! ```
 //!
 //! Locks are released by the OS when a process exits or crashes, so there is no
@@ -24,6 +24,7 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Seek, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -40,6 +41,9 @@ pub enum Resource {
     Sim,
     /// Light single-module tests.
     Light,
+    /// A real device, capacity 1. Each device has a pool of its own ([`Pool::device`]),
+    /// so it is not in [`Resource::ALL`].
+    Device,
 }
 
 impl Resource {
@@ -50,6 +54,7 @@ impl Resource {
             Resource::Build => "build",
             Resource::Sim => "sim",
             Resource::Light => "light",
+            Resource::Device => "device",
         }
     }
 }
@@ -85,6 +90,9 @@ pub struct Holder {
     pub started: Timestamp,
 }
 
+/// Tickets this process has created, for unique ticket names.
+static TICKETS: AtomicU64 = AtomicU64::new(0);
+
 /// All resources of one machine.
 #[derive(Debug, Clone)]
 pub struct Pool {
@@ -94,6 +102,21 @@ pub struct Pool {
 impl Pool {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self { root: root.into() }
+    }
+
+    /// The pool of one real device, by its UDID: `<root>/devices/<udid>/device/…`.
+    pub fn device(&self, udid: &str) -> Pool {
+        let name: String = udid
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        Pool::new(self.root.join("devices").join(name))
     }
 
     fn dir(&self, res: Resource) -> PathBuf {
@@ -154,7 +177,10 @@ impl Pool {
         let queue = self.queue_dir(res);
         std::fs::create_dir_all(&queue)?;
         let ns = Timestamp::now().as_nanosecond();
-        let name = format!("{ns:020}-{}.json", std::process::id());
+        // The clock has microsecond resolution on macOS: lanes of one process can join
+        // in the same tick, so a per-process sequence number keeps their names apart.
+        let seq = TICKETS.fetch_add(1, Ordering::Relaxed);
+        let name = format!("{ns:020}-{}-{seq}.json", std::process::id());
         // Lock before the ticket becomes visible, so nobody mistakes it for a dead waiter.
         let tmp = queue.join(format!(".{name}.tmp"));
         let mut file = File::create(&tmp)?;

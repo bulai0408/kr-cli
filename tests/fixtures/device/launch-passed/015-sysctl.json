@@ -1,0 +1,15 @@
+{
+ "program": "sysctl",
+ "args": [
+  "hw.ncpu",
+  "hw.perflevel0.physicalcpu",
+  "hw.memsize",
+  "vm.loadavg",
+  "kern.memorystatus_vm_pressure_level",
+  "vm.swapusage",
+  "machdep.cpu.brand_string"
+ ],
+ "status": 0,
+ "stdout": "hw.ncpu: 8\nhw.perflevel0.physicalcpu: 4\nhw.memsize: 25769803776\nvm.loadavg: { 46.13 78.02 83.80 }\nkern.memorystatus_vm_pressure_level: 2\nvm.swapusage: total = 4096.00M  used = 2587.50M  free = 1508.50M  (encrypted)\nmachdep.cpu.brand_string: Apple M3\n",
+ "stderr": ""
+}

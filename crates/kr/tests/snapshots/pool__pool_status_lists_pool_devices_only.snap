@@ -1,9 +1,10 @@
 ---
 source: crates/kr/tests/pool.rs
-assertion_line: 86
+assertion_line: 94
 expression: json
 ---
 {
+  "decisions": [],
   "devices": [
     {
       "device_type": "iPhone 16 Pro",
@@ -45,5 +46,6 @@ expression: json
       "state": "Shutdown",
       "udid": "5673C3CE-3081-49C9-8405-1FA321F3607E"
     }
-  ]
+  ],
+  "schema_version": 1
 }
