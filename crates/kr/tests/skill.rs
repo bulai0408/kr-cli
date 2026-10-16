@@ -51,13 +51,14 @@ fn the_main_text_matches_this_version_and_names_its_references() {
         "{out}"
     );
     assert!(
-        out.contains("`kr skill --reference <name>`: decisions, json, locks."),
+        out.contains("`kr skill --reference <name>`: decisions, json, locks, config."),
         "{out}"
     );
     assert!(out.contains("4 no verdict yet"), "{out}");
     assert!(!out.contains('{'), "unfilled placeholder: {out}");
     // Short: the rare cases are in the references.
-    assert!(out.lines().count() < 70, "{}", out.lines().count());
+    assert!(out.contains("0. No `.kr.toml`? Run `kr init`"), "{out}");
+    assert!(out.lines().count() <= 70, "{}", out.lines().count());
 }
 
 #[test]
@@ -81,7 +82,7 @@ fn a_reference_is_read_on_demand_and_an_unknown_one_exits_2() {
     let (code, _, err) = s.kr(&["skill", "--reference", "nope"]);
     assert_eq!(code, Some(2));
     assert!(
-        err.contains("no reference `nope`; references: decisions, json, locks"),
+        err.contains("no reference `nope`; references: decisions, json, locks, config"),
         "{err}"
     );
 }
@@ -118,7 +119,7 @@ fn project_and_owner_additions_follow_the_main_text() {
     assert_eq!(json["name"], "main");
     assert_eq!(
         json["references"],
-        serde_json::json!(["decisions", "json", "locks"])
+        serde_json::json!(["decisions", "json", "locks", "config"])
     );
     assert_eq!(json["additions"][0]["kind"], "project");
     assert_eq!(json["additions"][1]["kind"], "owner");

@@ -89,7 +89,7 @@ impl Loaded {
     /// The project and its repo root, or an error saying how to get one.
     pub fn require_project(&self) -> Result<(&kr_config::ProjectConfig, PathBuf)> {
         let project = self.config.project.as_ref().context(
-            "no .kr.toml found from here up to the repo root; add one (see examples/krill.kr.toml)",
+            "no .kr.toml found from here up to the repo root; run `kr init` in the project root, then read `kr skill --reference config`",
         )?;
         let root = self
             .project_file

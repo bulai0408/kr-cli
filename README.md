@@ -126,6 +126,12 @@ JSON 的 `written`、`removed` 是实际修改的文件，`skipped` 说明跳过
 
 - 机器级：`~/.config/kr/config.toml`（可选。不写时由 `kr doctor` 检测的机器能力推算）。
 - 项目级：仓库根目录 `.kr.toml`（Xcode 版本、平台、测试套件、UI 场景）。
+- 新项目先运行 `kr init`。它读取 `.xcodeproj` / `.xcworkspace`、XcodeGen `project.yml`
+  或 `Package.swift`，生成并校验最小配置，不构建、不租模拟器。已有 `.kr.toml` 时退出 2，不覆盖。
+- `kr init --json` 的 `decisions` 列出需要确认的 scheme、UI 测试和隔离设置；
+  编辑 `.kr.toml` 处理这些建议，不用 `kr decide`。纯 SwiftPM 项目生成 `swift test` 命令套件。
+- `kr skill --reference config` 包含全部配置项、默认值和带注释的完整示例，
+  随二进制发布，安装后无需下载仓库里的示例文件。
 
 ## 按改动选测
 
@@ -166,15 +172,14 @@ ignore = ["docs/**", "**/*.md", ".github/**"]
 ## 接入一个项目
 
 1. 安装：`cargo install --git https://github.com/bulai0408/kr-cli kr`（或在本仓库 `cargo install --path crates/kr`）。
-2. 在项目仓库根目录写 `.kr.toml`。从 [examples/krill.kr.toml](examples/krill.kr.toml) 改起，最少要有：
-   - `[project]`：`name`（模拟器池名 `<name>-Verify-<N>`）、`xcodeproj` 或 `workspace`、`scheme`、`configuration`、要求的 `xcode` 版本；工程靠生成的写 `generate`。
-   - `[simulators]`：运行时与设备类型。设备类型名照 `xcrun simctl list devicetypes` 写。
-   - `[scenarios.<名字>]`：`only = ["UITests目标/类"]`，iPad 场景加 `device = "iPad"`。
-   - `[suites.<名字>]`：`build` / `test` / `command` 三种，对应原来脚本里的每一步。
-   - `[gates.default]`、`[gates.smoke]`：门禁由哪些套件和场景组成。
-   - `[isolation]`：测试用 App 的合成 bundle id 和允许的权限环境。
-   - 可选：`[project]` 里写 `compilation_cache = true`，同一项目的各个 worktree 共用 Xcode 编译缓存（默认关）。在 Krill 上，新 worktree 的构建时间少约三分之一，第一次构建多约四分之一（ADR 0013）。worktree 不要放在 `/tmp`、`/var` 下，那里是符号链接，缓存不会命中。
-   写错时 `kr config` 会指到具体行列并说明怎么改。
+2. 在项目仓库根目录运行 `kr init`，生成 `.kr.toml`。先读输出中的「Please confirm」，
+   或用 `kr init --json` 读取判断点，再编辑配置确认默认选择。
+   `kr skill --reference config` 说明所有字段并提供完整示例；
+   尤其要确认 UI 测试使用合成 bundle id，并配置 `[isolation]`。
+   写错时 `kr config` 会指到具体行列并说明怎么改。初始化不构建，也不创建池设备。
+   可选：`[project]` 里写 `compilation_cache = true`，同一项目的各个 worktree 共用 Xcode 编译缓存（默认关）。
+   在 Krill 上，新 worktree 的构建时间少约三分之一，第一次构建多约四分之一（ADR 0013）。
+   worktree 不要放在 `/tmp`、`/var` 下，那里是符号链接，缓存不会命中。
 3. `kr doctor`：确认 Xcode、运行时、池设备都齐；缺池设备就 `kr pool sync`（只新建，不删不改已有设备）。
 4. `kr check`：不占模拟器，确认能编过、过滤都能匹配到测试、隔离设置正确。
 5. `kr gate smoke`，再 `kr gate`。逐项和原来的脚本对照一次（测试数、结果）。

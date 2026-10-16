@@ -1,0 +1,28 @@
+{
+  "decisions": [],
+  "ok": true,
+  "schema_version": 1,
+  "steps": [
+    {
+      "duration_ms": 120,
+      "log": "<state>/runs/01a14288-66a7-7476-b6d3-b2386a1cfb49/generate.log",
+      "ok": true,
+      "step": "generate",
+      "summary": []
+    },
+    {
+      "duration_ms": 14233,
+      "log": "<state>/runs/01a14288-66a7-7476-b6d3-b2386a1cfb49/build_build-for-testing_KrSample__generic_platform_iOS_Simulator_.log",
+      "ok": true,
+      "step": "build build-for-testing KrSample (generic/platform=iOS Simulator)",
+      "summary": []
+    },
+    {
+      "duration_ms": 39,
+      "log": null,
+      "ok": true,
+      "step": "filters",
+      "summary": []
+    }
+  ]
+}

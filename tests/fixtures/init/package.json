@@ -1,0 +1,10 @@
+{
+  "program": "swift",
+  "args": [
+    "package",
+    "dump-package"
+  ],
+  "status": 0,
+  "stdout": "{\n  \"cLanguageStandard\": null,\n  \"cxxLanguageStandard\": null,\n  \"defaultLocalization\": null,\n  \"dependencies\": [],\n  \"name\": \"SampleKit\",\n  \"packageKind\": {\n    \"root\": [\n      \"<project>\"\n    ]\n  },\n  \"platforms\": [],\n  \"products\": [],\n  \"providers\": null,\n  \"swiftLanguageVersions\": null,\n  \"targets\": [\n    {\n      \"dependencies\": [],\n      \"exclude\": [],\n      \"name\": \"SampleKit\",\n      \"packageAccess\": true,\n      \"resources\": [],\n      \"settings\": [],\n      \"type\": \"regular\"\n    },\n    {\n      \"dependencies\": [\n        {\n          \"byName\": [\n            \"SampleKit\",\n            null\n          ]\n        }\n      ],\n      \"exclude\": [],\n      \"name\": \"SampleKitTests\",\n      \"packageAccess\": true,\n      \"resources\": [],\n      \"settings\": [],\n      \"type\": \"test\"\n    }\n  ],\n  \"toolsVersion\": {\n    \"_version\": \"6.0.0\"\n  },\n  \"traits\": []\n}\n",
+  "stderr": ""
+}

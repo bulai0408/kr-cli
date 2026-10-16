@@ -1,0 +1,17 @@
+{
+  "program": "xcodebuild",
+  "args": [
+    "-showBuildSettings",
+    "-json",
+    "-project",
+    "KrSample.xcodeproj",
+    "-scheme",
+    "KrSample",
+    "-configuration",
+    "Debug",
+    "build-for-testing"
+  ],
+  "status": 0,
+  "stdout": "[\n  {\n    \"target\": \"KrSample\",\n    \"buildSettings\": {\n      \"CONFIGURATION\": \"Debug\",\n      \"IPHONEOS_DEPLOYMENT_TARGET\": \"18.0\",\n      \"PRODUCT_NAME\": \"KrSample\",\n      \"PRODUCT_TYPE\": \"com.apple.product-type.application\",\n      \"SUPPORTED_PLATFORMS\": \"iphoneos iphonesimulator\",\n      \"TARGET_NAME\": \"KrSample\"\n    }\n  },\n  {\n    \"target\": \"KrSampleTests\",\n    \"buildSettings\": {\n      \"CONFIGURATION\": \"Debug\",\n      \"IPHONEOS_DEPLOYMENT_TARGET\": \"18.0\",\n      \"PRODUCT_NAME\": \"KrSampleTests\",\n      \"PRODUCT_TYPE\": \"com.apple.product-type.bundle.unit-test\",\n      \"SUPPORTED_PLATFORMS\": \"iphoneos iphonesimulator\",\n      \"TARGET_NAME\": \"KrSampleTests\"\n    }\n  },\n  {\n    \"target\": \"KrSampleUITests\",\n    \"buildSettings\": {\n      \"CONFIGURATION\": \"Debug\",\n      \"IPHONEOS_DEPLOYMENT_TARGET\": \"18.0\",\n      \"PRODUCT_NAME\": \"KrSampleUITests\",\n      \"PRODUCT_TYPE\": \"com.apple.product-type.bundle.ui-testing\",\n      \"SUPPORTED_PLATFORMS\": \"iphoneos iphonesimulator\",\n      \"TARGET_NAME\": \"KrSampleUITests\"\n    }\n  }\n]\n",
+  "stderr": ""
+}
