@@ -2586,9 +2586,16 @@ fn pool_lease_variables_are_not_machine_config_keys() {
     let (code, out) = s.kr_env(
         &[],
         &["--json", "config"],
-        &[("KR_SIM_UDID", "sample-udid"), ("KR_SIM_NAME", "KrSample-Verify-1")],
+        &[
+            ("KR_SIM_UDID", "sample-udid"),
+            ("KR_SIM_NAME", "KrSample-Verify-1"),
+        ],
     );
-    assert_eq!(code, Some(0), "a command inside `kr pool lease` may call kr: {out}");
+    assert_eq!(
+        code,
+        Some(0),
+        "a command inside `kr pool lease` may call kr: {out}"
+    );
 }
 
 #[test]
