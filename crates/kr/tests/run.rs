@@ -368,7 +368,8 @@ fn command_reruns_preserve_the_first_log_and_record_both_paths() {
 fn a_persistent_solo_failure_skips_the_whole_item_rerun_under_high_load() {
     let s = Sample::new();
     s.seen_failure(BROKEN_TEST, "failed - asked to fail");
-    let mut recs = vec![sysctl_with_load(50.0); 3];
+    // Startup, then a reading before and after each of the build and sim slots.
+    let mut recs = vec![sysctl_with_load(50.0); 5];
     recs.extend([
         sysctl_with_load(2.0),
         sysctl_with_load(2.0),
@@ -412,7 +413,8 @@ fn a_failed_solo_rerun_under_high_or_unknown_load_keeps_the_whole_item_rerun() {
     ] {
         let s = Sample::new();
         s.seen_failure(BROKEN_TEST, "failed - asked to fail");
-        let mut recs = vec![sysctl_with_load(50.0); 3];
+        // Startup, then a reading before and after each of the build and sim slots.
+        let mut recs = vec![sysctl_with_load(50.0); 5];
         for load in [before, after] {
             let mut sample = sysctl_with_load(load.unwrap_or(2.0));
             if load.is_none() {
@@ -489,7 +491,7 @@ fn a_failure_under_high_load_reruns_the_whole_item_and_counts_as_flaky() {
         .cloned()
         .collect();
     // Load 50 on 8 cores is above 4 × 8: high for the whole run.
-    recs.extend((0..4).map(|_| sysctl_with_load(50.0)));
+    recs.extend((0..6).map(|_| sysctl_with_load(50.0)));
     // No readable first result: there is no test to rerun individually.
     recs.extend(recordings("broken").into_iter().skip(1).map(|mut r| {
         if r.program == "xcrun" && r.args.iter().any(|a| a.ends_with("broken/run.xcresult")) {

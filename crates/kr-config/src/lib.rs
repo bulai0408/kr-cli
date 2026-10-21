@@ -118,7 +118,9 @@ pub struct Legacy {
 pub struct LoadCheck {
     /// Also wait while the 1-minute load is above `per_core` × cores. Off by default:
     /// macOS load counts processes waiting for I/O, so it does not say how much CPU
-    /// is left (ADR 0003). kr always waits while memory pressure is critical.
+    /// is left (ADR 0003). kr always waits while memory pressure is critical. The load
+    /// is read again after the slot is taken; a task that must wait then gives the slot
+    /// back and queues again (ADR 0025).
     pub block: bool,
     /// "High load" is a 1-minute load above `per_core` × logical cores. Failures then
     /// are marked as high-load failures and the item is run once more.
