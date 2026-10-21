@@ -33,6 +33,9 @@ const RESERVED_ENV: &[&str] = &[
     "KR_SCENARIO",
     "KR_DEVICE_UDID",
     "KR_RUN_DIR",
+    // `kr pool lease` hands these to its command, which may call kr again.
+    "KR_SIM_UDID",
+    "KR_SIM_NAME",
 ];
 
 mod project;

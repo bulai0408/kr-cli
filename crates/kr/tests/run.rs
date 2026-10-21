@@ -2583,6 +2583,24 @@ fn preparation_context_variables_are_not_machine_config_keys() {
 }
 
 #[test]
+fn pool_lease_variables_are_not_machine_config_keys() {
+    let s = Sample::new();
+    let (code, out) = s.kr_env(
+        &[],
+        &["--json", "config"],
+        &[
+            ("KR_SIM_UDID", "sample-udid"),
+            ("KR_SIM_NAME", "KrSample-Verify-1"),
+        ],
+    );
+    assert_eq!(
+        code,
+        Some(0),
+        "a command inside `kr pool lease` may call kr: {out}"
+    );
+}
+
+#[test]
 fn preparation_offline_comparison_separates_environment_from_product_failure() {
     let s = Sample::new();
     s.seen_failure(BROKEN_TEST, "failed - asked to fail");
