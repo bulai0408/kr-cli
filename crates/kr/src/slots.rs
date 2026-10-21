@@ -100,36 +100,77 @@ fn take_in(
     ))?;
     let queued = Instant::now();
     let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
-    // Old scripts enter kr while holding the machine lock. Never occupy a slot
-    // while waiting for that lock, or their nested kr can wait for our slot.
-    let legacy = if heavy {
-        wait_for_load(ctx, loaded, runner, run_id, res)?;
-        machine_lock(ctx, loaded, run_id, task)?
-    } else {
-        None
+    let policy = &loaded.config.machine.load;
+    let max_wait = kr_config::parse_timeout(&policy.max_wait).unwrap_or(kr_config::DEFAULT_TIMEOUT);
+    let (slot, legacy, sample) = loop {
+        // Old scripts enter kr while holding the machine lock. Never occupy a slot
+        // while waiting for that lock, or their nested kr can wait for our slot.
+        let legacy = if heavy {
+            wait_for_load(ctx, loaded, runner, run_id, res)?;
+            machine_lock(ctx, loaded, run_id, task)?
+        } else {
+            None
+        };
+        let ticket = pool.enqueue(res, &holder)?;
+        let mut announced = false;
+        let slot = loop {
+            // Only commands that catch stop signals (see kr_exec) see one here.
+            if let Some(signal) = kr_exec::stop_signal() {
+                anyhow::bail!("stopped by signal {signal} while waiting for {res}");
+            }
+            if let Some(slot) = ticket.try_acquire(capacity)? {
+                break slot;
+            }
+            if !announced {
+                announced = true;
+                announce_wait(ctx, loaded, pool, res, capacity)?;
+            }
+            std::thread::sleep(POLL);
+        };
+        drop(ticket);
+        if !heavy {
+            break (slot, legacy, None);
+        }
+        // The load can rise while the task waits in the queue. Read it again now and
+        // keep the reading this decision used, so a refusal can be checked later.
+        let Ok(hw) = kr_machine::read_hardware(runner) else {
+            break (slot, legacy, None);
+        };
+        let sample = json!({
+            "load": hw.load,
+            "pressure": hw.pressure,
+            "threshold": hw.load_threshold(policy.per_core),
+        });
+        let Some(reason) = hw.must_wait(policy.block, policy.per_core) else {
+            break (slot, legacy, Some(sample));
+        };
+        if queued.elapsed() >= max_wait {
+            eprintln!("{reason} after the wait for {res}; going ahead");
+            break (slot, legacy, Some(sample));
+        }
+        // Give the slot back instead of holding it while the load falls, then queue again.
+        log.append(&Event::now(
+            run_id,
+            project,
+            EventKind::LoadWait,
+            json!({ "resource": res, "after_slot": true, "sample": sample, "reason": reason }),
+        ))?;
+        if ctx.json {
+            eprintln!(
+                "{}",
+                json!({ "load_wait": res, "after_slot": true, "reason": reason })
+            );
+        } else {
+            eprintln!("{reason} after the wait for {res}; giving the slot back and queueing again");
+        }
+        drop(slot);
+        drop(legacy);
     };
-    let ticket = pool.enqueue(res, &holder)?;
-    let mut announced = false;
-    let slot = loop {
-        // Only commands that catch stop signals (see kr_exec) see one here.
-        if let Some(signal) = kr_exec::stop_signal() {
-            anyhow::bail!("stopped by signal {signal} while waiting for {res}");
-        }
-        if let Some(slot) = ticket.try_acquire(capacity)? {
-            break slot;
-        }
-        if !announced {
-            announced = true;
-            announce_wait(ctx, loaded, pool, res, capacity)?;
-        }
-        std::thread::sleep(POLL);
-    };
-    drop(ticket);
     log.append(&Event::now(
         run_id,
         project,
         EventKind::SlotAcquired,
-        json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64 }),
+        json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64, "load_sample": sample }),
     ))?;
     Ok(Taken {
         slot,

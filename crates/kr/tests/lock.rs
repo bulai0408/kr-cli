@@ -649,3 +649,67 @@ fn with_the_bridge_on_the_owner_names_the_running_command_so_a_killed_kr_is_not_
     assert_eq!(finish(next, Duration::from_secs(10)), 0);
     assert!(m.lines().contains(&"next".to_owned()));
 }
+
+/// `kr lock build` that reads the machine load from these sysctl recordings, in order.
+fn with_loads(m: &Machine, block: bool, loads: &[&str]) -> Child {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/sysctl");
+    let files: Vec<_> = loads
+        .iter()
+        .map(|name| dir.join(format!("{name}.json")).display().to_string())
+        .collect();
+    m.kr()
+        .args(["lock", "build", "--", "sh", "-c", "echo ran >> \"$LOG\""])
+        .env("KR_RESOURCES__BUILD", "1")
+        .env("KR_LOAD__BLOCK", block.to_string())
+        .env("KR_REPLAY", files.join(":"))
+        .env("LOG", m.log())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap()
+}
+
+#[test]
+fn load_that_rose_in_the_queue_gives_the_slot_back_when_blocking() {
+    let m = Machine::new();
+    let kr = with_loads(
+        &m,
+        true,
+        &["m3-imac", "m3-imac-overloaded", "m3-imac", "m3-imac"],
+    );
+    assert_eq!(finish(kr, Duration::from_secs(10)), 0);
+    assert_eq!(m.lines(), ["ran"]);
+    let events = m.events();
+    let refused = events
+        .iter()
+        .find(|e| e["type"] == "load_wait" && e["fields"]["after_slot"] == true)
+        .expect("the reading after the slot is recorded");
+    assert_eq!(refused["fields"]["sample"]["load"]["one"], 99.0);
+    assert_eq!(refused["fields"]["sample"]["threshold"], 32.0);
+    let acquired: Vec<_> = events
+        .iter()
+        .filter(|e| e["type"] == "slot_acquired")
+        .collect();
+    assert_eq!(
+        acquired.len(),
+        1,
+        "the slot counts as taken once, after the second queue"
+    );
+    assert_eq!(acquired[0]["fields"]["load_sample"]["load"]["one"], 3.08);
+}
+
+#[test]
+fn without_blocking_the_reading_after_the_slot_is_kept_and_work_goes_ahead() {
+    let m = Machine::new();
+    let kr = with_loads(&m, false, &["m3-imac", "m3-imac-overloaded"]);
+    assert_eq!(finish(kr, Duration::from_secs(10)), 0);
+    assert_eq!(m.lines(), ["ran"]);
+    let events = m.events();
+    assert!(!events.iter().any(|e| e["type"] == "load_wait"));
+    let acquired = events
+        .iter()
+        .find(|e| e["type"] == "slot_acquired")
+        .unwrap();
+    assert_eq!(acquired["fields"]["load_sample"]["load"]["one"], 99.0);
+    assert_eq!(acquired["fields"]["load_sample"]["threshold"], 32.0);
+}

@@ -194,7 +194,7 @@ Do not change an existing legacy bridge until the owner confirms all callers mig
 | `machines.<host>.resources.sim` | Simulator slots on that host; unset inherits. | `2` |
 | `machines.<host>.resources.light` | Light slots on that host; unset inherits. | `2` |
 | `load` | Load/memory waiting policy; defaults below. | `[load]` |
-| `load.block` | Also wait for high 1-minute load; false. Critical memory pressure always waits. | `false` |
+| `load.block` | Also wait for high 1-minute load; false. Critical memory pressure always waits. Heavy work reads the load again after it gets its slot; if it must wait then, it gives the slot back and queues again. | `false` |
 | `load.per_core` | High-load threshold times logical cores; 4.0. | `4.0` |
 | `load.max_wait` | Maximum wait before continuing; 20m. | `"20m"` |
 | `legacy` | Optional old machine lock bridge; off until both paths are set. | `[legacy]` |
