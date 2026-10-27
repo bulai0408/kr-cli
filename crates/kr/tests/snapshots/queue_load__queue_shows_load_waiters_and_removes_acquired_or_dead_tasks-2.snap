@@ -1,0 +1,8 @@
+---
+source: crates/kr/tests/queue_load.rs
+expression: m.human()
+---
+build  0/1 busy
+  waiting for load: example · compile · pid <pid> · waited <duration> · load 99.00 / threshold 32.0 · pressure normal · max_wait remaining <duration>
+sim    0/1 busy
+light  0/1 busy

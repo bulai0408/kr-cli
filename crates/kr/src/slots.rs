@@ -106,7 +106,7 @@ fn take_in(
         // Old scripts enter kr while holding the machine lock. Never occupy a slot
         // while waiting for that lock, or their nested kr can wait for our slot.
         let legacy = if heavy {
-            wait_for_load(ctx, loaded, runner, run_id, res)?;
+            wait_for_load(ctx, loaded, runner, run_id, res, task)?;
             machine_lock(ctx, loaded, run_id, task)?
         } else {
             None
@@ -153,7 +153,11 @@ fn take_in(
             run_id,
             project,
             EventKind::LoadWait,
-            json!({ "resource": res, "after_slot": true, "sample": sample, "reason": reason }),
+            json!({
+                "resource": res, "after_slot": true, "sample": sample, "reason": reason,
+                "task": task, "pid": holder.pid, "threshold": hw.load_threshold(policy.per_core),
+                "max_wait_seconds": max_wait.saturating_sub(queued.elapsed()).as_secs(),
+            }),
         ))?;
         if ctx.json {
             eprintln!(
@@ -163,6 +167,7 @@ fn take_in(
         } else {
             eprintln!("{reason} after the wait for {res}; giving the slot back and queueing again");
         }
+        suggest_remote(ctx, loaded);
         drop(slot);
         drop(legacy);
     };
@@ -288,6 +293,7 @@ fn wait_for_load(
     runner: &dyn Runner,
     run_id: RunId,
     res: Resource,
+    task: &str,
 ) -> Result<()> {
     let log = loaded.events();
     let project = loaded.project();
@@ -296,25 +302,36 @@ fn wait_for_load(
     let mut first = true;
     let policy = &loaded.config.machine.load;
     let per_core = policy.per_core;
-    let wait =
-        kr_machine::wait_for_load(runner, policy.block, per_core, LOAD_POLL, max_wait, |hw| {
+    let wait = kr_machine::wait_for_load(
+        runner,
+        policy.block,
+        per_core,
+        LOAD_POLL,
+        max_wait,
+        |hw| {
             if !first {
                 return;
             }
             first = false;
             let reason = hw.must_wait(policy.block, per_core).unwrap_or_default();
             let _ = log.append(&Event::now(
-            run_id,
-            project,
-            EventKind::LoadWait,
-            json!({ "resource": res, "load": hw.load, "pressure": hw.pressure, "reason": reason }),
-        ));
+                run_id,
+                project,
+                EventKind::LoadWait,
+                json!({
+                    "resource": res, "load": hw.load, "pressure": hw.pressure, "reason": reason,
+                    "after_slot": false, "task": task, "pid": std::process::id(),
+                    "threshold": hw.load_threshold(per_core), "max_wait_seconds": max_wait.as_secs(),
+                }),
+            ));
             if ctx.json {
                 eprintln!("{}", json!({ "load_wait": res, "reason": reason }));
             } else {
                 eprintln!("waiting before {res} work: {reason}");
             }
-        });
+            suggest_remote(ctx, loaded);
+        },
+    );
     // Not knowing the load is no reason to hold work back.
     let wait = match wait {
         Ok(wait) => wait,
@@ -328,7 +345,7 @@ fn wait_for_load(
             run_id,
             project,
             EventKind::LoadOk,
-            json!({ "resource": res, "waited_ms": wait.waited.as_millis() as u64, "checks": wait.checks, "timed_out": wait.timed_out }),
+            json!({ "resource": res, "task": task, "waited_ms": wait.waited.as_millis() as u64, "checks": wait.checks, "timed_out": wait.timed_out }),
         ))?;
         if wait.timed_out {
             eprintln!(
@@ -338,6 +355,17 @@ fn wait_for_load(
         }
     }
     Ok(())
+}
+
+fn suggest_remote(ctx: &Ctx, loaded: &Loaded) {
+    if let Some(name) = loaded.config.machine.remotes.keys().next() {
+        let hint = format!("consider running on a remote machine: kr run --remote {name}");
+        if ctx.json {
+            eprintln!("{}", json!({ "hint": hint }));
+        } else {
+            eprintln!("{hint}");
+        }
+    }
 }
 
 fn announce_wait(

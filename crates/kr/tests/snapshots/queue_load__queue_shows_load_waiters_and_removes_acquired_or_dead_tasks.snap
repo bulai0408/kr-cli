@@ -1,0 +1,49 @@
+---
+source: crates/kr/tests/queue_load.rs
+expression: queue
+---
+{
+  "decisions": [],
+  "resources": [
+    {
+      "avg_hold_seconds": null,
+      "capacity": 1,
+      "holders": [],
+      "load_waiters": [
+        {
+          "load": {
+            "fifteen": 40.0,
+            "five": 60.0,
+            "one": 99.0
+          },
+          "max_wait_remaining_seconds": "<max_wait_remaining_seconds>",
+          "pid": "<pid>",
+          "pressure": "normal",
+          "project": "example",
+          "task": "compile",
+          "threshold": 32.0,
+          "waited_seconds": "<waited_seconds>"
+        }
+      ],
+      "resource": "build",
+      "waiters": []
+    },
+    {
+      "avg_hold_seconds": null,
+      "capacity": 1,
+      "holders": [],
+      "load_waiters": [],
+      "resource": "sim",
+      "waiters": []
+    },
+    {
+      "avg_hold_seconds": null,
+      "capacity": 1,
+      "holders": [],
+      "load_waiters": [],
+      "resource": "light",
+      "waiters": []
+    }
+  ],
+  "schema_version": 1
+}
