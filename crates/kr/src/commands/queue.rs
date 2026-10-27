@@ -1,10 +1,11 @@
+use std::collections::BTreeMap;
 use std::process::ExitCode;
 use std::time::Duration;
 
 use anyhow::Result;
 use clap::Args;
 use jiff::Timestamp;
-use kr_events::{EventKind, EventLog};
+use kr_events::{Event, EventKind, EventLog};
 use kr_resource::{Resource, Status, estimate_waits};
 use serde_json::{Value, json};
 
@@ -32,10 +33,42 @@ pub fn run(ctx: &Ctx, args: QueueArgs) -> Result<ExitCode> {
     };
     let now = Timestamp::now();
     let runner = ctx.runner()?;
+    let events = log.read_since(Timestamp::UNIX_EPOCH)?;
+    let load_waits = load_waits(&events);
+    let hardware = if load_waits.iter().any(|e| {
+        resources
+            .iter()
+            .any(|res| e.fields["resource"] == res.as_str())
+    }) {
+        kr_machine::read_hardware(runner.as_ref()).ok()
+    } else {
+        None
+    };
     let mut views = Vec::new();
     for res in resources {
         let status = pool.status(res, loaded.capacity(res, runner.as_ref())?)?;
-        views.push(view(&status, avg_hold(&log, res), now));
+        let mut v = view(&status, avg_hold(&log, res), now);
+        v["load_waiters"] = json!(
+            load_waits
+                .iter()
+                .filter(|e| e.fields["resource"] == res.as_str())
+                .map(|e| {
+                    let waited = since(now, e.ts).as_secs();
+                    json!({
+                        "project": e.project,
+                        "task": e.fields["task"],
+                        "pid": e.fields["pid"],
+                        "waited_seconds": waited,
+                        "load": hardware.as_ref().map(|hw| hw.load),
+                        "pressure": hardware.as_ref().map(|hw| hw.pressure),
+                        "threshold": e.fields["threshold"],
+                        "max_wait_remaining_seconds": e.fields["max_wait_seconds"]
+                            .as_u64().map(|limit| limit.saturating_sub(waited)),
+                    })
+                })
+                .collect::<Vec<_>>()
+        );
+        views.push(v);
     }
 
     if ctx.json {
@@ -46,6 +79,51 @@ pub fn run(ctx: &Ctx, args: QueueArgs) -> Result<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Replay transitions per task; another lane's slot must not hide a waiting task.
+fn load_waits(events: &[Event]) -> Vec<&Event> {
+    let mut pending = BTreeMap::new();
+    for event in events {
+        if matches!(event.kind, EventKind::RunEnd | EventKind::RunAborted) {
+            pending.retain(|(run, _, _), _| *run != event.run_id);
+            continue;
+        }
+        let Some(resource) = event.fields["resource"].as_str() else {
+            continue;
+        };
+        let key = (
+            event.run_id,
+            resource,
+            event.fields["task"].as_str().unwrap_or_default(),
+        );
+        match event.kind {
+            EventKind::LoadWait => {
+                pending.insert(key, event);
+            }
+            EventKind::QueueStart | EventKind::LoadOk | EventKind::SlotAcquired => {
+                pending.remove(&key);
+            }
+            _ => {}
+        }
+    }
+    let mut waits: Vec<_> = pending
+        .into_values()
+        .filter(|e| {
+            let Some(pid) = e.fields["pid"]
+                .as_u64()
+                .and_then(|pid| libc::pid_t::try_from(pid).ok())
+                .filter(|pid| *pid > 0)
+            else {
+                return false;
+            };
+            // SAFETY: signal 0 only tests existence/permission; it sends no signal.
+            (unsafe { libc::kill(pid, 0) == 0 })
+                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        })
+        .collect();
+    waits.sort_by_key(|e| e.ts);
+    waits
 }
 
 /// Mean hold time of the last releases of `res` in the past 7 days.
@@ -172,6 +250,23 @@ fn print_human(v: &Value) {
             i + 1,
             describe(w),
             secs(&w["waited_seconds"])
+        );
+    }
+    for w in v["load_waiters"].as_array().into_iter().flatten() {
+        let load = w["load"]["one"]
+            .as_f64()
+            .map_or_else(|| "unknown".to_owned(), |load| format!("{load:.2}"));
+        let remaining = if w["max_wait_remaining_seconds"].is_null() {
+            "unknown".to_owned()
+        } else {
+            secs(&w["max_wait_remaining_seconds"])
+        };
+        println!(
+            "  waiting for load: {} · waited {} · load {load} / threshold {} · pressure {} · max_wait remaining {remaining}",
+            describe(w),
+            secs(&w["waited_seconds"]),
+            w["threshold"],
+            w["pressure"].as_str().unwrap_or("unknown"),
         );
     }
 }

@@ -120,6 +120,14 @@ fn load_waits_are_scoped_to_run_and_resource_and_end_when_load_is_ok() {
     m.wait_event(run, EventKind::LoadWait, "build", pid);
     m.wait_event(run, EventKind::LoadWait, "sim", pid);
     m.wait_event(RunId::new(), EventKind::SlotAcquired, "build", pid);
+    m.log()
+        .append(&Event::now(
+            run,
+            None,
+            EventKind::SlotAcquired,
+            json!({ "resource": "build", "task": "other lane" }),
+        ))
+        .unwrap();
     assert_eq!(
         m.queue()["resources"][0]["load_waiters"]
             .as_array()
@@ -134,6 +142,49 @@ fn load_waits_are_scoped_to_run_and_resource_and_end_when_load_is_ok() {
         q["resources"][1]["load_waiters"].as_array().unwrap().len(),
         1
     );
+}
+
+#[test]
+fn empty_queue_human_output_is_unchanged() {
+    let m = Machine::new();
+    assert_eq!(
+        m.human(),
+        "build  0/1 busy\nsim    0/1 busy\nlight  0/1 busy\n"
+    );
+    for resource in m.queue()["resources"].as_array().unwrap() {
+        assert_eq!(resource["load_waiters"], json!([]));
+    }
+}
+
+#[test]
+fn unavailable_current_load_is_unknown_and_expired_wait_has_zero_remaining() {
+    let m = Machine::new();
+    let run = RunId::new();
+    m.wait_event(run, EventKind::LoadWait, "build", std::process::id());
+    let mut events = m.log().read_since(Timestamp::UNIX_EPOCH).unwrap();
+    events[0].fields["max_wait_seconds"] = json!(10);
+    m.log().append(&events[0]).unwrap();
+    // A valid recording for another command makes only the hardware read fail.
+    let replay = m.dir.path().join("unrelated.json");
+    std::fs::write(
+        &replay,
+        r#"{"program":"unused","args":[],"status":0,"stdout":"","stderr":""}"#,
+    )
+    .unwrap();
+    let out = m
+        .kr()
+        .args(["queue", "--json"])
+        .env("KR_REPLAY", &replay)
+        .assert()
+        .success();
+    let q: Value = serde_json::from_slice(&out.get_output().stdout).unwrap();
+    let waiter = &q["resources"][0]["load_waiters"][0];
+    assert_eq!(waiter["load"], Value::Null);
+    assert_eq!(waiter["max_wait_remaining_seconds"], 0);
+    m.log()
+        .append(&Event::now(run, None, EventKind::RunAborted, json!({})))
+        .unwrap();
+    assert_eq!(m.queue()["resources"][0]["load_waiters"], json!([]));
 }
 
 struct WaitingProcess(Child);
@@ -154,7 +205,7 @@ fn lock_records_both_load_wait_paths_and_only_suggests_configured_remotes() {
                 std::fs::create_dir_all(m.dir.path().join(".config/kr")).unwrap();
                 std::fs::write(
                     m.dir.path().join(".config/kr/config.toml"),
-                    "[remotes.work]\nhost = \"work-mac\"\n",
+                    "[remotes.work]\nssh = \"work-mac\"\n",
                 )
                 .unwrap();
             }
@@ -187,19 +238,19 @@ fn lock_records_both_load_wait_paths_and_only_suggests_configured_remotes() {
                 if let Some(event) = events
                     .iter()
                     .find(|e| e.kind == EventKind::LoadWait && e.fields["after_slot"] == after_slot)
+                    && (hint.contains("waiting before") || hint.contains("giving the slot back"))
+                    && (!remote || hint.contains("kr run --remote work"))
                 {
-                    if hint.contains("waiting before") || hint.contains("giving the slot back") {
-                        assert_eq!(event.fields["task"], "compile");
-                        assert_eq!(event.fields["pid"], process.0.id());
-                        assert_eq!(event.fields["threshold"], 32.0);
-                        assert!(event.fields["max_wait_seconds"].as_u64().unwrap() <= 60);
-                        assert_eq!(hint.contains("kr run --remote work"), remote, "{hint}");
-                        assert_eq!(
-                            m.queue()["resources"][0]["load_waiters"][0]["pid"],
-                            process.0.id()
-                        );
-                        break;
-                    }
+                    assert_eq!(event.fields["task"], "compile");
+                    assert_eq!(event.fields["pid"], process.0.id());
+                    assert_eq!(event.fields["threshold"], 32.0);
+                    assert!(event.fields["max_wait_seconds"].as_u64().unwrap() <= 60);
+                    assert_eq!(hint.contains("kr run --remote work"), remote, "{hint}");
+                    assert_eq!(
+                        m.queue()["resources"][0]["load_waiters"][0]["pid"],
+                        process.0.id()
+                    );
+                    break;
                 }
                 assert!(
                     start.elapsed() < Duration::from_secs(5),

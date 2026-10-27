@@ -1,6 +1,5 @@
 ---
 source: crates/kr/tests/lock.rs
-assertion_line: 383
 expression: json
 ---
 {
@@ -21,6 +20,7 @@ expression: json
           "task": "sh -c echo start holder >> \"$LOG\"; sleep 3; echo end holder >> \"$LOG\""
         }
       ],
+      "load_waiters": [],
       "resource": "build",
       "waiters": [
         {
@@ -37,6 +37,7 @@ expression: json
       "avg_hold_seconds": null,
       "capacity": 1,
       "holders": [],
+      "load_waiters": [],
       "resource": "sim",
       "waiters": []
     },
@@ -44,6 +45,7 @@ expression: json
       "avg_hold_seconds": null,
       "capacity": 1,
       "holders": [],
+      "load_waiters": [],
       "resource": "light",
       "waiters": []
     }
