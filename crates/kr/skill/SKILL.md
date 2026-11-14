@@ -57,6 +57,8 @@ For `additional_scenarios`, read `kr skill --reference decisions` before changin
   and `<name>.again.log`. Skip a high-load whole-item rerun only when the same test
   failed again individually with normal load measured both before and after that
   rerun. High or unknown solo-rerun load keeps the whole-item rerun. Events keep the evidence.
+- When the wait `kr queue` estimates is longer than your tool's timeout, run kr in
+  the background. A killed waiter that returns within 10 minutes keeps its place.
 - `kr skill --reference <name>`: {references}.
 - `kr pool lease --name <name>` / `--udid <UDID>` waits for that pool device; both conflict with --kind. See `kr skill --reference locks`.
 - Additions without a new kr: `.kr/skill.md` in the project repo and

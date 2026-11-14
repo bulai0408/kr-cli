@@ -45,6 +45,55 @@ impl Machine {
             .unwrap()
     }
 
+    /// `kr lock build --task <task>` at capacity 1, from the same worktree every time.
+    fn lock_task(&self, task: &str, script: &str) -> Child {
+        self.kr()
+            .args(["lock", "build", "--task", task, "--", "sh", "-c", script])
+            .env("KR_RESOURCES__BUILD", "1")
+            .env("LOG", self.log())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    }
+
+    /// Holds the build slot until [`Machine::release`].
+    fn hold_build(&self) -> Child {
+        let child = self.lock_task(
+            "holder",
+            "echo start holder >> \"$LOG\"; while [ ! -e \"$LOG.go\" ]; do sleep 0.05; done",
+        );
+        self.wait_for_line("start holder");
+        child
+    }
+
+    fn release(&self) {
+        std::fs::write(self.dir.path().join("log.go"), "").unwrap();
+    }
+
+    fn waiting_tasks(&self) -> Vec<String> {
+        self.queue_json()["resources"][0]["waiters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|w| w["task"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// Starts a waiter and returns once `kr queue` lists `expected`.
+    fn queue_task(&self, task: &str, expected: &[&str]) -> Child {
+        let child = self.lock_task(task, &format!("echo start {task} >> \"$LOG\""));
+        wait_until(Duration::from_secs(10), || self.waiting_tasks() == expected);
+        child
+    }
+
+    fn starts(&self) -> Vec<String> {
+        self.lines()
+            .into_iter()
+            .filter(|l| l.starts_with("start"))
+            .collect()
+    }
+
     fn lines(&self) -> Vec<String> {
         std::fs::read_to_string(self.log())
             .unwrap_or_default()
@@ -137,6 +186,103 @@ fn kill_group(pgid: i64) {
     let _ = Command::new("kill")
         .args(["-9", &format!("-{pgid}")])
         .status();
+}
+
+fn signal(child: &mut Child, name: &str) {
+    assert!(
+        Command::new("kill")
+            .args([format!("-{name}"), child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+    child.wait().unwrap();
+}
+
+#[test]
+fn a_waiter_stopped_by_a_signal_gets_its_place_back_when_it_returns() {
+    for sig in ["TERM", "KILL"] {
+        let m = Machine::new();
+        let holder = m.hold_build();
+        let mut a = m.queue_task("a", &["a"]);
+        let b = m.queue_task("b", &["a", "b"]);
+
+        signal(&mut a, sig);
+        assert_eq!(m.waiting_tasks(), ["b"], "SIG{sig}");
+        let a = m.queue_task("a", &["a", "b"]);
+
+        m.release();
+        for c in [holder, a, b] {
+            assert_eq!(finish(c, Duration::from_secs(20)), 0);
+        }
+        assert_eq!(
+            m.starts(),
+            ["start holder", "start a", "start b"],
+            "SIG{sig}"
+        );
+        let resumed: Vec<_> = m
+            .events()
+            .into_iter()
+            .filter(|e| e["type"] == "slot_acquired")
+            .map(|e| {
+                (
+                    e["fields"]["task"].clone(),
+                    e["fields"]["resumed_place"].clone(),
+                )
+            })
+            .collect();
+        assert!(resumed.contains(&("a".into(), true.into())), "{resumed:?}");
+    }
+}
+
+#[test]
+fn a_waiter_that_returns_after_the_reservation_expired_joins_the_end() {
+    let m = Machine::new();
+    let holder = m.hold_build();
+    let mut a = m.queue_task("a", &["a"]);
+    let b = m.queue_task("b", &["a", "b"]);
+    signal(&mut a, "KILL");
+
+    let queue = m.dir.path().join("state/resources/build/queue");
+    for entry in std::fs::read_dir(queue).unwrap() {
+        std::fs::File::options()
+            .write(true)
+            .open(entry.unwrap().path())
+            .unwrap()
+            .set_modified(std::time::SystemTime::now() - Duration::from_secs(11 * 60))
+            .unwrap();
+    }
+    // Waiter b polls twice a second and refreshes its own ticket.
+    std::thread::sleep(Duration::from_secs(1));
+    let a = m.queue_task("a", &["b", "a"]);
+
+    m.release();
+    for c in [holder, a, b] {
+        assert_eq!(finish(c, Duration::from_secs(20)), 0);
+    }
+    assert_eq!(m.starts(), ["start holder", "start b", "start a"]);
+}
+
+#[test]
+fn a_reservation_at_the_head_does_not_delay_the_next_waiter() {
+    let m = Machine::new();
+    let holder = m.hold_build();
+    let mut a = m.queue_task("a", &["a"]);
+    signal(&mut a, "KILL");
+    let b = m.queue_task("b", &["b"]);
+
+    let released = Instant::now();
+    m.release();
+    m.wait_for_line("start b");
+    // One poll is 0.5 s; the rest is process start-up.
+    assert!(
+        released.elapsed() < Duration::from_millis(1500),
+        "{:?}",
+        released.elapsed()
+    );
+    for c in [holder, b] {
+        assert_eq!(finish(c, Duration::from_secs(20)), 0);
+    }
 }
 
 #[test]

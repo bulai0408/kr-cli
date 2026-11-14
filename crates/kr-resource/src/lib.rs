@@ -9,8 +9,13 @@
 //! ```
 //!
 //! Locks are released by the OS when a process exits or crashes, so there is no
-//! stale-lock detection by age. A ticket nobody holds a lock on belongs to a dead
-//! waiter and is removed.
+//! stale-lock detection by age. A ticket nobody holds a lock on belongs to a waiter
+//! that is gone. If that waiter named its worktree and was alive less than
+//! [`RESERVATION`] ago, the ticket stays as a reservation: it is not a waiter, so it
+//! never holds anyone back, but the same task from the same worktree takes it over
+//! and so gets its place back (ADR 0027). Otherwise the ticket is removed. A waiter
+//! touches its ticket on every poll, so the file's modification time says when it
+//! was last alive.
 //!
 //! The command kr runs under a slot gets its own process group, recorded in the slot
 //! file. If kr is killed, the lock goes away but the record stays; the slot counts as
@@ -22,10 +27,11 @@ pub mod legacy;
 use std::fmt;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{Seek, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 use jiff::Timestamp;
@@ -88,7 +94,13 @@ pub struct Holder {
     pub child_pid: Option<u32>,
     /// When the slot was taken, or for a waiter, when it joined the queue.
     pub started: Timestamp,
+    /// Where the request came from. With `task`, it names a waiter's reservation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree: Option<PathBuf>,
 }
+
+/// How long the place of a waiter that went away stays reserved for its return.
+pub const RESERVATION: Duration = Duration::from_secs(10 * 60);
 
 /// Tickets this process has created, for unique ticket names.
 static TICKETS: AtomicU64 = AtomicU64::new(0);
@@ -172,10 +184,14 @@ impl Pool {
         Ok(None)
     }
 
-    /// Joins the end of the queue for `res`.
+    /// Takes over this waiter's reservation if it has one, else joins the end of the
+    /// queue for `res`.
     pub fn enqueue(&self, res: Resource, holder: &Holder) -> Result<Ticket> {
         let queue = self.queue_dir(res);
         std::fs::create_dir_all(&queue)?;
+        if let Some(ticket) = self.resume(res, holder)? {
+            return Ok(ticket);
+        }
         let ns = Timestamp::now().as_nanosecond();
         // The clock has microsecond resolution on macOS: lanes of one process can join
         // in the same tick, so a per-process sequence number keeps their names apart.
@@ -193,8 +209,73 @@ impl Pool {
             resource: res,
             path,
             holder: holder.clone(),
-            _file: file,
+            file,
+            resumed: false,
+            reserve: false,
         })
+    }
+
+    /// The reservation left by the same task from the same worktree, locked and
+    /// rewritten as this waiter's ticket. It keeps its name, so its place.
+    fn resume(&self, res: Resource, holder: &Holder) -> Result<Option<Ticket>> {
+        if holder.worktree.is_none() {
+            return Ok(None);
+        }
+        for path in self.ticket_paths(res) {
+            let Ok(mut file) = OpenOptions::new().read(true).write(true).open(&path) else {
+                continue;
+            };
+            // A live waiter, or someone checking this ticket right now.
+            if file.try_lock().is_err() {
+                continue;
+            }
+            // Removed as expired between opening and locking.
+            let Ok(on_disk) = std::fs::metadata(&path) else {
+                continue;
+            };
+            let opened = file.metadata()?;
+            if (on_disk.dev(), on_disk.ino()) != (opened.dev(), opened.ino()) {
+                continue;
+            }
+            let Some(reserved) = reservation(&path) else {
+                continue;
+            };
+            if (&reserved.task, &reserved.worktree) != (&holder.task, &holder.worktree) {
+                continue;
+            }
+            let holder = Holder {
+                started: reserved.started,
+                ..holder.clone()
+            };
+            file.set_len(0)?;
+            file.rewind()?;
+            file.write_all(&serde_json::to_vec(&holder)?)?;
+            file.set_modified(SystemTime::now())?;
+            return Ok(Some(Ticket {
+                pool: self.clone(),
+                resource: res,
+                path,
+                holder,
+                file,
+                resumed: true,
+                reserve: false,
+            }));
+        }
+        Ok(None)
+    }
+
+    /// Ticket files of `res`, in queue order.
+    fn ticket_paths(&self, res: Resource) -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(self.queue_dir(res)) else {
+            return Vec::new();
+        };
+        let mut paths: Vec<PathBuf> = entries
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "json"))
+            .collect();
+        paths.sort();
+        paths
     }
 
     /// True if someone holds slot `index` of `res`, or an orphaned command still runs in it.
@@ -254,25 +335,19 @@ impl Pool {
         })
     }
 
+    /// Live waiters in queue order. Removes tickets of waiters that are gone, unless
+    /// they are still reservations.
     fn waiters(&self, res: Resource) -> Result<Vec<Waiter>> {
-        let Ok(entries) = std::fs::read_dir(self.queue_dir(res)) else {
-            return Ok(Vec::new());
-        };
-        let mut paths: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "json"))
-            .collect();
-        paths.sort();
         let mut waiters = Vec::new();
-        for path in paths {
+        for path in self.ticket_paths(res) {
             let Ok(file) = File::open(&path) else {
                 continue; // just left the queue
             };
             match file.try_lock() {
                 Ok(()) => {
-                    // Its owner is gone.
-                    let _ = std::fs::remove_file(&path);
+                    if reservation(&path).is_none() {
+                        let _ = std::fs::remove_file(&path);
+                    }
                 }
                 Err(TryLockError::WouldBlock) => {
                     if let Some(holder) = std::fs::read(&path)
@@ -296,6 +371,16 @@ enum SlotState {
     Free,
     Held,
     Orphan,
+}
+
+/// The waiter a ticket nobody holds is reserved for, if its reservation still runs.
+fn reservation(path: &Path) -> Option<Holder> {
+    let alive = std::fs::metadata(path).ok()?.modified().ok()?;
+    let gone_for = SystemTime::now().duration_since(alive).unwrap_or_default();
+    if gone_for >= RESERVATION {
+        return None;
+    }
+    read_holder(path).filter(|h| h.worktree.is_some())
 }
 
 fn read_holder(path: &Path) -> Option<Holder> {
@@ -409,10 +494,23 @@ pub struct Ticket {
     resource: Resource,
     path: PathBuf,
     holder: Holder,
-    _file: File,
+    file: File,
+    resumed: bool,
+    reserve: bool,
 }
 
 impl Ticket {
+    /// True if this ticket took over the waiter's earlier reservation.
+    pub fn resumed(&self) -> bool {
+        self.resumed
+    }
+
+    /// Leaves the queue but keeps the place for [`RESERVATION`], for the same task
+    /// from the same worktree. Without a worktree, it just leaves.
+    pub fn leave_reservation(mut self) {
+        self.reserve = true;
+    }
+
     /// How many live waiters are ahead of this ticket.
     pub fn position(&self, capacity: u32) -> Result<usize> {
         let status = self.pool.status(self.resource, capacity)?;
@@ -425,6 +523,8 @@ impl Ticket {
 
     /// Takes a slot if one is free and no earlier waiter is still entitled to it.
     pub fn try_acquire(&self, capacity: u32) -> Result<Option<Slot>> {
+        // Marks this waiter alive now, should it go away without leaving the queue.
+        self.file.set_modified(SystemTime::now())?;
         let status = self.pool.status(self.resource, capacity)?;
         let Some(position) = status.waiters.iter().position(|w| w.path == self.path) else {
             bail!("queue ticket {} disappeared", self.path.display());
@@ -439,7 +539,9 @@ impl Ticket {
 
 impl Drop for Ticket {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        if !self.reserve {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 

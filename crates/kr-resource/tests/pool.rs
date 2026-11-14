@@ -1,7 +1,8 @@
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use jiff::Timestamp;
-use kr_resource::{Holder, Pool, Resource, estimate_waits};
+use kr_resource::{Holder, Pool, RESERVATION, Resource, estimate_waits};
 
 fn holder(task: &str) -> Holder {
     Holder {
@@ -10,6 +11,36 @@ fn holder(task: &str) -> Holder {
         pid: std::process::id(),
         child_pid: None,
         started: Timestamp::now(),
+        worktree: None,
+    }
+}
+
+/// A waiter from worktree `wt`: one that can leave a reservation behind.
+fn from(task: &str, wt: &str) -> Holder {
+    Holder {
+        worktree: Some(PathBuf::from(wt)),
+        ..holder(task)
+    }
+}
+
+fn tasks(pool: &Pool) -> Vec<String> {
+    pool.status(Resource::Build, 1)
+        .unwrap()
+        .waiters
+        .into_iter()
+        .map(|w| w.holder.task)
+        .collect()
+}
+
+/// Makes every ticket file in the build queue look last touched `age` ago.
+fn age_queue(root: &Path, age: Duration) {
+    for entry in std::fs::read_dir(root.join("build/queue")).unwrap() {
+        std::fs::File::options()
+            .write(true)
+            .open(entry.unwrap().path())
+            .unwrap()
+            .set_modified(SystemTime::now() - age)
+            .unwrap();
     }
 }
 
@@ -164,4 +195,83 @@ fn lanes_of_one_process_joining_the_queue_at_once_each_get_a_ticket() {
             r.unwrap();
         }
     }
+}
+
+#[test]
+fn a_reserved_place_goes_back_to_the_same_task_and_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    let _held = pool.try_acquire(Resource::Build, 1, &holder("holder"));
+    let first = pool.enqueue(Resource::Build, &from("a", "/wt/1")).unwrap();
+    let _second = pool.enqueue(Resource::Build, &from("b", "/wt/2")).unwrap();
+
+    first.leave_reservation();
+    assert_eq!(tasks(&pool), ["b"], "a reservation is not a waiter");
+
+    let back = pool.enqueue(Resource::Build, &from("a", "/wt/1")).unwrap();
+    assert!(back.resumed());
+    assert_eq!(tasks(&pool), ["a", "b"]);
+    assert_eq!(back.position(1).unwrap(), 0);
+}
+
+#[test]
+fn another_task_or_worktree_does_not_take_a_reserved_place() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    let _held = pool.try_acquire(Resource::Build, 1, &holder("holder"));
+    pool.enqueue(Resource::Build, &from("a", "/wt/1"))
+        .unwrap()
+        .leave_reservation();
+    let _b = pool.enqueue(Resource::Build, &from("b", "/wt/2")).unwrap();
+
+    let other_tree = pool.enqueue(Resource::Build, &from("a", "/wt/3")).unwrap();
+    let other_task = pool.enqueue(Resource::Build, &from("c", "/wt/1")).unwrap();
+    assert!(!other_tree.resumed() && !other_task.resumed());
+    assert_eq!(tasks(&pool), ["b", "a", "c"]);
+}
+
+#[test]
+fn an_expired_reservation_is_removed_and_the_waiter_joins_the_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    let _held = pool.try_acquire(Resource::Build, 1, &holder("holder"));
+    pool.enqueue(Resource::Build, &from("a", "/wt/1"))
+        .unwrap()
+        .leave_reservation();
+    age_queue(dir.path(), RESERVATION + Duration::from_secs(1));
+    let _b = pool.enqueue(Resource::Build, &from("b", "/wt/2")).unwrap();
+
+    let back = pool.enqueue(Resource::Build, &from("a", "/wt/1")).unwrap();
+    assert!(!back.resumed());
+    assert_eq!(tasks(&pool), ["b", "a"]);
+    let files = std::fs::read_dir(dir.path().join("build/queue")).unwrap();
+    assert_eq!(files.count(), 2, "the expired reservation is gone");
+}
+
+#[test]
+fn a_waiting_ticket_counts_as_alive_while_it_polls() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    let _held = pool.try_acquire(Resource::Build, 1, &holder("holder"));
+    let first = pool.enqueue(Resource::Build, &from("a", "/wt/1")).unwrap();
+    age_queue(dir.path(), RESERVATION + Duration::from_secs(1));
+
+    assert!(first.try_acquire(1).unwrap().is_none());
+    first.leave_reservation();
+    let back = pool.enqueue(Resource::Build, &from("a", "/wt/1")).unwrap();
+    assert!(back.resumed(), "polling refreshed the reservation's start");
+}
+
+#[test]
+fn a_reservation_at_the_head_does_not_hold_back_a_freed_slot() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = Pool::new(dir.path());
+    let held = pool.try_acquire(Resource::Build, 1, &holder("holder"));
+    pool.enqueue(Resource::Build, &from("a", "/wt/1"))
+        .unwrap()
+        .leave_reservation();
+    let second = pool.enqueue(Resource::Build, &from("b", "/wt/2")).unwrap();
+    drop(held);
+
+    assert!(second.try_acquire(1).unwrap().is_some());
 }

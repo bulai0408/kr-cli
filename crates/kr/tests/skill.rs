@@ -58,7 +58,8 @@ fn the_main_text_matches_this_version_and_names_its_references() {
     assert!(!out.contains('{'), "unfilled placeholder: {out}");
     // Short: the rare cases are in the references.
     assert!(out.contains("0. No `.kr.toml`? Run `kr init`"), "{out}");
-    assert!(out.lines().count() <= 70, "{}", out.lines().count());
+    assert!(out.contains("run kr in\n  the background"), "{out}");
+    assert!(out.lines().count() <= 72, "{}", out.lines().count());
 }
 
 #[test]
