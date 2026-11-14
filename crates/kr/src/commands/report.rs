@@ -269,7 +269,7 @@ pub(crate) fn history(loaded: &crate::Loaded) -> Result<Vec<Event>> {
 }
 
 /// An RFC 3339 time, or a duration back from now: `90m`, `24h`, `7d` (also `s`).
-fn parse_time(s: &str, now: Timestamp, flag: &str) -> Result<Timestamp> {
+pub(crate) fn parse_time(s: &str, now: Timestamp, flag: &str) -> Result<Timestamp> {
     if let Ok(t) = s.parse::<Timestamp>() {
         return Ok(t);
     }

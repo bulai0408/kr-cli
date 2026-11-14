@@ -6,6 +6,11 @@
 //! capacity and durations) and compared with its measured time: the calibration error.
 //! Then the items of the latest run are simulated under each setting, with each item's
 //! duration drawn from its recorded durations in all given runs.
+//!
+//! With `--build N`, the `build` requests of the event log are replayed instead (see
+//! `build`).
+
+mod build;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
@@ -45,6 +50,30 @@ pub struct SimulateArgs {
     /// Simulated runs per setting, each with durations drawn from the recordings.
     #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u32).range(1..))]
     iterations: u32,
+
+    /// Replay the recorded `build` requests of all projects on this machine (arrival,
+    /// hold) under kr's FIFO slot rule with N build slots instead; repeat to compare.
+    /// Gives queued time, queue share and p50/p90 wait per N, and the calibration error
+    /// of the recorded capacity against the measured waits. Arrivals are replayed as
+    /// recorded: a request that waited less would have let its agent send the next one
+    /// sooner, so a larger capacity saves less than shown.
+    #[arg(
+        long = "build",
+        value_name = "N",
+        value_parser = clap::value_parser!(u32).range(1..),
+        conflicts_with_all = ["runs", "sims", "orders", "caches", "iterations"]
+    )]
+    builds: Vec<u32>,
+
+    /// With --build: a build that starts while another holds a build slot takes this
+    /// many times its recorded duration. 1.0 (the default) is a lower bound.
+    #[arg(long, value_name = "FACTOR", default_value_t = 1.0, value_parser = build::slowdown, requires = "builds")]
+    slowdown: f64,
+
+    /// With --build: the first requests to replay, an RFC 3339 time or how long ago
+    /// (90m, 24h, 7d). Default: 24h.
+    #[arg(long, requires = "builds")]
+    since: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Serialize)]
@@ -148,6 +177,9 @@ struct Recorded {
 }
 
 pub fn run(ctx: &Ctx, args: SimulateArgs) -> Result<ExitCode> {
+    if !args.builds.is_empty() {
+        return build::run(ctx, &args);
+    }
     let loaded = ctx.load()?;
     let runs = recorded_runs(&loaded, &args.runs)?;
     let ipad = |kind: &str| match &loaded.config.project {
