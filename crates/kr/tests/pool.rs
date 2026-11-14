@@ -99,6 +99,36 @@ fn pool_status_lists_pool_devices_only() {
 }
 
 #[test]
+fn pool_list_is_pool_status() {
+    let repo = Repo::new();
+    let run = |args: &[&str]| {
+        let replay = repo.replay(&[
+            ("simctl/list-runtimes.json", "", ""),
+            ("simctl/list-devices.json", "", ""),
+        ]);
+        let out = repo.kr(replay).args(args).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        (
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    };
+    for flag in [&[][..], &["--json"]] {
+        let (status, _) = run(&[&["pool", "status"][..], flag].concat());
+        let (list, hint) = run(&[&["pool", "list"][..], flag].concat());
+        assert_eq!(list, status);
+        assert!(
+            hint.contains("`kr pool list` is `kr pool status`"),
+            "{hint}"
+        );
+    }
+}
+
+#[test]
 fn pool_sync_creates_the_missing_device() {
     let repo = Repo::new();
     let replay = repo.replay(&[
