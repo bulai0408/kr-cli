@@ -98,7 +98,7 @@ fn take_in(
         run_id,
         project,
         EventKind::QueueStart,
-        json!({ "resource": res, "task": task, "capacity": capacity }),
+        json!({ "resource": res, "task": task, "capacity": capacity, "git": crate::git_head::state(runner) }),
     ))?;
     let queued = Instant::now();
     let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);

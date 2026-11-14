@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "status",
+    "--porcelain=v2",
+    "--branch"
+  ],
+  "status": 0,
+  "stdout": "# branch.oid c9131b9dd4a85e4941f8462fa5ae22ecd5b31a29\n# branch.head main\n",
+  "stderr": ""
+}

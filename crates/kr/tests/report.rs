@@ -589,3 +589,111 @@ fn short_holds_of_build_or_sim_are_listed_as_light_candidates() {
         "{out}"
     );
 }
+
+/// A `kr lock` run that queued on `git` (`{commit, dirty}` or null) and exited `exit`.
+fn lock_run_on(
+    id: &str,
+    task: &str,
+    acquired: &str,
+    waited_ms: i64,
+    git: Value,
+    exit: i32,
+) -> Vec<Value> {
+    let mut run = lock_run(id, task, "build", acquired, waited_ms, 5000);
+    run[0]["fields"]["git"] = git;
+    run[2]["fields"]["exit_code"] = json!(exit);
+    run
+}
+
+#[test]
+fn runs_on_a_clean_commit_that_already_passed_are_counted_per_task() {
+    let home = Home::empty();
+    let clean = |c: &str| json!({ "commit": c, "dirty": false });
+    let dirty = json!({ "commit": "c1", "dirty": true });
+    let lines: Vec<Value> = [
+        lock_run_on(
+            &run_id(1),
+            "core",
+            "2026-10-15T10:00:00Z",
+            0,
+            clean("c1"),
+            0,
+        ),
+        // Repeat: c1 passed before and the tree is clean.
+        lock_run_on(
+            &run_id(2),
+            "core",
+            "2026-10-15T10:10:00Z",
+            60_000,
+            clean("c1"),
+            0,
+        ),
+        // Not a repeat: the tree had uncommitted changes.
+        lock_run_on(&run_id(3), "core", "2026-10-15T10:20:00Z", 0, dirty, 0),
+        // Not a repeat: c2 had only failed before the second run.
+        lock_run_on(
+            &run_id(4),
+            "core",
+            "2026-10-15T10:30:00Z",
+            0,
+            clean("c2"),
+            1,
+        ),
+        lock_run_on(
+            &run_id(5),
+            "core",
+            "2026-10-15T10:40:00Z",
+            0,
+            clean("c2"),
+            0,
+        ),
+        // Repeat, though it failed: c2 had passed.
+        lock_run_on(
+            &run_id(6),
+            "core",
+            "2026-10-15T10:50:00Z",
+            30_000,
+            clean("c2"),
+            1,
+        ),
+        // Another task on the same commit is not a repeat of `core`.
+        lock_run_on(
+            &run_id(7),
+            "other",
+            "2026-10-15T11:00:00Z",
+            0,
+            clean("c1"),
+            0,
+        ),
+        // Before #67: no commit recorded.
+        lock_run(&run_id(8), "core", "build", "2026-10-15T11:10:00Z", 0, 5000),
+    ]
+    .concat();
+    home.add("events", "2026-10-15", &lines);
+
+    let range = [
+        "--since",
+        "2026-10-15T00:00:00Z",
+        "--until",
+        "2026-10-16T00:00:00Z",
+    ];
+    let v = home.json(&range);
+    assert_eq!(
+        v["same_commit_repeats"],
+        json!({
+            "runs_with_commit": 7,
+            "tasks": [{ "task": "core", "repeats": 2, "commits": 2,
+                        "running_ms": 10_000, "queued_ms": 90_000 }],
+        })
+    );
+
+    let mut args = vec!["report"];
+    args.extend(range);
+    let (code, out) = home.kr(&args);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("core: 2 runs on 2 commits · 10s running · 1m queued"),
+        "{out}"
+    );
+    assert!(out.contains("7 of 8 runs recorded a commit"), "{out}");
+}

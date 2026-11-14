@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 mod compilation_cache;
 mod ctx;
+mod git_head;
 mod invocations;
 mod output;
 mod selection;

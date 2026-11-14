@@ -713,3 +713,66 @@ fn without_blocking_the_reading_after_the_slot_is_kept_and_work_goes_ahead() {
     assert_eq!(acquired["fields"]["load_sample"]["load"]["one"], 99.0);
     assert_eq!(acquired["fields"]["load_sample"]["threshold"], 32.0);
 }
+
+#[test]
+fn a_lock_records_the_commit_and_whether_the_tree_was_dirty_when_it_queued() {
+    let m = Machine::new();
+    let work = m.dir.path().join("work");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(["-c", "user.email=kr@test", "-c", "user.name=kr"])
+            .args(args)
+            .current_dir(&work)
+            .env("HOME", m.dir.path())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+    git(&["init", "-q"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "init"]);
+    let head = git(&["rev-parse", "HEAD"]);
+    assert_eq!(
+        finish(m.lock("light", 1, "true"), Duration::from_secs(10)),
+        0
+    );
+    std::fs::write(work.join("new.txt"), "x").unwrap();
+    assert_eq!(
+        finish(m.lock("light", 1, "true"), Duration::from_secs(10)),
+        0
+    );
+
+    let recorded: Vec<serde_json::Value> = m
+        .events()
+        .into_iter()
+        .filter(|e| e["type"] == "queue_start")
+        .map(|e| e["fields"]["git"].clone())
+        .collect();
+    assert_eq!(
+        recorded,
+        [
+            serde_json::json!({ "commit": head, "dirty": false }),
+            serde_json::json!({ "commit": head, "dirty": true }),
+        ]
+    );
+}
+
+#[test]
+fn a_lock_outside_a_repository_records_no_commit_and_still_runs() {
+    let m = Machine::new();
+    assert_eq!(
+        finish(m.lock("light", 1, "true"), Duration::from_secs(10)),
+        0
+    );
+    let starts: Vec<serde_json::Value> = m
+        .events()
+        .into_iter()
+        .filter(|e| e["type"] == "queue_start")
+        .collect();
+    assert_eq!(starts.len(), 1);
+    assert_eq!(starts[0]["fields"]["git"], serde_json::Value::Null);
+}

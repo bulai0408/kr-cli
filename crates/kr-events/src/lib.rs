@@ -44,7 +44,8 @@ impl FromStr for RunId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventKind {
-    /// A task joined the queue of a resource.
+    /// A task joined the queue of a resource. Fields: resource, task, capacity, git
+    /// (`{commit, dirty}` of the working directory's repository; null outside one).
     QueueStart,
     /// A task got a slot. Fields include `waited_ms`.
     SlotAcquired,

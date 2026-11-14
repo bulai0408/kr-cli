@@ -68,6 +68,7 @@ struct Report {
     batch: Batch,
     time: Time,
     light_candidates: LightCandidates,
+    same_commit_repeats: SameCommitRepeats,
     runs: Vec<Run>,
     rework: Rework,
     flaky: Vec<Flaky>,
@@ -128,6 +129,23 @@ struct LightCandidate {
     /// How long other runs waited for the same resource while the task held a slot.
     others_waited_ms: u64,
     suggestion: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SameCommitRepeats {
+    /// Runs whose first queue start recorded a commit (#67); older runs did not.
+    runs_with_commit: usize,
+    tasks: Vec<SameCommitRepeat>,
+}
+
+/// Runs of a task on a clean tree at a commit it had already passed on, clean too.
+#[derive(Debug, Serialize)]
+struct SameCommitRepeat {
+    task: String,
+    repeats: usize,
+    commits: usize,
+    running_ms: u64,
+    queued_ms: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -581,6 +599,7 @@ fn report(filter: &Filter, events: &[Event], calls: &[Event]) -> Report {
         },
         time,
         light_candidates: light_candidates(&runs, &summaries),
+        same_commit_repeats: same_commit_repeats(&runs, &summaries),
         rework: rework(&runs),
         flaky: flaky(&runs),
         accuracy: accuracy(&runs, events),
@@ -723,6 +742,63 @@ fn light_candidates(runs: &[RunEvents], summaries: &[Run]) -> LightCandidates {
     LightCandidates {
         min_holds: LIGHT_MIN_HOLDS,
         max_p90_ms: LIGHT_MAX_P90_MS,
+        tasks,
+    }
+}
+
+fn same_commit_repeats(runs: &[RunEvents], summaries: &[Run]) -> SameCommitRepeats {
+    let mut runs_with_commit = 0;
+    let mut passed: BTreeSet<(&str, &str)> = BTreeSet::new();
+    let mut tasks: BTreeMap<&str, (SameCommitRepeat, BTreeSet<&str>)> = BTreeMap::new();
+    for (r, s) in runs.iter().zip(summaries) {
+        let Some(git) = r.first(EventKind::QueueStart).map(|f| &f["git"]) else {
+            continue;
+        };
+        let (Some(commit), Some(dirty)) = (git["commit"].as_str(), git["dirty"].as_bool()) else {
+            continue;
+        };
+        runs_with_commit += 1;
+        let Some(task) = s.label.as_deref() else {
+            continue;
+        };
+        if dirty {
+            continue;
+        }
+        if passed.contains(&(task, commit)) {
+            let (t, commits) = tasks.entry(task).or_insert_with(|| {
+                let t = SameCommitRepeat {
+                    task: task.to_owned(),
+                    repeats: 0,
+                    commits: 0,
+                    running_ms: 0,
+                    queued_ms: 0,
+                };
+                (t, BTreeSet::new())
+            });
+            t.repeats += 1;
+            t.running_ms += s.wall_ms.saturating_sub(s.queued_ms);
+            t.queued_ms += s.queued_ms;
+            commits.insert(commit);
+        }
+        if s.result == Some("pass") {
+            passed.insert((task, commit));
+        }
+    }
+    let mut tasks: Vec<SameCommitRepeat> = tasks
+        .into_values()
+        .map(|(t, commits)| SameCommitRepeat {
+            commits: commits.len(),
+            ..t
+        })
+        .collect();
+    tasks.sort_by_key(|t| {
+        (
+            std::cmp::Reverse(t.running_ms + t.queued_ms),
+            t.task.clone(),
+        )
+    });
+    SameCommitRepeats {
+        runs_with_commit,
         tasks,
     }
 }
@@ -1263,6 +1339,31 @@ fn human(r: &Report) -> String {
     }
     if l.tasks.len() > 10 {
         line(format!("  and {} more tasks", l.tasks.len() - 10));
+    }
+
+    let c = &r.same_commit_repeats;
+    let repeats: usize = c.tasks.iter().map(|t| t.repeats).sum();
+    line(String::new());
+    line(format!(
+        "Same commit again: {} of a task on a clean commit it had passed on · {} running, {} queued ({} of {} runs recorded a commit)",
+        plural(repeats, "run", "runs"),
+        dur(c.tasks.iter().map(|t| t.running_ms).sum()),
+        dur(c.tasks.iter().map(|t| t.queued_ms).sum()),
+        c.runs_with_commit,
+        r.runs.len()
+    ));
+    for t in c.tasks.iter().take(10) {
+        line(format!(
+            "  {}: {} on {} · {} running · {} queued",
+            t.task,
+            plural(t.repeats, "run", "runs"),
+            plural(t.commits, "commit", "commits"),
+            dur(t.running_ms),
+            dur(t.queued_ms)
+        ));
+    }
+    if c.tasks.len() > 10 {
+        line(format!("  and {} more tasks", c.tasks.len() - 10));
     }
 
     line(String::new());
