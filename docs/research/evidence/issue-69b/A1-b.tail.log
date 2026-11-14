@@ -1,0 +1,40 @@
+
+CodeSign /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app/__preview.dylib (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app/__preview.dylib
+
+CodeSign /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /tmp/kr69b-066or2x_/dd/A1-b/Build/Intermediates.noindex/ConfluxMobile.build/Debug-iphonesimulator/ConfluxMobile.build/ConfluxMobile.app.xcent --timestamp\=none --generate-entitlement-der /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app
+
+ValidateEmbeddedBinary /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app/PlugIns/ConfluxLiveActivity.appex (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    /Applications/Xcode.app/Contents/Developer/usr/bin/embeddedBinaryValidationUtility /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app/PlugIns/ConfluxLiveActivity.appex -signing-cert - -info-plist-path /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app/Info.plist
+
+RegisterExecutionPolicyException /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    builtin-RegisterExecutionPolicyException /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app
+
+Validate /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    builtin-validationUtility /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app -shallow-bundle -infoplist-subpath Info.plist
+
+Touch /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app (in target 'ConfluxMobile' from project 'ConfluxMobile')
+    cd /tmp/kr69b-066or2x_/src
+    /usr/bin/touch -c /tmp/kr69b-066or2x_/dd/A1-b/Build/Products/Debug-iphonesimulator/ConfluxMobile.app
+
+PruneExplicitPrecompiledModules /tmp/kr69b-066or2x_/dd/A1-b/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/kr69b-066or2x_/dd/A1-b/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /tmp/kr69b-066or2x_/dd/A1-b/SDKExplicitPrecompiledModules
+
+note: Run script build phase 'Embed prebuilt CarPlay video frameworks' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'ConfluxMobile' from project 'ConfluxMobile')
+** BUILD SUCCEEDED **
+

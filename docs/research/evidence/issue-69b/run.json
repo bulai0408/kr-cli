@@ -1,0 +1,20 @@
+{
+ "not_before": "2026-11-15 00:00",
+ "deadline": "2026-11-15 23:59",
+ "quiet_seconds": 10.0,
+ "cpu_threshold_pct": 100.0,
+ "window_minutes": 60,
+ "dry_run": false,
+ "machine": {
+  "hw.model": "Mac15,5",
+  "hw.ncpu": "8",
+  "hw.perflevel0.physicalcpu": "4",
+  "hw.perflevel1.physicalcpu": "4",
+  "hw.memsize": "25769803776"
+ },
+ "conflux_commit": "ef6eb4a7edf1a12296ef5e94a6ad84de4379261f",
+ "gate": {
+  "passed": true,
+  "waited_seconds": 13
+ }
+}

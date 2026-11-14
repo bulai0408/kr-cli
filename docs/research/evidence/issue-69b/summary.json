@@ -1,0 +1,187 @@
+{
+ "result": {
+  "result": "measured",
+  "reason": "phases A1,B1 stop=warn"
+ },
+ "cpu_threshold_pct": 100.0,
+ "contaminated_if_share_over": 0.1,
+ "gate": {
+  "samples": 12,
+  "quiet_samples": 11,
+  "outside_cpu_pct_mean_last_quiet_run": 34.63
+ },
+ "stop": "warn",
+ "pressure_max": 2,
+ "window_seconds": 738.636,
+ "phases": [
+  {
+   "phase": "A1",
+   "mode": "serial",
+   "capacity": 1,
+   "ok": true,
+   "total_seconds": 353.61,
+   "builds": [
+    {
+     "label": "A1-a",
+     "seconds": 170.87,
+     "cpu_s": 964.67,
+     "user_s": 894.14,
+     "sys_s": 70.53,
+     "effective_cores": 5.65,
+     "max_rss_mb": 1599,
+     "ok": true
+    },
+    {
+     "label": "A1-b",
+     "seconds": 176.6,
+     "cpu_s": 1038.98,
+     "user_s": 965.87,
+     "sys_s": 73.12,
+     "effective_cores": 5.88,
+     "max_rss_mb": 1553,
+     "ok": true
+    }
+   ],
+   "phase_effective_cores": 5.67,
+   "samples": 321,
+   "total_cpu_pct_mean": 92.48,
+   "build_cpu_pct_mean": 61.88,
+   "other_cpu_pct_mean": 13.64,
+   "unattributed_cpu_pct_mean": 15.64,
+   "samples_other_over_threshold": 0,
+   "contaminated": false,
+   "top_other": [
+    [
+     "dasd",
+     2.34
+    ],
+    [
+     "com.macpaw.CleanMyMac5.Menu",
+     0.78
+    ],
+    [
+     "syspolicyd",
+     0.74
+    ],
+    [
+     "launchd",
+     0.62
+    ],
+    [
+     "fseventsd",
+     0.51
+    ]
+   ],
+   "ps_capture_ratio": {
+    "A1-a": 0.86,
+    "A1-b": 0.87
+   },
+   "pressure_level_counts": {
+    "1": 321
+   },
+   "swap_used_mb_min_max": [
+    1445.56,
+    1445.56
+   ],
+   "free_mem_mb_min": 53,
+   "compressor_gib_max": 7.46,
+   "other_kr_work": []
+  },
+  {
+   "phase": "B1",
+   "mode": "parallel",
+   "capacity": 2,
+   "ok": true,
+   "total_seconds": 366.28,
+   "builds": [
+    {
+     "label": "B1-a",
+     "seconds": 358.46,
+     "cpu_s": 1120.55,
+     "user_s": 1037.06,
+     "sys_s": 83.49,
+     "effective_cores": 3.13,
+     "max_rss_mb": 1262,
+     "ok": true
+    },
+    {
+     "label": "B1-b",
+     "seconds": 356.06,
+     "cpu_s": 1130.26,
+     "user_s": 1045.45,
+     "sys_s": 84.81,
+     "effective_cores": 3.17,
+     "max_rss_mb": 1305,
+     "ok": true
+    }
+   ],
+   "phase_effective_cores": 6.15,
+   "samples": 336,
+   "total_cpu_pct_mean": 98.41,
+   "build_cpu_pct_mean": 72.33,
+   "other_cpu_pct_mean": 11.77,
+   "unattributed_cpu_pct_mean": 12.85,
+   "samples_other_over_threshold": 0,
+   "contaminated": false,
+   "top_other": [
+    [
+     "syspolicyd",
+     0.85
+    ],
+    [
+     "com.macpaw.CleanMyMac5.Menu",
+     0.79
+    ],
+    [
+     "dasd",
+     0.68
+    ],
+    [
+     "mds_stores",
+     0.61
+    ],
+    [
+     "fseventsd",
+     0.59
+    ]
+   ],
+   "ps_capture_ratio": {
+    "B1-a": 0.93,
+    "B1-b": 0.91
+   },
+   "pressure_level_counts": {
+    "1": 116,
+    "2": 220
+   },
+   "swap_used_mb_min_max": [
+    1445.56,
+    1445.56
+   ],
+   "free_mem_mb_min": 38,
+   "compressor_gib_max": 9.74,
+   "other_kr_work": []
+  }
+ ],
+ "comparison": {
+  "pairs": [
+   {
+    "serial": "A1",
+    "parallel": "B1",
+    "clean": true,
+    "total_ratio": 1.036,
+    "per_build_slowdown": 2.056,
+    "effective_cores": [
+     5.67,
+     6.15
+    ]
+   }
+  ],
+  "clean_pairs": 1,
+  "total_ratio_clean": [
+   1.036
+  ],
+  "per_build_slowdown_clean": [
+   2.056
+  ]
+ }
+}
