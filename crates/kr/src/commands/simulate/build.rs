@@ -103,7 +103,7 @@ pub(super) fn slowdown(s: &str) -> Result<f64, String> {
     match s.parse::<f64>() {
         Ok(f) if f.is_finite() && f >= 1.0 => Ok(f),
         _ => Err(format!(
-            "`{s}` is not a factor of 1.0 or more; 1.5 means a build beside another takes 1.5 times as long"
+            "`{s}` is not a factor of 1.0 or more; 1.5 means builds side by side each run 1.5 times slower"
         )),
     }
 }
@@ -226,30 +226,66 @@ fn millis(d: SignedDuration) -> u64 {
 
 /// The rule of `kr_resource::Ticket::try_acquire` (a waiter takes a slot when fewer
 /// waiters are ahead of it than slots are free), in virtual time: each job, in arrival
-/// order, starts once the one before it started and fewer than its capacity hold a slot. A job that starts while another
-/// holds a slot takes `slowdown` times its hold. Returns (wait, hold) per job.
+/// order, starts once the one before it started and fewer than its capacity hold a
+/// slot. Its recorded hold is work done at rate 1 alone; while two or more jobs hold a
+/// slot, each advances at 1 ÷ `slowdown` (#69: two builds side by side each took 2.03
+/// times as long). Returns (wait, hold) per job.
 fn fifo(jobs: &[Job], slowdown: f64) -> Vec<(u64, u64)> {
-    let mut ends: Vec<Timestamp> = Vec::new();
-    let mut previous = Timestamp::MIN;
-    let mut out = Vec::with_capacity(jobs.len());
-    for job in jobs {
-        let mut start = job.arrival.max(previous);
-        ends.retain(|&end| end > start);
-        while ends.len() >= job.capacity.max(1) {
-            let first = *ends.iter().min().expect("a slot is held");
-            start = start.max(first);
-            ends.retain(|&end| end > start);
-        }
-        let hold_ms = if ends.is_empty() {
-            job.hold_ms
-        } else {
-            (job.hold_ms as f64 * slowdown).round() as u64
-        };
-        ends.push(start + SignedDuration::from_millis(hold_ms as i64));
-        previous = start;
-        out.push((millis(start.duration_since(job.arrival)), hold_ms));
+    /// Times and work in microseconds from the first arrival, as the events record them.
+    struct Running {
+        job: usize,
+        start: f64,
+        left: f64,
     }
-    out
+    let Some(origin) = jobs.first().map(|j| j.arrival) else {
+        return Vec::new();
+    };
+    let at = |j: &Job| j.arrival.duration_since(origin).as_micros() as f64;
+    let mut out = vec![(0, 0); jobs.len()];
+    let mut running: Vec<Running> = Vec::new();
+    let mut next = 0;
+    let mut now = 0.0;
+    loop {
+        while next < jobs.len()
+            && at(&jobs[next]) <= now
+            && running.len() < jobs[next].capacity.max(1)
+        {
+            running.push(Running {
+                job: next,
+                start: now,
+                left: jobs[next].hold_ms as f64 * 1000.0,
+            });
+            next += 1;
+        }
+        let rate = if running.len() > 1 {
+            1.0 / slowdown
+        } else {
+            1.0
+        };
+        let arrival = (next < jobs.len() && running.len() < jobs[next].capacity.max(1))
+            .then(|| at(&jobs[next]));
+        let Some(until) = running
+            .iter()
+            .map(|r| now + r.left / rate)
+            .chain(arrival)
+            .min_by(f64::total_cmp)
+        else {
+            return out;
+        };
+        running.retain_mut(|r| {
+            if now + r.left / rate <= until {
+                out[r.job] = (
+                    ((r.start - at(&jobs[r.job])) / 1000.0) as u64,
+                    ((until - r.start) / 1000.0) as u64,
+                );
+                false
+            } else {
+                r.left -= (until - now) * rate;
+                true
+            }
+        });
+        now = until;
+    }
 }
 
 fn stats(waits_and_holds: &[(u64, u64)]) -> Stats {
@@ -339,7 +375,7 @@ fn simulate(
             "slowdown 1.0: builds side by side keep their recorded durations, so the waits with more slots are a lower bound; give --slowdown to stretch them".to_owned()
         } else {
             format!(
-                "slowdown {slowdown}: a build that starts while another holds a slot takes {slowdown} times its recorded duration"
+                "slowdown {slowdown}: while two or more builds hold a slot, each runs {slowdown} times slower than recorded"
             )
         },
         "arrivals are replayed as recorded: a request that waited less would have let its agent send the next one sooner, so a larger capacity saves less than shown".to_owned(),

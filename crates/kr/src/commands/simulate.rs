@@ -65,8 +65,10 @@ pub struct SimulateArgs {
     )]
     builds: Vec<u32>,
 
-    /// With --build: a build that starts while another holds a build slot takes this
-    /// many times its recorded duration. 1.0 (the default) is a lower bound.
+    /// With --build: while two or more builds hold a build slot, each runs this many
+    /// times slower than recorded, and at its recorded speed again once alone; two
+    /// builds that run side by side throughout each take FACTOR times as long. 1.0 (the
+    /// default) is a lower bound.
     #[arg(long, value_name = "FACTOR", default_value_t = 1.0, value_parser = build::slowdown, requires = "builds")]
     slowdown: f64,
 

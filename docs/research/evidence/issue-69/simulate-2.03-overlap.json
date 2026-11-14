@@ -1,0 +1,54 @@
+{
+  "calibration": {
+    "capacities": [
+      1
+    ],
+    "error": -0.3282345024043533,
+    "measured": {
+      "p50_wait_ms": 60026,
+      "p90_wait_ms": 480133,
+      "queue_share": 0.626454157167104,
+      "queued_ms": 342078676
+    },
+    "replayed": {
+      "p50_wait_ms": 0,
+      "p90_wait_ms": 334230,
+      "queue_share": 0.5297620005849275,
+      "queued_ms": 229796652
+    },
+    "target": 0.1
+  },
+  "decisions": [],
+  "notes": [
+    "all projects on this machine: they share the build queue",
+    "slowdown 2.03: while two or more builds hold a slot, each runs 2.03 times slower than recorded",
+    "arrivals are replayed as recorded: a request that waited less would have let its agent send the next one sooner, so a larger capacity saves less than shown",
+    "1857 of 1892 build requests took the old machine-wide lock, which sim requests took too: the calibration replays that lock, the settings the build slot alone; waits for lock holders outside kr are not in the events, so the replay falls short of the measured waits"
+  ],
+  "requests": {
+    "bridged": 1857,
+    "build": 1892,
+    "unfinished": 46
+  },
+  "schema_version": 1,
+  "settings": [
+    {
+      "build": 1,
+      "outside_calibration": null,
+      "p50_wait_ms": 0,
+      "p90_wait_ms": 216307,
+      "queue_share": 0.3752637878299769,
+      "queued_ms": 122523838
+    },
+    {
+      "build": 2,
+      "outside_calibration": "build=2: the requests were recorded with build=1; builds side by side take longer, so this is a direction only",
+      "p50_wait_ms": 0,
+      "p90_wait_ms": 63876,
+      "queue_share": 0.1479399604110211,
+      "queued_ms": 49997672
+    }
+  ],
+  "since": "2026-11-07T14:29:45Z",
+  "slowdown": 2.03
+}
