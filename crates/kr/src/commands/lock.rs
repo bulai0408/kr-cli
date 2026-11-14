@@ -11,6 +11,7 @@ use kr_resource::{Resource, Slot};
 use serde_json::json;
 
 use super::resource_parser;
+use crate::compilation_cache::ForCommand;
 use crate::{Ctx, slots};
 
 #[derive(Debug, Args)]
@@ -23,6 +24,12 @@ pub struct LockArgs {
     #[arg(long)]
     task: Option<String>,
 
+    /// Compile through the project's shared compilation cache (ADR 0027). Needs
+    /// `compilation_cache = true` in `.kr.toml`; otherwise kr says why and runs without.
+    /// Never for archives.
+    #[arg(long)]
+    compilation_cache: bool,
+
     /// The command to run while holding the slot.
     #[arg(last = true, required = true)]
     command: Vec<String>,
@@ -30,6 +37,8 @@ pub struct LockArgs {
 
 /// Slots held by ancestors, passed to children as `KR_HELD=build:1,sim:2`.
 const HELD_VAR: &str = "KR_HELD";
+/// xcodebuild loads this xcconfig for every target, over all other settings.
+const XCCONFIG_VAR: &str = "XCODE_XCCONFIG_FILE";
 
 pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     kr_exec::catch_stop_signals()?;
@@ -41,6 +50,28 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     let res = args.resource;
     let task = args.task.clone().unwrap_or_else(|| args.command.join(" "));
     let held = parse_held(ctx.env_var(HELD_VAR).unwrap_or(""));
+    let cache = if args.compilation_cache {
+        let callers = ctx.env_var(XCCONFIG_VAR).filter(|v| !v.is_empty());
+        let cache = ForCommand::decide(&loaded, callers, &args.command, &loaded.run_dir(run_id))?;
+        if let ForCommand::Ignored(reason) = &cache {
+            if ctx.json {
+                eprintln!("{}", json!({ "compilation_cache_ignored": reason }));
+            } else {
+                eprintln!("--compilation-cache ignored: {reason}");
+            }
+        }
+        Some(cache)
+    } else {
+        None
+    };
+    let xcconfig = match &cache {
+        Some(ForCommand::On { xcconfig, .. }) => Some(xcconfig.to_string_lossy().into_owned()),
+        _ => None,
+    };
+    let env: Vec<(&str, &str)> = xcconfig
+        .iter()
+        .map(|x| (XCCONFIG_VAR, x.as_str()))
+        .collect();
 
     if let Some(&(_, index)) = held.iter().find(|(r, _)| *r == res) {
         let owned = pool.is_held(res, index)
@@ -49,7 +80,7 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
                 .is_some_and(|h| kr_resource::is_ancestor(h.pid));
         if owned {
             tracing::info!("{res} slot {index} is held by an ancestor; running without queueing");
-            return run_command(&args.command, None, &held, &[]).map(exit_code);
+            return run_command(&args.command, None, &held, &env).map(exit_code);
         }
         log.append(&Event::now(
             run_id,
@@ -65,8 +96,15 @@ pub fn run(ctx: &Ctx, args: LockArgs) -> Result<ExitCode> {
     let mut child_held: Vec<(Resource, u32)> =
         held.into_iter().filter(|(r, _)| *r != res).collect();
     child_held.push((res, taken.slot.index()));
-    let result = run_command(&args.command, Some(&mut taken.slot), &child_held, &[]);
-    slots::give_back(&loaded, run_id, taken, result.as_ref().ok().copied())?;
+    let result = run_command(&args.command, Some(&mut taken.slot), &child_held, &env);
+    let fields = cache.map_or_else(|| json!({}), |c| json!({ "compilation_cache": c.event() }));
+    slots::give_back_with(
+        &loaded,
+        run_id,
+        taken,
+        result.as_ref().ok().copied(),
+        fields,
+    )?;
     result.map(exit_code)
 }
 

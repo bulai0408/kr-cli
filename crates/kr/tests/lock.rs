@@ -922,3 +922,135 @@ fn a_lock_outside_a_repository_records_no_commit_and_still_runs() {
     assert_eq!(starts.len(), 1);
     assert_eq!(starts[0]["fields"]["git"], serde_json::Value::Null);
 }
+
+/// A machine whose worktree `work` is a repo with a `.kr.toml`, kept under the target
+/// directory: temp dirs are under /var, where kr refuses the compilation cache.
+fn project_machine(compilation_cache: bool) -> Machine {
+    let dir = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    let work = dir.path().join("work");
+    std::fs::create_dir_all(work.join(".git")).unwrap();
+    std::fs::write(
+        work.join(".kr.toml"),
+        format!("[project]\nname = \"Demo\"\ncompilation_cache = {compilation_cache}\n"),
+    )
+    .unwrap();
+    Machine { dir }
+}
+
+/// Runs `kr lock build --compilation-cache -- <command>` with extra environment and
+/// returns its stderr; the child writes what it saw to $LOG.
+fn lock_with_cache(m: &Machine, command: &[&str], env: &[(&str, &str)]) -> String {
+    let out = m
+        .kr()
+        .args(["lock", "build", "--compilation-cache", "--task", "t", "--"])
+        .args(command)
+        .env("KR_RESOURCES__BUILD", "1")
+        .env("LOG", m.log())
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+const SHOW_XCCONFIG: &str = "echo \"var=${XCODE_XCCONFIG_FILE:-unset}\" >> \"$LOG\"; [ -f \"$XCODE_XCCONFIG_FILE\" ] && cat \"$XCODE_XCCONFIG_FILE\" >> \"$LOG\"; true";
+
+fn released_cache_field(m: &Machine) -> serde_json::Value {
+    m.events()
+        .into_iter()
+        .find(|e| e["type"] == "slot_released")
+        .unwrap()["fields"]["compilation_cache"]
+        .clone()
+}
+
+#[test]
+fn the_compilation_cache_flag_hands_the_child_an_xcconfig_with_the_cache_settings() {
+    let m = project_machine(true);
+    lock_with_cache(&m, &["sh", "-c", SHOW_XCCONFIG], &[]);
+    let root = m.dir.path().canonicalize().unwrap().join("work");
+    let cas = m.dir.path().join("state/cache/Demo/compilation");
+    let lines = m.lines();
+    assert!(lines[0].starts_with("var=/"), "{lines:?}");
+    for expected in [
+        "COMPILATION_CACHE_ENABLE_CACHING = YES".to_owned(),
+        format!("COMPILATION_CACHE_CAS_PATH = {}", cas.display()),
+        "SWIFT_ENABLE_PREFIX_MAPPING = YES".to_owned(),
+        "CLANG_ENABLE_PROJECT_PREFIX_MAPPING = YES".to_owned(),
+        format!(
+            "SWIFT_OTHER_PREFIX_MAPPINGS = {}=/^worktree",
+            root.display()
+        ),
+        format!(
+            "CLANG_OTHER_PREFIX_MAPPINGS = {}=/^worktree",
+            root.display()
+        ),
+    ] {
+        assert!(lines.contains(&expected), "missing {expected}: {lines:?}");
+    }
+    let field = released_cache_field(&m);
+    assert_eq!(field["enabled"], true);
+    assert_eq!(field["dir"], cas.display().to_string());
+}
+
+#[test]
+fn the_compilation_cache_flag_is_ignored_when_the_project_does_not_turn_the_cache_on() {
+    let m = project_machine(false);
+    let err = lock_with_cache(&m, &["sh", "-c", SHOW_XCCONFIG], &[]);
+    assert!(err.contains("compilation_cache = true"), "{err}");
+    assert_eq!(m.lines(), ["var=unset"]);
+    let field = released_cache_field(&m);
+    assert_eq!(field["enabled"], false);
+    assert!(field["ignored"].as_str().unwrap().contains(".kr.toml"));
+}
+
+#[test]
+fn the_compilation_cache_flag_never_replaces_an_xcconfig_the_caller_set() {
+    let m = project_machine(true);
+    let err = lock_with_cache(
+        &m,
+        &["sh", "-c", SHOW_XCCONFIG],
+        &[("XCODE_XCCONFIG_FILE", "/callers/own.xcconfig")],
+    );
+    assert!(err.contains("/callers/own.xcconfig"), "{err}");
+    assert_eq!(m.lines(), ["var=/callers/own.xcconfig"]);
+    assert_eq!(released_cache_field(&m)["enabled"], false);
+}
+
+#[test]
+fn the_compilation_cache_is_refused_for_a_worktree_under_var() {
+    let m = Machine::new();
+    let work = m.dir.path().join("work");
+    std::fs::create_dir_all(work.join(".git")).unwrap();
+    std::fs::write(
+        work.join(".kr.toml"),
+        "[project]\nname = \"Demo\"\ncompilation_cache = true\n",
+    )
+    .unwrap();
+    let err = lock_with_cache(&m, &["sh", "-c", SHOW_XCCONFIG], &[]);
+    assert!(err.contains("/var") && err.contains("/Users"), "{err}");
+    assert_eq!(m.lines(), ["var=unset"]);
+    assert_eq!(released_cache_field(&m)["enabled"], false);
+}
+
+#[test]
+fn the_compilation_cache_is_not_used_for_an_archive() {
+    let m = project_machine(true);
+    let err = lock_with_cache(
+        &m,
+        &["sh", "-c", SHOW_XCCONFIG, "xcodebuild", "archive"],
+        &[],
+    );
+    assert!(err.contains("archive"), "{err}");
+    assert_eq!(m.lines(), ["var=unset"]);
+}
+
+#[test]
+fn a_lock_without_the_flag_records_no_compilation_cache() {
+    let m = project_machine(true);
+    assert_eq!(
+        finish(m.lock("build", 1, SHOW_XCCONFIG), Duration::from_secs(10)),
+        0
+    );
+    assert_eq!(m.lines(), ["var=unset"]);
+    assert!(released_cache_field(&m).is_null());
+}

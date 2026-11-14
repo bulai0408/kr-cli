@@ -205,17 +205,35 @@ pub fn give_back(
     taken: Taken,
     exit_code: Option<i32>,
 ) -> Result<()> {
+    give_back_with(loaded, run_id, taken, exit_code, json!({}))
+}
+
+/// [`give_back`], with more fields (an object) in the slot_released event.
+pub fn give_back_with(
+    loaded: &Loaded,
+    run_id: RunId,
+    taken: Taken,
+    exit_code: Option<i32>,
+    mut fields: serde_json::Value,
+) -> Result<()> {
+    fields
+        .as_object_mut()
+        .expect("fields is an object")
+        .extend([
+            ("resource".to_owned(), json!(taken.slot.resource())),
+            ("slot".to_owned(), json!(taken.slot.index())),
+            ("task".to_owned(), json!(taken.task)),
+            (
+                "held_ms".to_owned(),
+                json!(taken.started.elapsed().as_millis() as u64),
+            ),
+            ("exit_code".to_owned(), json!(exit_code)),
+        ]);
     loaded.events().append(&Event::now(
         run_id,
         loaded.project(),
         EventKind::SlotReleased,
-        json!({
-            "resource": taken.slot.resource(),
-            "slot": taken.slot.index(),
-            "task": taken.task,
-            "held_ms": taken.started.elapsed().as_millis() as u64,
-            "exit_code": exit_code,
-        }),
+        fields,
     ))?;
     drop(taken.slot);
     drop(taken.legacy);

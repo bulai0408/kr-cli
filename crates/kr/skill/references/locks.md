@@ -21,6 +21,15 @@ slot, keeping load -> legacy lock -> sim slot -> device lock order (ADR 0023).
 With --json, lease notices go to stderr with selection {by: name|udid|kind, value};
 sim_leased/sim_released events carry fields.selection. Child stdout stays unchanged.
 
+`kr lock build --compilation-cache --task <t> -- <xcodebuild …>` compiles through the
+project's shared compilation cache (ADR 0013, 0027): kr writes an xcconfig with the
+cache settings for this worktree and passes it as XCODE_XCCONFIG_FILE, which
+overrides every other setting for every target. It needs `compilation_cache = true`
+in `.kr.toml`; otherwise, and when XCODE_XCCONFIG_FILE is already set, the worktree is
+under /tmp or /var, or the command archives, kr prints why and runs without it.
+slot_released then carries compilation_cache {enabled, dir, xcconfig | ignored}.
+Never use it for builds you ship: debug info gets /^worktree paths.
+
 `kr lock` passes through stdout, stderr and the child's exit code, including 4.
 A child killed by signal n returns 128+n. Queue cancellation and kr errors return 1; argument errors
 return 2. Queue notices go to stderr; --json does not wrap the child's output.
