@@ -1,0 +1,81 @@
+{
+ "phases": [
+  {
+   "phase": "A1",
+   "mode": "serial",
+   "capacity": 1,
+   "start": 18.589,
+   "end": 372.2,
+   "total_seconds": 353.61,
+   "builds": [
+    {
+     "label": "A1-a",
+     "start": 18.589,
+     "end": 189.469,
+     "seconds": 170.87,
+     "exit": 0,
+     "ok": true,
+     "user_s": 894.14,
+     "sys_s": 70.53,
+     "cpu_s": 964.67,
+     "effective_cores": 5.65,
+     "max_rss_mb": 1599
+    },
+    {
+     "label": "A1-b",
+     "start": 189.469,
+     "end": 366.08,
+     "seconds": 176.6,
+     "exit": 0,
+     "ok": true,
+     "user_s": 965.87,
+     "sys_s": 73.12,
+     "cpu_s": 1038.98,
+     "effective_cores": 5.88,
+     "max_rss_mb": 1553
+    }
+   ],
+   "stop": null
+  },
+  {
+   "phase": "B1",
+   "mode": "parallel",
+   "capacity": 2,
+   "start": 372.2,
+   "end": 738.484,
+   "total_seconds": 366.28,
+   "builds": [
+    {
+     "label": "B1-a",
+     "start": 372.2,
+     "end": 730.676,
+     "seconds": 358.46,
+     "exit": 0,
+     "ok": true,
+     "user_s": 1037.06,
+     "sys_s": 83.49,
+     "cpu_s": 1120.55,
+     "effective_cores": 3.13,
+     "max_rss_mb": 1262
+    },
+    {
+     "label": "B1-b",
+     "start": 372.2,
+     "end": 728.272,
+     "seconds": 356.06,
+     "exit": 0,
+     "ok": true,
+     "user_s": 1045.45,
+     "sys_s": 84.81,
+     "cpu_s": 1130.26,
+     "effective_cores": 3.17,
+     "max_rss_mb": 1305
+    }
+   ],
+   "stop": "warn"
+  }
+ ],
+ "pressure_max": 2,
+ "stop": "warn",
+ "window_seconds": 738.636
+}
