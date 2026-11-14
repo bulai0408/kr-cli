@@ -14,7 +14,7 @@ ADR 0004 决定「不兼容旧的 `/tmp/native-build.lock`」。但在机器上�
   queue = "/tmp/native-build.queue"
   ```
 
-- 开启时，kr 每次持有 `build` 或 `sim` 槽位，都按全局规则同时拿旧锁：在队列目录建 `<epoch-ns>-<task>-<pid>`，排到最前才 `mkdir`；拿到后写 `owner`（task session pid 开始时间）；归还时删 owner、rmdir、删队列文件。只在 owner 进程不存在、或无 owner 且目录超过 1 分钟时才视为过期并清理。
+- 开启时，kr 每次持有 `build` 或 `sim` 槽位，都按全局规则同时拿旧锁：在队列目录建 `<epoch-ns>-<task>-<pid>`（task 超过 64 字节时截断并接上整条 task 的哈希，文件名不随命令变长），排到最前才 `mkdir`；拿到后写 `owner`（task session pid 开始时间）；归还时删 owner、rmdir、删队列文件。只在 owner 进程不存在、或无 owner 且目录超过 1 分钟时才视为过期并清理。
 - 同一个 kr 进程同时持有多个重活槽位时只拿一次旧锁（进程内计数，最后一个归还时释放）。
 - 旧锁的 owner 是 kr 的祖先进程时（旧脚本持锁后调用 kr，对应旧规则的 `KRILL_NATIVE_LOCK_HELD=1`），视为已持有，不排队，否则会自己等自己。
 - 等待时在 stderr 写明持锁者；拿到后记 `machine_lock` 事件（等了多久、等的是谁）。

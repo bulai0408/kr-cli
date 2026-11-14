@@ -84,6 +84,56 @@ fn kr_waits_while_an_old_script_holds_it() {
 }
 
 #[test]
+fn a_task_longer_than_a_file_name_queues_under_a_short_distinct_name() {
+    let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let dir = tempfile::tempdir().unwrap();
+    let mut script = Command::new("sleep").arg("30").spawn().unwrap();
+    assert!(old_script_takes(dir.path(), script.id()));
+    let queue = dir.path().join("native-build.queue");
+
+    let long = |last: &str| {
+        format!(
+            "kr-xcodebuild 测试 {} {last}",
+            "-only-testing:A/B ".repeat(40)
+        )
+    };
+    let mut names = Vec::new();
+    for last in ["one", "two"] {
+        let lock = bridge(dir.path()).with_max_wait(Duration::from_millis(100));
+        let queue = queue.clone();
+        let waiter = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            let _ = lock.acquire(&long(last), |_| {
+                seen.extend(
+                    std::fs::read_dir(&queue)
+                        .unwrap()
+                        .map(|e| e.unwrap().file_name().into_string().unwrap()),
+                );
+            });
+            seen
+        });
+        names.extend(waiter.join().unwrap());
+    }
+
+    assert_eq!(names.len(), 2, "{names:?}");
+    for name in &names {
+        assert!(name.len() < 128, "{name}");
+        assert!(
+            name.contains("-kr-xcodebuild_测试_-only-testing:A_B_"),
+            "{name}"
+        );
+        assert!(
+            name.ends_with(&format!("-{}", std::process::id())),
+            "{name}"
+        );
+    }
+    let tasks: Vec<&str> = names.iter().map(|n| n.split_once('-').unwrap().1).collect();
+    assert_ne!(tasks[0], tasks[1], "same prefix, different commands");
+    script.kill().unwrap();
+    script.wait().unwrap();
+}
+
+#[test]
 fn a_lock_whose_owner_died_is_taken_over() {
     let _s = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();

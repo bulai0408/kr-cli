@@ -3,11 +3,11 @@
 //! projects and old scripts still use it, kr also takes it whenever it holds a `build`
 //! or `sim` slot, so the two never run heavy work at the same time.
 //!
-//! Protocol: create `<queue>/<epoch-ns>-<task>-<pid>`; try `mkdir <lock>` only when
-//! that file is the oldest live one; then write `<lock>/owner` as
-//! `<task> <session> <pid> <start>`. Release: remove owner, rmdir, remove the queue
-//! file. A lock is stale only if its owner process is gone, or it has no owner and is
-//! older than one minute.
+//! Protocol: create `<queue>/<epoch-ns>-<task>-<pid>` (a long task cut to 64 bytes plus a
+//! hash); try `mkdir <lock>` only when that file is the oldest live one; then write
+//! `<lock>/owner` as `<task> <session> <pid> <start>`. Release: remove owner, rmdir,
+//! remove the queue file. A lock is stale only if its owner process is gone, or it has
+//! no owner and is older than one minute.
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -201,8 +201,9 @@ impl LegacyLock {
             })
             .collect();
         let ticket = self.queue_dir.join(format!(
-            "{}-{task}-{}",
+            "{}-{}-{}",
             Timestamp::now().as_nanosecond(),
+            ticket_task(&task),
             std::process::id()
         ));
         std::fs::write(&ticket, "")
@@ -351,6 +352,21 @@ pub fn set_owner_pid(pid: u32) {
 }
 
 /// Replaces `<lock>/owner` atomically, so readers never see a partial line.
+/// The task as it goes into a queue file name. A task defaults to the whole command, so
+/// a long one is cut and given a hash of the whole: file names stop at 255 bytes.
+fn ticket_task(task: &str) -> String {
+    const KEEP: usize = 64;
+    if task.len() <= KEEP {
+        return task.to_owned();
+    }
+    let mut end = KEEP;
+    while !task.is_char_boundary(end) {
+        end -= 1;
+    }
+    let hash = blake3::hash(task.as_bytes()).to_hex();
+    format!("{}~{}", &task[..end], &hash[..12])
+}
+
 fn write_owner(lock_dir: &Path, line: &str) -> std::io::Result<()> {
     let tmp = lock_dir.join(format!(".owner-{}", std::process::id()));
     std::fs::write(&tmp, line)?;

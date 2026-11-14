@@ -178,6 +178,46 @@ fn pool_lease_runs_the_command_on_a_booted_pool_device() {
 }
 
 #[test]
+fn pool_lease_without_a_task_queues_a_command_longer_than_a_file_name() {
+    let repo = Repo::new();
+    let replay = repo.replay(&[
+        ("simctl/list-runtimes.json", "", ""),
+        ("simctl/list-devices.json", "", ""),
+        (
+            "simctl/shutdown-already-shutdown.json",
+            RECORDED_UDID,
+            KRILL_1,
+        ),
+        ("simctl/bootstatus.json", RECORDED_UDID, KRILL_1),
+        ("simctl/shutdown.json", RECORDED_UDID, KRILL_1),
+    ]);
+    let only_testing: Vec<String> = (0..40)
+        .map(|i| format!("-only-testing:KrillUITests/LongScenarioSuite/testCase{i}"))
+        .collect();
+    let mut args = vec!["pool", "lease", "--", "sh", "-c", "exit 0", "sh"];
+    args.extend(only_testing.iter().map(String::as_str));
+    let out = repo
+        .kr(replay)
+        .args(&args)
+        .env(
+            "KR_LEGACY__MACHINE_LOCK",
+            repo.home.path().join("native-build.lock"),
+        )
+        .env(
+            "KR_LEGACY__QUEUE",
+            repo.home.path().join("native-build.queue"),
+        )
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn pool_lease_of_an_unknown_kind_explains_the_kinds() {
     let repo = Repo::new();
     let replay = repo.replay(&[]);
