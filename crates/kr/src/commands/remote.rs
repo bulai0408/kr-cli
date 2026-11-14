@@ -183,9 +183,20 @@ pub fn execute(
             json!({ "ok": false, "error": "refused", "problems": problems }),
             &co,
         )?;
+        let what = if problems
+            .iter()
+            .any(|p| kr_remote::CONNECT_CODES.contains(&p.code.as_str()))
+        {
+            format!(
+                "cannot connect to {} over ssh",
+                kr_remote::describe(name, remote)
+            )
+        } else {
+            format!("cannot run on {}", kr_remote::describe(name, remote))
+        };
         return Err(Refused {
             code: "kr::remote::preflight",
-            what: format!("cannot run on {}", kr_remote::describe(name, remote)),
+            what,
             problems,
         }
         .into());
@@ -327,17 +338,11 @@ impl RemoteRun<'_> {
         );
         let out = runner.run(&cmd)?;
         if out.status == Some(kr_remote::SSH_LOST) || !out.success() {
-            let why = kr_remote::last_lines(&out.stderr, 1).join("");
-            return Ok(vec![Problem::new(
-                "unreachable",
-                format!(
-                    "cannot reach {} over ssh: {why}",
-                    kr_remote::describe(self.name, self.remote)
-                ),
-                format!(
-                    "make `ssh {} true` work without a prompt (kr runs ssh with BatchMode=yes: keys or an agent, no passwords; kr does not handle SSH credentials), then run again",
-                    self.remote.ssh
-                ),
+            return Ok(vec![kr_remote::connect_failure(
+                self.name,
+                self.remote,
+                &out.stderr,
+                out.status,
             )]);
         }
         Ok(Probe::parse(&out.stdout).problems(self.name, self.remote, env!("CARGO_PKG_VERSION")))

@@ -101,6 +101,51 @@ pub fn ssh(remote: &Remote, script: &str, tty: bool) -> Command {
         .arg(format!("sh -c {}", sh_quote(script)))
 }
 
+/// The codes of the problems [`connect_failure`] gives.
+pub const CONNECT_CODES: [&str; 2] = ["unreachable", "ssh_auth"];
+
+/// Why ssh to the host failed, from what ssh printed: the host refused the login
+/// (`ssh_auth`), or ssh could not reach it at all (`unreachable`: down, asleep, off the
+/// network, or the name does not resolve).
+pub fn connect_failure(name: &str, remote: &Remote, stderr: &str, status: Option<i32>) -> Problem {
+    let said = last_lines(stderr, 3).join("; ");
+    let said = if said.is_empty() {
+        status.map_or_else(
+            || "ssh was stopped by a signal and printed nothing".to_owned(),
+            |s| format!("ssh exited with {s} and printed nothing"),
+        )
+    } else {
+        said
+    };
+    let message = format!(
+        "cannot connect to {} over ssh: {said}",
+        describe(name, remote)
+    );
+    let ssh = &remote.ssh;
+    const LOGIN_REFUSED: [&str; 4] = [
+        "Permission denied",
+        "Host key verification failed",
+        "Too many authentication failures",
+        "REMOTE HOST IDENTIFICATION HAS CHANGED",
+    ];
+    if LOGIN_REFUSED.iter().any(|m| stderr.contains(m)) {
+        return Problem::new(
+            "ssh_auth",
+            message,
+            format!(
+                "make `ssh {ssh} true` work without a prompt (kr runs ssh with BatchMode=yes: keys or an agent, no passwords; kr does not handle SSH credentials), then run again"
+            ),
+        );
+    }
+    Problem::new(
+        "unreachable",
+        message,
+        format!(
+            "check that {name} is powered on, awake and on this network, and that `ssh {ssh} true` connects from here; then run again, or run here without --remote"
+        ),
+    )
+}
+
 /// What the host says about itself.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Probe {
