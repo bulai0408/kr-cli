@@ -1,0 +1,11 @@
+{
+  "program": "git",
+  "args": [
+    "status",
+    "--porcelain=v2",
+    "--branch"
+  ],
+  "status": 128,
+  "stdout": "",
+  "stderr": "fatal: not a git repository (or any of the parent directories): .git\n"
+}
