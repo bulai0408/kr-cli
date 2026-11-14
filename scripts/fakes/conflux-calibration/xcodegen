@@ -1,0 +1,3 @@
+#!/bin/sh
+# Fake xcodegen for the #69b dry run.
+mkdir -p ConfluxMobile.xcodeproj

@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Fake kr for the #69b dry run: `queue --json` reports a build waiter for the first
+KR69B_FAKE_BUSY_POLLS calls, `lock build --task T -- CMD` runs CMD."""
+import json
+import os
+import sys
+from pathlib import Path
+
+args = sys.argv[1:]
+if args[:2] == ['queue', '--json']:
+    counter = Path(os.environ['KR69B_FAKE_STATE'] + '.polls')
+    polls = int(counter.read_text()) if counter.exists() else 0
+    counter.write_text(str(polls + 1))
+    busy = polls < int(os.environ.get('KR69B_FAKE_BUSY_POLLS', '0'))
+    waiters = [{'task': 'someone-else'}] if busy else []
+    print(json.dumps({'schema_version': 1, 'decisions': [], 'resources': [
+        {'resource': r, 'capacity': 1, 'holders': [], 'waiters': waiters if r == 'build' else [],
+         'load_waiters': []} for r in ('build', 'sim', 'light')]}))
+elif args[:2] == ['lock', 'build'] and '--' in args:
+    cmd = args[args.index('--') + 1:]
+    os.execvp(cmd[0], cmd)
+else:
+    sys.exit(f'fake kr: unsupported {args}')

@@ -1,5 +1,17 @@
 # #69 用 Conflux 真实构建校准 build 公式（结论：本机保持 1）
 
+> **状态：下面的结论未证实，等待在空闲机器上重测。** 测量时机器上还有别的会话：t = 1 秒（编译开始前）CPU 空闲只有 53%，PhysMem 只剩 422 MB 空闲，build 队列里还有别的 Conflux 任务在等。采样只记录整机 CPU，分不出构建自己的 CPU 和别人的 CPU，所以“一个冷构建就占满 CPU”这一条没有证据支撑。
+>
+> 新的驱动脚本（#69b）先等机器安静，再测量，并且按进程归属 CPU：
+>
+> - 安静门：`--not-before` 之后轮询，`kr queue --json` 里 build/sim/light 连续 120 秒没有别的持有者或等待者，驱动进程树之外的 CPU 低于整机的 15%，内存压力为 normal，才执行 `kr lock build --task kr69b-calibration`。到 `--deadline` 仍不安静就以 `not-quiet` 退出（退出码 3），不测量。
+> - 每个构建用 `wait4` 取自己和全部子进程的 user + sys CPU 秒，算出有效核数 = CPU 秒 / 墙钟秒。`SWBBuildService` 和 `swift-frontend` 都是 `xcodebuild` 的子进程（2026-11-14 用一个小 Swift 包实测），所以都计入。
+> - 每秒一条采样：整机 CPU（`top`）、每个构建进程树和驱动进程树的 CPU（`ps` 累计 CPU 时间的差）、树外 CPU 最高的 5 个进程、内存压力、swap、空闲内存、`kr queue`。某阶段树外 CPU 超过阈值的采样多于 10% 时，分析脚本把这个阶段标为受干扰，它所在的配对不计入结论。
+> - 冷构建按 A/B/A/B（串行、并行、串行、并行），测量窗口最长 60 分钟；不再测增量构建，也不再改源文件。
+> - 分析脚本另写一份可以提交的 `public/`：家目录、用户名、主机名、team ID 都被替换，替换后仍有残留就拒绝写出。
+>
+> 离线测试与 30 秒内跑完的整套演练：`python3 -m unittest discover -s scripts -p test_calibrate_conflux_build.py`，`python3 scripts/calibrate-conflux-build.py run --dry-run --out /tmp/kr69b-dry`。
+
 ## 结论
 
 本机（iMac，Apple M3，4 性能核 + 4 能效核，24 GiB）同时跑两个 Conflux 冷构建，总耗时与串行相同，内存压力升到 warn。数据不支持把本机 build 容量改为 2。`clamp(min(P/5, M/16), 1, 2)` 不变，不写新 ADR。
@@ -66,12 +78,11 @@
 
 ## 复现
 
+上面的数据由 #76 合入时的旧驱动脚本产生（见该提交的 `scripts/calibrate-conflux-build.py`）。用现在的驱动脚本重测：
+
 ```sh
-git -C <Conflux> worktree add --detach /tmp/kr69-conflux origin/main
-(cd /tmp/kr69-conflux && xcodegen generate --spec ConfluxMobile.yml)
-kr lock build --task kr69-calibration -- \
-    python3 scripts/calibrate-conflux-build.py /tmp/kr69-conflux /tmp/kr69/dd /tmp/kr69/out 72
-python3 scripts/analyze-conflux-build.py /tmp/kr69/out > summary.json
+python3 scripts/calibrate-conflux-build.py run --conflux <Conflux> --out <证据目录> \
+    --not-before 03:30 --deadline 07:30
 ```
 
-驱动脚本在 warn 时停止加负载，自己删除 DerivedData，并恢复增量构建改过的源文件。证据：[summary.json](evidence/issue-69/summary.json)、[builds.json](evidence/issue-69/builds.json)、采样、构建日志末尾、回放原文。
+它自己建 `/tmp` 下的分离检出、跑 xcodegen、等安静、拿锁、测量，退出时（包括失败和收到 SIGTERM）删除检出和 DerivedData，最后运行 `analyze-conflux-build.py`，写出 `summary.json` 和 `public/`。压力到 warn 后不再开始新阶段，到 critical 终止构建。证据：[summary.json](evidence/issue-69/summary.json)、[builds.json](evidence/issue-69/builds.json)、采样、构建日志末尾、回放原文。
