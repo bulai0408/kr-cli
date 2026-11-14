@@ -1,0 +1,13 @@
+build requests since 2026-11-07T14:17:35.148623Z: 1876 (45 unfinished left out)
+calibration (build=1 as recorded): error -32.7% (target ≤ 10%)
+  measured: 5714.8 min queued (63%) · p50 wait 1.0 min · p90 wait 8.0 min
+  replayed: 3846.6 min queued (53%) · p50 wait 0.0 min · p90 wait 5.6 min
+settings (slowdown 2.03):
+  build=1: 2055.1 min queued (38%) · p50 wait 0.0 min · p90 wait 3.7 min
+  build=2: 1200.4 min queued (19%) · p50 wait 0.0 min · p90 wait 2.0 min
+    outside calibration: build=2: the requests were recorded with build=1; builds side by side take longer, so this is a direction only
+notes:
+  - all projects on this machine: they share the build queue
+  - slowdown 2.03: a build that starts while another holds a slot takes 2.03 times its recorded duration
+  - arrivals are replayed as recorded: a request that waited less would have let its agent send the next one sooner, so a larger capacity saves less than shown
+  - 1859 of 1876 build requests took the old machine-wide lock, which sim requests took too: the calibration replays that lock, the settings the build slot alone; waits for lock holders outside kr are not in the events, so the replay falls short of the measured waits
