@@ -1,0 +1,17 @@
+---
+source: crates/kr/tests/simulate.rs
+expression: out
+---
+build requests since 2026-11-13T00:00:00Z: 62 (1 unfinished left out)
+calibration (build=1 as recorded): error -31.6% (target ≤ 10%)
+  measured: 93.5 min queued (51%) · p50 wait 0.0 min · p90 wait 5.5 min
+  replayed: 64.0 min queued (42%) · p50 wait 0.0 min · p90 wait 3.4 min
+settings (slowdown 1.0):
+  build=1: 56.0 min queued (39%) · p50 wait 0.0 min · p90 wait 3.4 min
+  build=2: 3.7 min queued (4%) · p50 wait 0.0 min · p90 wait 0.0 min
+    outside calibration: build=2: the requests were recorded with build=1; builds side by side take longer, so this is a direction only
+notes:
+  - all projects on this machine: they share the build queue
+  - slowdown 1.0: builds side by side keep their recorded durations, so the waits with more slots are a lower bound; give --slowdown to stretch them
+  - arrivals are replayed as recorded: a request that waited less would have let its agent send the next one sooner, so a larger capacity saves less than shown
+  - 62 of 62 build requests took the old machine-wide lock, which sim requests took too: the calibration replays that lock, the settings the build slot alone; waits for lock holders outside kr are not in the events, so the replay falls short of the measured waits
