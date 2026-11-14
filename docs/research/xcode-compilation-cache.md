@@ -35,7 +35,20 @@
 - 只映射 DerivedData 没有用。
 - 同一个目录重编（删掉 DerivedData，保留缓存）命中 808/867，说明缓存本身可用，问题只在路径。
 
-## 4. 没有查的
+## 4. `XCODE_XCCONFIG_FILE`：把设置交给别人发起的 xcodebuild（#80，2026-11-14）
+
+`kr lock build -- <命令>` 里的 xcodebuild 由调用方的脚本发起，kr 改不了它的参数，只能经环境变量把设置传下去。
+
+- **文档**：`man xcodebuild`（Xcode 27.1）的 ENVIRONMENT 一节：`XCODE_XCCONFIG_FILE` 指向的文件「used when building all targets」，并且「override all other settings, including settings passed individually on the command line, and those in the file passed with the -xcconfig option」。
+- **实测**（Xcode 27.1，27A9275）：一个 XcodeGen 工程，一个 macOS 命令行 target 依赖本地 SwiftPM 包 `Lib`。工程级写 `KR_P_PROJECT=project`、`KR_P_CLI=project`、`COMPILATION_CACHE_ENABLE_CACHING=NO`；target 级写 `KR_P_TARGET=target`、`SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG`；xcconfig 把三个 `KR_P_*` 都写成 `xcconfig`，并写 `SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) KR_PROBE_XCCONFIG`；命令行再传 `KR_P_CLI=cli`。
+  - `-showBuildSettings`：三个 `KR_P_*` 都是 `xcconfig`，命令行的 `cli` 被盖掉；`SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG KR_PROBE_XCCONFIG`，即 `$(inherited)` 取到 target 级的值。与文档一致：优先级是 环境变量 xcconfig > 命令行 > target > 工程。
+  - **包 target 也生效**：包源码里写 `#if !KR_PROBE_XCCONFIG #error(…) #endif`，app 源码里写同样的检查；`xcodebuild build` 通过，说明两类 target 都拿到了这个条件。
+  - **缓存设置对包 target 生效**：xcconfig 换成 ADR 0013 的全部缓存设置（含 worktree 根映射），两个目录各编一次、共用一个缓存目录，各用全新 DerivedData。第一个目录 Swift 编译 0/18 命中、模块 0/8；第二个目录 18/18、8/8，其中包括包 `Lib` 的 6 个源文件。工程级 `COMPILATION_CACHE_ENABLE_CACHING=NO` 也被盖掉。
+- **推论**（没有单独验证）：调用方在命令行或 `-xcconfig` 里给同名设置时，以 kr 的值为准。缓存设置不改编出的产物（ADR 0013 第 4 条），所以盖掉它们只影响要不要走缓存；这也是 kr 不在调用方已设 `XCODE_XCCONFIG_FILE` 时去合并它的原因：那个文件里可能有任何设置，kr 无法判断哪些能盖。
+
+结论：用 `XCODE_XCCONFIG_FILE` 就够了，不需要包一层 xcodebuild 或改调用方的命令行。
+
+## 5. 没有查的
 - Bazel rules_swift、XCRemoteCache 怎样让路径与目录无关：没有读它们的源码。
 - 宏插件：swift-build 用 `-Xfrontend -load-plugin-executable <真实路径>` 传宏插件，driver 不映射它。修复见 https://github.com/swiftlang/swift-build/pull/1836（2026-10-07 合入），Xcode 27.1 可能还没有。Krill 有宏（swift-syntax），但实测命中率已经够用，没有单独查。
 - 调试：映射后调试信息里的路径是 `/^worktree/…`。在 Xcode 里调试这样编出的产物，可能要给 LLDB 配源码映射。kr 编的是测试产物，没有验证。
