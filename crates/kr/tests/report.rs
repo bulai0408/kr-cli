@@ -448,3 +448,144 @@ fn a_passed_item_run_again_on_the_same_inputs_is_a_detour() {
         "01a14000-0000-7000-8000-0000000000c2"
     );
 }
+
+/// One `kr lock` run: it queued `waited_ms`, got the slot at `acquired`, held it `held_ms`.
+fn lock_run(
+    id: &str,
+    task: &str,
+    resource: &str,
+    acquired: &str,
+    waited_ms: i64,
+    held_ms: i64,
+) -> Vec<Value> {
+    let at: jiff::Timestamp = acquired.parse().unwrap();
+    let ts = |t: jiff::Timestamp| t.to_string();
+    let queued = at - jiff::SignedDuration::from_millis(waited_ms);
+    let released = at + jiff::SignedDuration::from_millis(held_ms);
+    vec![
+        event(
+            &ts(queued),
+            id,
+            "queue_start",
+            json!({ "resource": resource, "task": task, "capacity": 1 }),
+        ),
+        event(
+            &ts(at),
+            id,
+            "slot_acquired",
+            json!({ "resource": resource, "slot": 1, "task": task, "waited_ms": waited_ms }),
+        ),
+        event(
+            &ts(released),
+            id,
+            "slot_released",
+            json!({ "resource": resource, "slot": 1, "task": task, "held_ms": held_ms, "exit_code": 0 }),
+        ),
+    ]
+}
+
+fn run_id(n: usize) -> String {
+    format!("01a14000-0000-7000-8000-{n:012}")
+}
+
+#[test]
+fn short_holds_of_build_or_sim_are_listed_as_light_candidates() {
+    let home = Home::empty();
+    let mut lines = Vec::new();
+    // guard: 10 short build holds of 1 s … 10 s, each after a 0.5 s wait.
+    for k in 0..10 {
+        lines.extend(lock_run(
+            &run_id(k),
+            "guard",
+            "build",
+            &format!("2026-10-15T11:0{k}:00Z"),
+            500,
+            (k as i64 + 1) * 1000,
+        ));
+    }
+    // waiter waits 30 s for build, across guard's first hold (11:00:00–11:00:01).
+    lines.extend(lock_run(
+        &run_id(20),
+        "waiter",
+        "build",
+        "2026-10-15T11:00:30Z",
+        30_000,
+        1000,
+    ));
+    // Long holds, short holds of `light`, too few holds, and pool leases are not candidates.
+    for k in 0..5 {
+        lines.extend(lock_run(
+            &run_id(30 + k),
+            "build-app",
+            "build",
+            &format!("2026-10-15T12:{k}0:00Z"),
+            0,
+            300_000,
+        ));
+        lines.extend(lock_run(
+            &run_id(40 + k),
+            "already-light",
+            "light",
+            &format!("2026-10-15T13:0{k}:00Z"),
+            0,
+            1000,
+        ));
+        let lease = run_id(50 + k);
+        lines.extend(lock_run(
+            &lease,
+            "lease",
+            "sim",
+            &format!("2026-10-15T14:0{k}:00Z"),
+            0,
+            1000,
+        ));
+        lines.push(event(
+            &format!("2026-10-15T14:0{k}:00.1Z"),
+            &lease,
+            "sim_leased",
+            json!({ "device": "Krill-Verify-1", "udid": "U", "boot_ms": 100 }),
+        ));
+    }
+    lines.extend(lock_run(
+        &run_id(60),
+        "rare",
+        "build",
+        "2026-10-15T15:00:00Z",
+        0,
+        1000,
+    ));
+    home.add("events", "2026-10-15", &lines);
+
+    let range = [
+        "--since",
+        "2026-10-15T00:00:00Z",
+        "--until",
+        "2026-10-16T00:00:00Z",
+    ];
+    let v = home.json(&range);
+    let light = &v["light_candidates"];
+    assert_eq!(light["max_p90_ms"], 15_000);
+    assert_eq!(light["min_holds"], 5);
+    assert_eq!(
+        light["tasks"],
+        json!([{
+            "task": "guard", "resource": "build", "holds": 10,
+            "p90_held_ms": 9000, "max_held_ms": 10_000, "held_ms": 55_000,
+            "queued_ms": 5000, "others_waited_ms": 1000,
+            "suggestion": "kr lock light --task guard -- <command>",
+        }])
+    );
+
+    let mut args = vec!["report"];
+    args.extend(range);
+    let (code, out) = home.kr(&args);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(
+        out.contains("guard (build): 10 holds, p90 9s, max 10s"),
+        "{out}"
+    );
+    assert!(
+        out.contains("kr lock light --task guard -- <command>"),
+        "{out}"
+    );
+}

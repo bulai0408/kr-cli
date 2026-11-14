@@ -58,10 +58,16 @@ const DETOURS: [&str; 9] = [
     "undecided",
 ];
 
+/// A task that holds `build` or `sim` at least this often, for at most this long at p90,
+/// is light work waiting in a heavy queue (#66, ADR 0026).
+const LIGHT_MIN_HOLDS: usize = 5;
+const LIGHT_MAX_P90_MS: u64 = 15_000;
+
 #[derive(Debug, Serialize)]
 struct Report {
     batch: Batch,
     time: Time,
+    light_candidates: LightCandidates,
     runs: Vec<Run>,
     rework: Rework,
     flaky: Vec<Flaky>,
@@ -99,6 +105,29 @@ struct CommandTime {
     failed: usize,
     wall_ms: u64,
     queued_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct LightCandidates {
+    min_holds: usize,
+    max_p90_ms: u64,
+    tasks: Vec<LightCandidate>,
+}
+
+#[derive(Debug, Serialize)]
+struct LightCandidate {
+    task: String,
+    /// "build" or "sim".
+    resource: String,
+    holds: usize,
+    p90_held_ms: u64,
+    max_held_ms: u64,
+    held_ms: u64,
+    /// How long the task itself queued for its holds.
+    queued_ms: u64,
+    /// How long other runs waited for the same resource while the task held a slot.
+    others_waited_ms: u64,
+    suggestion: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -551,6 +580,7 @@ fn report(filter: &Filter, events: &[Event], calls: &[Event]) -> Report {
             runs_without_requester,
         },
         time,
+        light_candidates: light_candidates(&runs, &summaries),
         rework: rework(&runs),
         flaky: flaky(&runs),
         accuracy: accuracy(&runs, events),
@@ -610,6 +640,90 @@ fn time(runs: &[Run]) -> Time {
             (queued_ms as f64 / wall_ms as f64 * 1000.0).round() / 1000.0
         },
         by_command: by.into_values().collect(),
+    }
+}
+
+/// One `kr lock` hold of a slot, with the waits around it.
+struct Hold {
+    held_ms: u64,
+    queued_ms: u64,
+    others_waited_ms: u64,
+}
+
+/// `kr lock` runs (not pool leases) that held `build` or `sim` briefly, per task.
+fn light_candidates(runs: &[RunEvents], summaries: &[Run]) -> LightCandidates {
+    let waits: Vec<(&str, RunId, Timestamp, Timestamp)> = runs
+        .iter()
+        .flat_map(|r| {
+            r.of(EventKind::SlotAcquired).filter_map(move |e| {
+                let ms = e.fields["waited_ms"].as_u64()?;
+                let res = e.fields["resource"].as_str()?;
+                Some((
+                    res,
+                    r.id,
+                    e.ts - SignedDuration::from_millis(ms as i64),
+                    e.ts,
+                ))
+            })
+        })
+        .collect();
+    let mut holds: BTreeMap<(&str, &str), Vec<Hold>> = BTreeMap::new();
+    for (r, s) in runs.iter().zip(summaries) {
+        if s.command != "lock" || r.first(EventKind::SimLeased).is_some() {
+            continue;
+        }
+        let Some(released) = r.of(EventKind::SlotReleased).next() else {
+            continue;
+        };
+        let f = &released.fields;
+        let (Some(res @ ("build" | "sim")), Some(task), Some(held)) = (
+            f["resource"].as_str(),
+            f["task"].as_str(),
+            f["held_ms"].as_u64(),
+        ) else {
+            continue;
+        };
+        let from = released.ts - SignedDuration::from_millis(held as i64);
+        let others_waited_ms = waits
+            .iter()
+            .filter(|w| w.0 == res && w.1 != r.id)
+            .map(|w| millis(w.3.min(released.ts).duration_since(w.2.max(from))))
+            .sum();
+        holds.entry((task, res)).or_default().push(Hold {
+            held_ms: held,
+            queued_ms: s.queued_ms,
+            others_waited_ms,
+        });
+    }
+    let mut tasks: Vec<LightCandidate> = holds
+        .into_iter()
+        .filter_map(|((task, resource), list)| {
+            let mut held: Vec<u64> = list.iter().map(|h| h.held_ms).collect();
+            held.sort_unstable();
+            let p90 = held[(held.len() * 9).div_ceil(10) - 1];
+            (held.len() >= LIGHT_MIN_HOLDS && p90 < LIGHT_MAX_P90_MS).then(|| LightCandidate {
+                task: task.to_owned(),
+                resource: resource.to_owned(),
+                holds: held.len(),
+                p90_held_ms: p90,
+                max_held_ms: held[held.len() - 1],
+                held_ms: held.iter().sum(),
+                queued_ms: list.iter().map(|h| h.queued_ms).sum(),
+                others_waited_ms: list.iter().map(|h| h.others_waited_ms).sum(),
+                suggestion: format!("kr lock light --task {task} -- <command>"),
+            })
+        })
+        .collect();
+    tasks.sort_by_key(|t| {
+        (
+            std::cmp::Reverse(t.queued_ms + t.others_waited_ms),
+            t.task.clone(),
+        )
+    });
+    LightCandidates {
+        min_holds: LIGHT_MIN_HOLDS,
+        max_p90_ms: LIGHT_MAX_P90_MS,
+        tasks,
     }
 }
 
@@ -1123,6 +1237,32 @@ fn human(r: &Report) -> String {
             dur(run.queued_ms),
             run.result.map(|r| format!(" · {r}")).unwrap_or_default()
         ));
+    }
+
+    let l = &r.light_candidates;
+    line(String::new());
+    line(format!(
+        "Light candidates: {} held build or sim at least {} times, p90 under {} (`kr lock light` does not queue behind heavy work)",
+        plural(l.tasks.len(), "task", "tasks"),
+        l.min_holds,
+        dur(l.max_p90_ms)
+    ));
+    for c in l.tasks.iter().take(10) {
+        line(format!(
+            "  {} ({}): {} holds, p90 {}, max {} · {} held · {} queued · others waited {} behind it → {}",
+            c.task,
+            c.resource,
+            c.holds,
+            dur(c.p90_held_ms),
+            dur(c.max_held_ms),
+            dur(c.held_ms),
+            dur(c.queued_ms),
+            dur(c.others_waited_ms),
+            c.suggestion
+        ));
+    }
+    if l.tasks.len() > 10 {
+        line(format!("  and {} more tasks", l.tasks.len() - 10));
     }
 
     line(String::new());
