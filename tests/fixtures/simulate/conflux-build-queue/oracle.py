@@ -18,12 +18,19 @@ for l in open(sys.argv[1]):
 done=[r for r in reqs if 'held' in r]; B=[r for r in done if r['res']=='build']
 print('build requests',len(B),'unfinished build',sum(1 for r in reqs if r['res']=='build' and 'held' not in r),'bridged',sum(1 for r in done if r['lock']),'bridged build',sum(1 for r in B if r['lock']))
 def fifo(jobs,slow=1.0):
-  act=[]; prev=-1e18; out=[]
-  for j in sorted(jobs,key=lambda j:j['arr']):
-    s=max(j['arr'],prev); act=[a for a in act if a>s]
-    while len(act)>=j['cap']:
-      m=min(act); act.remove(m); s=max(s,m); act=[a for a in act if a>s]
-    h=j['hold']*(slow if act else 1.0); act.append(s+h); prev=s; j['w']=s-j['arr']; j['h']=h
+  # Processor sharing: while two or more jobs hold a slot, each advances at 1/slow.
+  jobs=sorted(jobs,key=lambda j:j['arr']); run=[]; t=-1e18; i=0
+  while i<len(jobs) or run:
+    while i<len(jobs) and jobs[i]['arr']<=t and len(run)<jobs[i]['cap']:
+      j=jobs[i]; j['s']=t; j['left']=j['hold']; run.append(j); i+=1
+    rate=1/slow if len(run)>1 else 1.0
+    nxt=[t+j['left']/rate for j in run]
+    if i<len(jobs) and len(run)<jobs[i]['cap']: nxt.append(jobs[i]['arr'])
+    nt=min(nxt); ended=[j for j in run if t+j['left']/rate<=nt]
+    for j in run: j['left']-=(nt-t)*rate
+    t=nt
+    for j in ended:
+      run.remove(j); j['w']=j['s']-j['arr']; j['h']=t-j['s']
   return jobs
 def stats(ws,hs):
   q=sum(ws); ws=sorted(ws); n=len(ws)

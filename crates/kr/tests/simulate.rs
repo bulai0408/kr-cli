@@ -299,9 +299,10 @@ fn the_recorded_capacity_replays_the_measured_waits_of_a_single_queue() {
 }
 
 #[test]
-fn a_slowdown_stretches_the_builds_that_start_beside_another() {
-    // Two slots, 1.5×: B starts beside A and takes 15 minutes [1, 16]; C starts at 10
-    // beside B and takes 7.5 [10, 17.5]; D waits for B until 16: 8 + 13 = 21 minutes.
+fn a_slowdown_stretches_every_build_while_it_runs_beside_another() {
+    // Two slots, 1.5×. A runs alone [0, 1]; from 1, A and B each advance at 1/1.5: A
+    // has 9 left and ends at 14.5, B then has 1 left. C starts at 14.5 beside B, which
+    // ends at 16; D starts at 16 beside C and ends at 17.5. Waits 0 + 0 + 12.5 + 13.
     let text = request("build", "a", 0, 0, 10, false)
         + &request("build", "b", 1, 9, 10, false)
         + &request("build", "c", 2, 18, 5, false)
@@ -322,9 +323,32 @@ fn a_slowdown_stretches_the_builds_that_start_beside_another() {
     let s = v["settings"].as_array().unwrap();
     // One slot: no build runs beside another, so nothing slows down.
     assert_ms(&s[0]["queued_ms"], 49.0 * 60.0);
-    assert_ms(&s[1]["queued_ms"], 21.0 * 60.0);
+    assert_ms(&s[1]["queued_ms"], 25.5 * 60.0);
     // The recorded capacity is replayed as recorded, without the slowdown.
     assert_ms(&v["calibration"]["replayed"]["queued_ms"], 49.0 * 60.0);
+}
+
+#[test]
+fn two_builds_side_by_side_both_take_the_measured_slowdown() {
+    // #69: two cold Conflux builds started together each took 2.03 times as long. A and
+    // B arrive together and hold 3 minutes; C arrives at minute 1 and waits for the
+    // first slot to free. Both A and B end at 3 × 2.03 = 6.09, so C waits 5.09 minutes.
+    let text = request("build", "a", 0, 0, 3, false)
+        + &request("build", "bb", 0, 3, 3, false)
+        + &request("build", "c", 1, 5, 1, false);
+    let v = Home::with_events("2026-11-01", &text).json(&[
+        "simulate",
+        "--build",
+        "2",
+        "--since",
+        NOV1,
+        "--slowdown",
+        "2.03",
+    ]);
+    let s = &v["settings"][0];
+    assert_ms(&s["queued_ms"], 5.09 * 60.0);
+    // Held 6.09 + 6.09 + 1 minutes.
+    assert_share(&s["queue_share"], 5.09 / (5.09 + 13.18));
 }
 
 #[test]
@@ -411,8 +435,8 @@ fn conflux_build_queue_with_a_slowdown() {
         "--slowdown",
         "1.5",
     ]);
-    assert_ms(&v["settings"][0]["queued_ms"], 448.7);
-    assert_share(&v["settings"][0]["queue_share"], 0.0673);
+    assert_ms(&v["settings"][0]["queued_ms"], 682.7);
+    assert_share(&v["settings"][0]["queue_share"], 0.0972);
 }
 
 #[test]
