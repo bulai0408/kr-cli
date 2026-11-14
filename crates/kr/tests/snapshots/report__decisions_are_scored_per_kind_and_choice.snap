@@ -9,6 +9,8 @@ Time (wall is per run, so parallel runs add up)
   longest: 10:10 run · 49m (0s queued) · fail
   longest: 10:00 run · 1m (0s queued) · fail
 
+Light candidates: 0 tasks held build or sim at least 5 times, p90 under 15s (`kr lock light` does not queue behind heavy work)
+
 Rework: 1 round (runs of an item after it failed or was unverified)
   modules: 2 runs, 2 failed, last fail
 
