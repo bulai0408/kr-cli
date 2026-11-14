@@ -87,6 +87,27 @@ enum Command {
 
 pub use ctx::{Ctx, Loaded};
 
+/// Commands agents guess often (invocation log, #82) and the real command each runs.
+/// Hidden: clap never sees them, so help and `kr skill` name only the real commands.
+const GUESSES: &[(&[&str], &[&str])] = &[
+    (&["status"], &["queue"]),
+    (&["lock", "status"], &["queue"]),
+    (&["pool", "list"], &["pool", "status"]),
+];
+
+/// `args` with a guessed command replaced by the real one, and the hint naming it.
+fn resolve_guess(args: &[String]) -> Option<(Vec<String>, String)> {
+    let at = args.iter().position(|a| !a.starts_with('-'))?;
+    let (guess, real) = GUESSES.iter().find(|(guess, _)| {
+        args[at..].len() >= guess.len() && guess.iter().zip(&args[at..]).all(|(g, a)| g == a)
+    })?;
+    let mut resolved = args[..at].to_vec();
+    resolved.extend(real.iter().map(|w| (*w).to_owned()));
+    resolved.extend_from_slice(&args[at + guess.len()..]);
+    let hint = format!("`kr {}` is `kr {}`", guess.join(" "), real.join(" "));
+    Some((resolved, hint))
+}
+
 fn main() -> ExitCode {
     let started = std::time::Instant::now();
     let args: Vec<String> = std::env::args_os()
@@ -98,7 +119,14 @@ fn main() -> ExitCode {
         env: std::env::vars().collect(),
         json: false,
     };
-    let cli = match Cli::try_parse() {
+    let guess = resolve_guess(&args);
+    let parsed = match &guess {
+        Some((resolved, _)) => {
+            Cli::try_parse_from(std::iter::once("kr".to_owned()).chain(resolved.iter().cloned()))
+        }
+        None => Cli::try_parse(),
+    };
+    let cli = match parsed {
         Ok(cli) => cli,
         Err(err) => {
             // `--help` and `--version` print on stdout; they are not calls worth logging.
@@ -117,6 +145,13 @@ fn main() -> ExitCode {
     init_tracing(cli.verbose);
     slots::watch_children();
     ctx.json = cli.json;
+    if let Some((_, hint)) = guess {
+        if ctx.json {
+            eprintln!("{}", serde_json::json!({ "hint": hint }));
+        } else {
+            eprintln!("{hint}");
+        }
+    }
     let result = match cli.command {
         Command::Init => commands::init::run(&ctx),
         Command::Merge(args) => commands::merge::run(&ctx, args),
