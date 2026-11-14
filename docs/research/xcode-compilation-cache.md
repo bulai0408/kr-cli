@@ -49,7 +49,7 @@
 结论：用 `XCODE_XCCONFIG_FILE` 就够了，不需要包一层 xcodebuild 或改调用方的命令行。
 
 ## 5. 没有查的
-- DerivedData 在 worktree 外时，Conflux 里导入 Clang 模块的 target 在每个 worktree 都不命中（ADR 0027 实测）。是哪个参数带进了 DerivedData 路径，没有用 `llvm-cas` 比对；推断是预编译模块的路径。也没有试映射 `$(DERIVED_DATA_DIR)` 能否解决。
+- DerivedData 在 worktree 外时，Conflux 里导入 Clang 模块的 target 在每个 worktree 都不命中（ADR 0028 实测）。是哪个参数带进了 DerivedData 路径，没有用 `llvm-cas` 比对；推断是预编译模块的路径。也没有试映射 `$(DERIVED_DATA_DIR)` 能否解决。
 - Bazel rules_swift、XCRemoteCache 怎样让路径与目录无关：没有读它们的源码。
 - 宏插件：swift-build 用 `-Xfrontend -load-plugin-executable <真实路径>` 传宏插件，driver 不映射它。修复见 https://github.com/swiftlang/swift-build/pull/1836（2026-10-07 合入），Xcode 27.1 可能还没有。Krill 有宏（swift-syntax），但实测命中率已经够用，没有单独查。
 - 调试：映射后调试信息里的路径是 `/^worktree/…`。在 Xcode 里调试这样编出的产物，可能要给 LLDB 配源码映射。kr 编的是测试产物，没有验证。

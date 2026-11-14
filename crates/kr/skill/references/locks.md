@@ -22,7 +22,7 @@ With --json, lease notices go to stderr with selection {by: name|udid|kind, valu
 sim_leased/sim_released events carry fields.selection. Child stdout stays unchanged.
 
 `kr lock build --compilation-cache --task <t> -- <xcodebuild …>` compiles through the
-project's shared compilation cache (ADR 0013, 0027): kr writes an xcconfig with the
+project's shared compilation cache (ADR 0013, 0028): kr writes an xcconfig with the
 cache settings for this worktree and passes it as XCODE_XCCONFIG_FILE, which
 overrides every other setting for every target. It needs `compilation_cache = true`
 in `.kr.toml`; otherwise, and when XCODE_XCCONFIG_FILE is already set, the worktree is

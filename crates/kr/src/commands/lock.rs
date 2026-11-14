@@ -24,7 +24,7 @@ pub struct LockArgs {
     #[arg(long)]
     task: Option<String>,
 
-    /// Compile through the project's shared compilation cache (ADR 0027). Needs
+    /// Compile through the project's shared compilation cache (ADR 0028). Needs
     /// `compilation_cache = true` in `.kr.toml`; otherwise kr says why and runs without.
     /// Never for archives.
     #[arg(long)]

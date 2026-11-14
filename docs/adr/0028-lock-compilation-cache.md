@@ -1,4 +1,4 @@
-# 0027 `kr lock --compilation-cache`：调用方逐次选择共享编译缓存
+# 0028 `kr lock --compilation-cache`：调用方逐次选择共享编译缓存
 
 状态：提议（2026-11-14，#80 由 owner 提出，待协调者在 PR 审查时确认）。扩展 ADR 0013，不改它的决定。
 

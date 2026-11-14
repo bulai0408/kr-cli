@@ -43,7 +43,7 @@ fn settings(root: &Path, dir: &Path) -> Vec<String> {
     ]
 }
 
-/// What `kr lock --compilation-cache` does for one command (ADR 0027).
+/// What `kr lock --compilation-cache` does for one command (ADR 0028).
 pub enum ForCommand {
     /// The child gets `XCODE_XCCONFIG_FILE=<xcconfig>`, which compiles through `dir`.
     On { dir: PathBuf, xcconfig: PathBuf },
