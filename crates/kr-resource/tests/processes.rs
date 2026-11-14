@@ -16,6 +16,7 @@ fn holder(task: &str) -> Holder {
         pid: std::process::id(),
         child_pid: None,
         started: Timestamp::now(),
+        worktree: None,
     }
 }
 

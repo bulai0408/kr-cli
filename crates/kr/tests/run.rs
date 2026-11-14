@@ -650,6 +650,7 @@ fn holder() -> kr_resource::Holder {
         pid: std::process::id(),
         child_pid: None,
         started: jiff::Timestamp::now(),
+        worktree: None,
     }
 }
 

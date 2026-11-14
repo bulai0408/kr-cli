@@ -93,6 +93,13 @@ fn take_in(
         pid: std::process::id(),
         child_pid: None,
         started: Timestamp::now(),
+        worktree: Some(
+            loaded
+                .project_file
+                .as_deref()
+                .and_then(std::path::Path::parent)
+                .map_or_else(|| ctx.cwd.clone(), std::path::Path::to_owned),
+        ),
     };
     log.append(&Event::now(
         run_id,
@@ -104,6 +111,7 @@ fn take_in(
     let heavy = matches!(res, Resource::Build | Resource::Sim | Resource::Device);
     let policy = &loaded.config.machine.load;
     let max_wait = kr_config::parse_timeout(&policy.max_wait).unwrap_or(kr_config::DEFAULT_TIMEOUT);
+    let mut resumed = false;
     let (slot, legacy, sample) = loop {
         // Old scripts enter kr while holding the machine lock. Never occupy a slot
         // while waiting for that lock, or their nested kr can wait for our slot.
@@ -114,10 +122,13 @@ fn take_in(
             None
         };
         let ticket = pool.enqueue(res, &holder)?;
+        resumed |= ticket.resumed();
         let mut announced = false;
         let slot = loop {
-            // Only commands that catch stop signals (see kr_exec) see one here.
+            // Only commands that catch stop signals (see kr_exec) see one here. The
+            // usual sender is an agent's tool timeout, and the agent asks again soon.
             if let Some(signal) = kr_exec::stop_signal() {
+                ticket.leave_reservation();
                 anyhow::bail!("stopped by signal {signal} while waiting for {res}");
             }
             if let Some(slot) = ticket.try_acquire(capacity)? {
@@ -177,7 +188,7 @@ fn take_in(
         run_id,
         project,
         EventKind::SlotAcquired,
-        json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64, "load_sample": sample }),
+        json!({ "resource": res, "slot": slot.index(), "task": task, "waited_ms": queued.elapsed().as_millis() as u64, "load_sample": sample, "resumed_place": resumed }),
     ))?;
     Ok(Taken {
         slot,

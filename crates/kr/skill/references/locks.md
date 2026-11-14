@@ -25,6 +25,11 @@ sim_leased/sim_released events carry fields.selection. Child stdout stays unchan
 A child killed by signal n returns 128+n. Queue cancellation and kr errors return 1; argument errors
 return 2. Queue notices go to stderr; --json does not wrap the child's output.
 SIGINT/SIGTERM/SIGHUP are forwarded to the child's group; slots return on exit.
+A waiter killed by a signal before it got a slot (often a tool timeout) keeps its
+place for 10 minutes: run the same --task from the same worktree again and it goes
+back to that place. Its place never holds others back while it is away. When `kr queue`
+estimates a wait longer than your tool's timeout, start kr lock in the background and
+poll it instead of letting the timeout kill it.
 Nested locks re-enter only after checking that an ancestor owns the slot.
 Keep [legacy] until the migration checklist is confirmed: install the new kr on
 each machine, switch scripts, switch AGENTS.md, then remove [legacy].
