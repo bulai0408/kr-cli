@@ -782,6 +782,7 @@ name = "kr-resource"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "blake3",
  "jiff",
  "libc",
  "serde",
