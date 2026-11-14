@@ -187,6 +187,89 @@ fn unavailable_current_load_is_unknown_and_expired_wait_has_zero_remaining() {
     assert_eq!(m.queue()["resources"][0]["load_waiters"], json!([]));
 }
 
+#[test]
+fn a_long_estimated_wait_suggests_a_configured_remote() {
+    // (remote declared, recent build hold, --json, hint expected)
+    let cases = [
+        (true, 600_000, false, true),
+        (true, 600_000, true, true),
+        (false, 600_000, false, false),
+        (true, 1_000, false, false),
+    ];
+    for (remote, held_ms, as_json, hinted) in cases {
+        let m = Machine::new();
+        if remote {
+            std::fs::create_dir_all(m.dir.path().join(".config/kr")).unwrap();
+            std::fs::write(
+                m.dir.path().join(".config/kr/config.toml"),
+                "[remotes.work]\nssh = \"work-mac\"\n",
+            )
+            .unwrap();
+        }
+        m.log()
+            .append(&Event::at(
+                Timestamp::now() - SignedDuration::from_secs(600),
+                RunId::new(),
+                Some("example"),
+                EventKind::SlotReleased,
+                json!({ "resource": "build", "slot": 0, "task": "earlier", "held_ms": held_ms }),
+            ))
+            .unwrap();
+        let _holder = WaitingProcess(
+            m.kr()
+                .args(["lock", "build", "--task", "holder", "--", "sleep", "30"])
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap(),
+        );
+        wait_for(|| {
+            m.queue()["resources"][0]["holders"]
+                .as_array()
+                .unwrap()
+                .len()
+                == 1
+        });
+
+        let stderr = m.dir.path().join("stderr");
+        let mut cmd = m.kr();
+        if as_json {
+            cmd.arg("--json");
+        }
+        let _waiter = WaitingProcess(
+            cmd.args(["lock", "build", "--task", "waiter", "--", "true"])
+                .stdout(Stdio::null())
+                .stderr(std::fs::File::create(&stderr).unwrap())
+                .spawn()
+                .unwrap(),
+        );
+        wait_for(|| {
+            std::fs::read_to_string(&stderr)
+                .unwrap()
+                .contains("waiting")
+        });
+        let text = std::fs::read_to_string(&stderr).unwrap();
+        let hint = "consider running on a remote machine: kr run --remote work";
+        if as_json {
+            let line: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+            assert_eq!(line["waiting"], "build", "{text}");
+            assert_eq!(line["ahead"], 0, "{text}");
+            assert!(line["eta_seconds"].as_u64().unwrap() >= 300, "{text}");
+            assert_eq!(line["hint"], hint, "{text}");
+        } else {
+            assert!(text.contains("0 ahead, eta ~"), "{text}");
+            assert_eq!(text.contains(hint), hinted, "{text}");
+        }
+    }
+}
+
+fn wait_for(mut ready: impl FnMut() -> bool) {
+    let start = Instant::now();
+    while !ready() {
+        assert!(start.elapsed() < Duration::from_secs(10), "timed out");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 struct WaitingProcess(Child);
 
 impl Drop for WaitingProcess {
