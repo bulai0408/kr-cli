@@ -28,7 +28,9 @@ overrides every other setting for every target. It needs `compilation_cache = tr
 in `.kr.toml`; otherwise, and when XCODE_XCCONFIG_FILE is already set, the worktree is
 under /tmp or /var, or the command archives, kr prints why and runs without it.
 slot_released then carries compilation_cache {enabled, dir, xcconfig | ignored}.
-Never use it for builds you ship: debug info gets /^worktree paths.
+Keep -derivedDataPath inside the worktree: with DerivedData elsewhere, targets that
+import Clang modules miss the cache in every worktree. Never use it for builds you
+ship: debug info gets /^worktree paths.
 
 `kr lock` passes through stdout, stderr and the child's exit code, including 4.
 A child killed by signal n returns 128+n. Queue cancellation and kr errors return 1; argument errors
