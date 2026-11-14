@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Fake xcodebuild for the #69b dry run. `build` burns CPU in a grandchild for
+KR69B_FAKE_BUILD_SECONDS so the rusage of reaped descendants is exercised."""
+import os
+import subprocess
+import sys
+
+args = sys.argv[1:]
+if args == ['-version']:
+    print('Xcode 0.0 (fake)\nBuild version 0A0')
+elif '-resolvePackageDependencies' in args:
+    print('resolved (fake)')
+elif args[:1] == ['build']:
+    os.makedirs(args[args.index('-derivedDataPath') + 1], exist_ok=True)
+    seconds = float(os.environ.get('KR69B_FAKE_BUILD_SECONDS', '0.5'))
+    burn = 'import time\nend = time.time() + %r\nwhile time.time() < end: pass' % seconds
+    subprocess.run([sys.executable, '-c', burn], check=True)
+    if os.environ.get('KR69B_FAKE_BUILD_FAIL'):
+        print('** BUILD FAILED **')
+        sys.exit(65)
+    print('** BUILD SUCCEEDED **')
+else:
+    sys.exit(f'fake xcodebuild: unsupported {args}')
