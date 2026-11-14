@@ -44,7 +44,7 @@ Optional fields may be omitted. A default of "unset" passes no override to Xcode
 | `project.build_settings` | Additional KEY=VALUE settings on project xcodebuild calls; empty map. | `{ APP_TEST_ID = "dev.example.atlas.e2e" }` |
 | `project.xcode` | Required installed Xcode version prefix; unset (selected Xcode). | `"27.1"` |
 | `project.platforms` | Build platforms; empty list. Build suites need a platform here or locally. Values: iOS, tvOS, macOS, watchOS, visionOS. | `["iOS", "macOS"]` |
-| `project.compilation_cache` | Shared Xcode compilation cache across project worktrees; false. | `true` |
+| `project.compilation_cache` | Shared Xcode compilation cache across project worktrees, for `kr run`/`check` and `kr lock --compilation-cache`; false. | `true` |
 | `simulators.runtime` | Installed runtime name or identifier for all kinds; unset. Required here or per kind. | `"iOS 27.0"` |
 | `simulators.devices` | Named device kinds; empty map. `default` produces Atlas-Verify-1; other kinds produce Atlas-Verify-iPad-1. | `[simulators.devices.default]` |
 | `simulators.devices.<kind>.device_type` | Required installed device type name or identifier compatible with runtime. | `"iPhone 17 Pro"` |

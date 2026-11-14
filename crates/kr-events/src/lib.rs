@@ -49,7 +49,9 @@ pub enum EventKind {
     QueueStart,
     /// A task got a slot. Fields include `waited_ms`.
     SlotAcquired,
-    /// A task gave a slot back. Fields include `held_ms`.
+    /// A task gave a slot back. Fields include `held_ms`. `kr lock --compilation-cache`
+    /// adds `compilation_cache` (ADR 0028): enabled, and dir and xcconfig when on, or
+    /// the reason it was ignored.
     SlotReleased,
     /// A nested `kr lock` claimed a held slot it could not prove it owns.
     ReentryDenied,

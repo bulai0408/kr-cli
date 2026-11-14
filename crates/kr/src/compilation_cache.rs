@@ -43,6 +43,87 @@ fn settings(root: &Path, dir: &Path) -> Vec<String> {
     ]
 }
 
+/// What `kr lock --compilation-cache` does for one command (ADR 0028).
+pub enum ForCommand {
+    /// The child gets `XCODE_XCCONFIG_FILE=<xcconfig>`, which compiles through `dir`.
+    On { dir: PathBuf, xcconfig: PathBuf },
+    /// The command runs without the cache, for this reason.
+    Ignored(String),
+}
+
+impl ForCommand {
+    /// Decides for `command`, run from the project of `loaded`. The settings go in an
+    /// xcconfig written to `run_dir`: xcodebuild reads `XCODE_XCCONFIG_FILE` for every
+    /// target, package targets included, and lets it override all other settings.
+    pub fn decide(
+        loaded: &Loaded,
+        callers_xcconfig: Option<&str>,
+        command: &[String],
+        run_dir: &Path,
+    ) -> Result<Self> {
+        let ignored = |reason: String| Ok(Self::Ignored(reason));
+        let Ok((project, root)) = loaded.require_project() else {
+            return ignored(
+                "no .kr.toml found from here up to the repo root; the cache is a project setting"
+                    .to_owned(),
+            );
+        };
+        let Some(dir) = dir(project, loaded) else {
+            let file = loaded
+                .project_file
+                .as_deref()
+                .unwrap_or(Path::new(".kr.toml"));
+            return ignored(format!(
+                "{} does not turn the cache on; add `compilation_cache = true` under [project]",
+                file.display()
+            ));
+        };
+        if let Some(temp) = symlinked_temp(&root) {
+            return ignored(format!(
+                "the worktree {} is under {temp}, a symlink to /private{temp}; Xcode and SwiftPM see different paths there and the cache never hits. Put the worktree under /Users",
+                root.display()
+            ));
+        }
+        if let Some(theirs) = callers_xcconfig {
+            return ignored(format!(
+                "XCODE_XCCONFIG_FILE is already set to {theirs}; kr does not replace it. Unset it, or add the cache settings (ADR 0013) to that file"
+            ));
+        }
+        if command.iter().any(|a| a == "archive") {
+            return ignored(
+                "the command archives; prefix mapping rewrites the source paths in its debug information"
+                    .to_owned(),
+            );
+        }
+        std::fs::create_dir_all(run_dir)?;
+        let xcconfig = run_dir.join("compilation-cache.xcconfig");
+        let lines: String = settings(&root, &dir)
+            .iter()
+            .filter_map(|s| s.split_once('='))
+            .map(|(k, v)| format!("{k} = {v}\n"))
+            .collect();
+        std::fs::write(&xcconfig, lines)?;
+        Ok(Self::On { dir, xcconfig })
+    }
+
+    /// The `compilation_cache` field of the `slot_released` event.
+    pub fn event(&self) -> serde_json::Value {
+        match self {
+            Self::On { dir, xcconfig } => {
+                json!({ "enabled": true, "dir": dir, "xcconfig": xcconfig })
+            }
+            Self::Ignored(reason) => json!({ "enabled": false, "ignored": reason }),
+        }
+    }
+}
+
+/// `/tmp` or `/var` if `root` is under one of them (macOS links both to /private).
+fn symlinked_temp(root: &Path) -> Option<&'static str> {
+    ["/tmp", "/var"]
+        .into_iter()
+        .find(|t| root.starts_with(t) || root.starts_with(Path::new("/private").join(&t[1..])))
+}
+
 /// The event fields of a build without the cache.
 pub fn off() -> serde_json::Value {
     json!({ "compilation_cache": { "enabled": false } })
