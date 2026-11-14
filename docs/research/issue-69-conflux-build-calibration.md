@@ -1,0 +1,73 @@
+# #69 用 Conflux 真实构建校准 build 公式（结论：本机保持 1）
+
+## 结论
+
+本机（iMac，Apple M3，4 性能核 + 4 能效核，24 GiB）同时跑两个 Conflux 冷构建，总耗时与串行相同，内存压力升到 warn。数据不支持把本机 build 容量改为 2。`clamp(min(P/5, M/16), 1, 2)` 不变，不写新 ADR。
+
+| 容量 | 两个构建的总耗时 | 单个构建耗时 | CPU 空闲均值 | 内存压力 | swap |
+|---:|---:|---|---:|---|---|
+| 1（串行） | 366.6 秒 | 180.9 / 185.8 秒 | 9.7% | 301/301 次采样 normal | 1176 MB，不变 |
+| 2（并行） | 372.1 秒 | 372.1 / 371.6 秒 | 3.2% | 283 次 normal，15 次 warn | 1176 MB，不变 |
+
+- 配对总耗时比 372.1 / 366.6 = 1.015：并行没有省时间。
+- 每个构建的减速倍数 371.8 / 183.3 = 2.03。
+- 4 个构建全部 `BUILD SUCCEEDED`。
+
+## 为什么不是更快：瓶颈是 CPU
+
+单个冷构建已经把 8 个核占满：串行阶段 301 次采样里 245 次 CPU 空闲低于 10%，空闲均值 9.7%。第二个构建只能分走剩下不到 10% 的空闲，所以两个构建各自变慢一倍，总耗时不变。#39 的 KrSample 构建只有 7 到 13 秒，大部分时间花在进程启动和串行步骤上，单个构建占不满 CPU，所以当时测到并行省 26%（推论：#39 没有采 CPU 空闲）。这个差别说明小样本高估了大工程的收益。
+
+日志里没有编译缓存回放：单个构建约 3,900 个编译步骤，generic iOS Simulator 目的地同时编 arm64 与 x86_64。所以这里测的是真实编译，不是缓存命中。SwiftPM 和 CarPlay 预编译框架的用户级缓存保留（与 #39 相同），第一次解析在计时外预热。
+
+## 内存
+
+- warn 出现在并行阶段末尾，t = 706.8 秒到 724.0 秒，共 15 次采样（约 18 秒），没有到 critical。
+- 压缩器占用从串行阶段的最高 6.42 GiB 升到 8.40 GiB；swap 全程 1176 MB 不变。
+- 实验前机器空闲时 `PhysMem` 已显示约 23 GB used、5.7 GB compressor：这台机器上还有别的应用常驻，两个构建留给它们的余量很小。
+
+按预先写下的规则（每一对并行都要比串行快，且全部采样 normal），两条都不满足。
+
+## 方法
+
+- 工作负载：Conflux origin/main `186bcb0f`（见 `evidence/issue-69/conflux-commit.txt`）的临时分离检出，`xcodegen generate --spec ConfluxMobile.yml` 后执行 `xcodebuild build -project ConfluxMobile.xcodeproj -scheme ConfluxMobile -destination 'generic/platform=iOS Simulator' -derivedDataPath <每个构建一个新目录>`。Xcode 版本见 `evidence/issue-69/xcode.txt`。
+- 独占：整个窗口用 `kr lock build --task kr69-calibration -- python3 scripts/calibrate-conflux-build.py …` 持有一个真实 build 槽位（本机 build 容量 1，没有用独立 `KR_STATE_DIR`）。窗口内没有别的 kr 持有者；只有一个 `conflux-zero-test-guard-test` 在 build 队列里等。sim 槽位全程空闲。kr 之外的进程（桌面应用）没有控制。
+- 采样：约每 1.2 秒一次，记录 `kern.memorystatus_vm_pressure_level`、`vm.swapusage`、`vm.compressor_bytes_used`、1/5/15 分钟负载、`top` 的 CPU 与 PhysMem 行、剩余磁盘、`kr queue --json`。共 626 次，见 `evidence/issue-69/samples.ndjson.gz`。
+- 安全规则：压力到 warn 后不再新增负载；到 critical 终止构建。本次在第一对并行构建末尾到 warn，驱动脚本按规则停止，所以只跑了一组 A/B（不是 A/B/A/B），增量构建（改一个 ConfluxCore 文件后重编）也没有测。整个窗口 12.8 分钟。
+
+## 回放（`kr simulate`，在 Conflux 工作区执行）
+
+`kr simulate --build 1 --build 2 --slowdown 2.03 --since 7d`（原文见 `evidence/issue-69/simulate-2.03.txt`）：
+
+| 设定 | 排队总时长 | 占比 | p90 等待 |
+|---|---:|---:|---:|
+| build=1 | 2055.1 分钟 | 38% | 3.7 分钟 |
+| build=2，slowdown 2.03 | 1200.4 分钟 | 19% | 2.0 分钟 |
+
+校准误差 −32.7%（目标 ≤ 10%），build=2 在校准范围外，只能看方向。回放仍显示 build=2 能减少排队，原因有两个，都使它偏乐观：
+
+1. `--slowdown` 只让“开始时已有别的构建在跑”的那个构建变慢，已经在跑的那个不变慢。本次实测两个都变慢了 2 倍。（推论：按实测双边减速重放，收益会明显更小。）
+2. 7 天的 build 请求里有大量很短的持有，例如 `conflux-zero-test-guard-test` 中位数不到 1 分钟。它们排在 3 分钟的构建后面等，容量 2 让它们插空，所以排队时间下降，但这不需要多一份 CPU。
+
+## 建议
+
+- 本机保持 build=1，公式不变。
+- 本机的排队要从短任务入手：把只跑几秒、不编 App 的检查移到 light（#70 的 `kr report` 已经列出候选，Conflux 分支 `t3/research-build-verification-speedups` 的 418ed880 正在迁，尚未合入）。这比把大构建并行更省时间，也不增加内存压力。
+- 后续可选（未做）：`kr simulate --slowdown` 改为对重叠的两个构建都生效，再用 2.03 重放一次。
+
+## 没有验证的
+
+- 只有 1 对样本，没有同设置的重复，无法给出区间或噪声。#39 同设置两轮的差异最高 10.4%（build），而这里的结论是“并行没有省时间”，与 10% 噪声相比，1.5% 的差异不足以说明更慢，只能说明没有收益。
+- 增量构建没有测（被 warn 停止规则跳过）。增量构建的串行步骤（链接、脚本阶段）比例更高，单个构建可能占不满 CPU，并行可能有收益。kr 的容量不区分冷构建与增量构建，而新工作区的第一次构建都是冷构建，所以单靠增量数据不足以改变本结论。
+- work Mac（M4 Pro，10P，48 GiB）的 build=2 仍来自 #39 的 KrSample，没有用 Conflux 重测。
+
+## 复现
+
+```sh
+git -C <Conflux> worktree add --detach /tmp/kr69-conflux origin/main
+(cd /tmp/kr69-conflux && xcodegen generate --spec ConfluxMobile.yml)
+kr lock build --task kr69-calibration -- \
+    python3 scripts/calibrate-conflux-build.py /tmp/kr69-conflux /tmp/kr69/dd /tmp/kr69/out 72
+python3 scripts/analyze-conflux-build.py /tmp/kr69/out > summary.json
+```
+
+驱动脚本在 warn 时停止加负载，自己删除 DerivedData，并恢复增量构建改过的源文件。证据：[summary.json](evidence/issue-69/summary.json)、[builds.json](evidence/issue-69/builds.json)、采样、构建日志末尾、回放原文。

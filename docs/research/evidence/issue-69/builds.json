@@ -1,0 +1,76 @@
+{
+ "phases": [
+  {
+   "phase": "warm-resolve",
+   "mode": "untimed",
+   "capacity": 0,
+   "start": 0,
+   "end": 13.07,
+   "total_seconds": 13.07,
+   "builds": [],
+   "exit": 0,
+   "stop": null
+  },
+  {
+   "phase": "cold-1",
+   "mode": "serial",
+   "capacity": 1,
+   "start": 13.535,
+   "end": 380.179,
+   "total_seconds": 366.64,
+   "builds": [
+    {
+     "label": "cold-1-a",
+     "dd": "c1a",
+     "start": 13.535,
+     "end": 194.382,
+     "seconds": 180.85,
+     "exit": 0,
+     "ok": true
+    },
+    {
+     "label": "cold-1-b",
+     "dd": "c1b",
+     "start": 194.382,
+     "end": 380.179,
+     "seconds": 185.8,
+     "exit": 0,
+     "ok": true
+    }
+   ],
+   "stop": null
+  },
+  {
+   "phase": "cold-2",
+   "mode": "parallel",
+   "capacity": 2,
+   "start": 387.559,
+   "end": 759.609,
+   "total_seconds": 372.05,
+   "builds": [
+    {
+     "label": "cold-2-a",
+     "dd": "c2a",
+     "start": 387.559,
+     "end": 759.609,
+     "seconds": 372.05,
+     "exit": 0,
+     "ok": true
+    },
+    {
+     "label": "cold-2-b",
+     "dd": "c2b",
+     "start": 387.56,
+     "end": 759.158,
+     "seconds": 371.6,
+     "exit": 0,
+     "ok": true
+    }
+   ],
+   "stop": "warn"
+  }
+ ],
+ "pressure_max": 2,
+ "stop": "warn",
+ "window_seconds": 769.922
+}
