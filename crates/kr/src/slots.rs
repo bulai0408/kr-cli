@@ -16,6 +16,8 @@ use crate::{Ctx, Loaded};
 
 const POLL: Duration = Duration::from_millis(500);
 const LOAD_POLL: Duration = Duration::from_secs(15);
+/// From this estimated wait on, a waiter is told about a declared remote machine.
+const REMOTE_HINT_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// A slot taken for a task.
 pub struct Taken {
@@ -357,9 +359,15 @@ fn wait_for_load(
     Ok(())
 }
 
+fn remote_hint(loaded: &Loaded) -> Option<String> {
+    let name = loaded.config.machine.remotes.keys().next()?;
+    Some(format!(
+        "consider running on a remote machine: kr run --remote {name}"
+    ))
+}
+
 fn suggest_remote(ctx: &Ctx, loaded: &Loaded) {
-    if let Some(name) = loaded.config.machine.remotes.keys().next() {
-        let hint = format!("consider running on a remote machine: kr run --remote {name}");
+    if let Some(hint) = remote_hint(loaded) {
         if ctx.json {
             eprintln!("{}", json!({ "hint": hint }));
         } else {
@@ -390,19 +398,24 @@ fn announce_wait(
     .get(position)
     .copied()
     .flatten();
+    let hint = eta
+        .filter(|d| *d >= REMOTE_HINT_AFTER)
+        .and_then(|_| remote_hint(loaded));
     if ctx.json {
-        eprintln!(
-            "{}",
-            json!({ "waiting": res, "ahead": position, "holders": status.holders.len(), "eta_seconds": eta.map(|d| d.as_secs()) })
-        );
+        let mut notice = json!({ "waiting": res, "ahead": position, "holders": status.holders.len(), "eta_seconds": eta.map(|d| d.as_secs()) });
+        if let Some(hint) = hint {
+            notice["hint"] = json!(hint);
+        }
+        eprintln!("{notice}");
     } else {
         let eta = eta.map_or_else(
             || "unknown".to_owned(),
             |d| format!("~{}", human_duration(d)),
         );
         eprintln!(
-            "waiting for {res}: {}/{capacity} busy, {position} ahead, eta {eta} (see `kr queue {res}`)",
-            status.holders.len()
+            "waiting for {res}: {}/{capacity} busy, {position} ahead, eta {eta} (see `kr queue {res}`){}",
+            status.holders.len(),
+            hint.map(|h| format!("\n{h}")).unwrap_or_default()
         );
     }
     Ok(())

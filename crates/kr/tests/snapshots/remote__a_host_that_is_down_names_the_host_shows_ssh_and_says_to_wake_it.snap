@@ -1,0 +1,7 @@
+---
+source: crates/kr/tests/remote.rs
+expression: out.stderr
+---
+error: cannot connect to nowhere (nowhere.invalid) over ssh
+  - cannot connect to nowhere (nowhere.invalid) over ssh: ssh: connect to host 192.168.31.141 port 22: Host is down
+    next: check that nowhere is powered on, awake and on this network, and that `ssh nowhere.invalid true` connects from here; then run again, or run here without --remote

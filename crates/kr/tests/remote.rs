@@ -402,6 +402,52 @@ fn an_unreachable_host_is_refused_with_how_to_reach_it() {
     );
 }
 
+/// The recorded probe of `nowhere` with what ssh printed changed.
+fn nowhere_probe(stderr: &str) -> Vec<Recording> {
+    let mut probe = fixture("probe-nowhere").remove(0);
+    probe.stderr = stderr.to_owned();
+    let mut recs = fixture("git-pushed");
+    recs.push(probe);
+    recs
+}
+
+#[test]
+fn a_host_that_is_down_names_the_host_shows_ssh_and_says_to_wake_it() {
+    let r = Repo::new();
+    // What ssh printed for `work` on 2026-11-13, from the owner's kr event log.
+    let out = r.kr(
+        &nowhere_probe("ssh: connect to host 192.168.31.141 port 22: Host is down\r\n"),
+        &["run", "--remote", "nowhere", "source-checks"],
+    );
+    assert_eq!(out.code, Some(1));
+    insta::assert_snapshot!(out.stderr);
+}
+
+#[test]
+fn a_host_that_refuses_the_key_says_how_to_log_in_without_a_prompt() {
+    let r = Repo::new();
+    // Recorded with `ssh -o BatchMode=yes krnobody@localhost true` on 2026-11-14.
+    let out = r.kr(
+        &nowhere_probe(
+            "krnobody@localhost: Permission denied (publickey,password,keyboard-interactive).\r\n",
+        ),
+        &["--json", "run", "--remote", "nowhere", "source-checks"],
+    );
+    assert_eq!(out.code, Some(1));
+    let v = json(&out);
+    assert_eq!(
+        v["error"]["message"],
+        "cannot connect to nowhere (nowhere.invalid) over ssh"
+    );
+    let p = &v["error"]["problems"][0];
+    assert_eq!(p["code"], "ssh_auth");
+    assert!(
+        p["message"].as_str().unwrap().contains("Permission denied"),
+        "{p}"
+    );
+    assert!(p["next"].as_str().unwrap().contains("BatchMode=yes"), "{p}");
+}
+
 /// The localhost probe with its output changed.
 fn mac_probe(stdout: impl Fn(&str) -> String) -> Recording {
     let mut probe = fixture("probe-localhost").remove(0);
