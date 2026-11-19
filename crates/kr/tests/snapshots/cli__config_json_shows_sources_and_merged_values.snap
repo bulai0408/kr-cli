@@ -1,11 +1,13 @@
 ---
 source: crates/kr/tests/cli.rs
-assertion_line: 81
 expression: "serde_json::from_str::<serde_json::Value>(&sb.clean(json.to_string().as_bytes())).unwrap()"
 ---
 {
   "config": {
     "machine": {
+      "compilation_cache": {
+        "limit": null
+      },
       "legacy": {
         "machine_lock": null,
         "poll": null,

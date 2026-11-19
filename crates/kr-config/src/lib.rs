@@ -51,6 +51,7 @@ const MACHINE_KEYS: &[&str] = &[
     "load",
     "legacy",
     "remotes",
+    "compilation_cache",
 ];
 
 /// The loaded configuration: machine layers merged, plus the project file if any.
@@ -77,6 +78,18 @@ pub struct MachineConfig {
     /// SSH hosts `kr run --remote <name>` may run on, keyed by that name. kr connects
     /// only to these, with the system `ssh`.
     pub remotes: BTreeMap<String, Remote>,
+    /// The shared compilation caches of all projects on this machine (ADR 0029).
+    pub compilation_cache: CompilationCache,
+}
+
+/// `[compilation_cache]`: how large Xcode lets each project's shared cache grow.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CompilationCache {
+    /// Size limit per project, e.g. "30G": bytes, or a number ending in K, M, G or T
+    /// (powers of 1024). "0" means no limit. Default: the smaller of 20 GiB and 5% of
+    /// the disk.
+    pub limit: Option<String>,
 }
 
 /// A remote machine: an SSH host the user declared. kr does not check the address and

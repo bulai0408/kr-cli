@@ -205,6 +205,8 @@ Do not change an existing legacy bridge until the owner confirms all callers mig
 | `remotes.<name>.ssh` | Required SSH host or ~/.ssh/config alias. | `"build-mac"` |
 | `remotes.<name>.dir` | Project clone directory on host; unset means ~/kr-remote. | `"~/kr-remote"` |
 | `remotes.<name>.kr` | Remote kr executable; unset means kr from SSH PATH. | `"kr"` |
+| `compilation_cache` | Size of each project's shared compilation cache; defaults below. `kr doctor` shows each cache's size and last use. | `[compilation_cache]` |
+| `compilation_cache.limit` | Per-project limit Xcode prunes the cache to: bytes, or a number ending in K, M, G or T (powers of 1024); "0" means no limit. Default min(20G, 5% of the disk). The cache can briefly exceed it by one generation. | `"30G"` |
 
 ## Complete machine example
 
@@ -233,4 +235,6 @@ poll = "30s"
 ssh = "build-mac"
 dir = "~/kr-remote"
 kr = "kr"
+[compilation_cache]
+limit = "30G"
 ```

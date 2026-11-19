@@ -8,7 +8,7 @@ use kr_resource::Resource;
 use serde_json::{Value, json};
 
 use super::device;
-use crate::Ctx;
+use crate::{Ctx, compilation_cache};
 
 const GB: f64 = (1u64 << 30) as f64;
 
@@ -73,6 +73,11 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
         .count();
     let warnings = problems.len() - errors;
     let legacy = legacy_report(&loaded)?;
+    let cache_limit = compilation_cache::Limit::new(
+        &loaded.config.machine,
+        compilation_cache::disk_bytes(&loaded.state_dir),
+    )?;
+    let caches = compilation_cache::usage(&loaded.state_dir);
 
     if ctx.json {
         let mut out = json!({
@@ -99,6 +104,11 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
             "runtimes": profile.runtimes.iter().filter(|r| r.is_available).map(|r| &r.name).collect::<Vec<_>>(),
             "capacity": capacity.iter().cloned().collect::<serde_json::Map<_, _>>(),
             "suggested_capacity": kr_machine::suggest(&profile.hardware),
+            "compilation_cache": {
+                "limit_bytes": cache_limit.bytes,
+                "limit_source": cache_limit.source,
+                "projects": caches,
+            },
         });
         if let Some(d) = &device {
             out["device"] = d.json()["device"].clone();
@@ -116,6 +126,7 @@ pub fn run(ctx: &Ctx, args: DoctorArgs) -> Result<ExitCode> {
             selected.as_ref(),
             &loaded,
         );
+        print_caches(&cache_limit, &caches);
         if let Some(d) = &device {
             println!("device    {}", d.line());
             println!("          {}", device::Inspected::UI_AUTOMATION_NOTE);
@@ -297,5 +308,28 @@ fn print_human(
             })
             .collect();
         println!("pool      {}: {}", project.project.name, kinds.join(" · "));
+    }
+}
+
+fn print_caches(limit: &compilation_cache::Limit, caches: &[compilation_cache::Usage]) {
+    let limit_text = match limit.bytes {
+        0 => "no limit".to_owned(),
+        b => format!("{:.1} GB", b as f64 / GB),
+    };
+    println!(
+        "cache     compilation cache limit {limit_text} per project ({})",
+        limit.source
+    );
+    for c in caches {
+        let last = c
+            .last_used
+            .map(|t| t.strftime("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "never".to_owned());
+        println!(
+            "          {} {:.1} GB, last used {last}  {}",
+            c.project,
+            c.bytes as f64 / GB,
+            c.dir.display()
+        );
     }
 }

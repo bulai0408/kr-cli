@@ -4,10 +4,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use kr_config::ProjectConfig;
 use kr_events::{Event, EventKind};
 use kr_exec::{Command, Runner};
+use serde::Serialize;
 use serde_json::json;
 
 use crate::Loaded;
@@ -25,14 +26,87 @@ pub fn dir(project: &ProjectConfig, loaded: &Loaded) -> Option<PathBuf> {
     })
 }
 
-/// Build settings that compile through the cache at `dir`. Prefix mapping makes the
-/// cache keys independent of where the worktree `root` is. The project mapping does not
-/// cover the directory a package target compiles in (the one of the `.xcodeproj`), so
-/// the whole worktree is mapped as well.
-fn settings(root: &Path, dir: &Path) -> Vec<String> {
+const GIB: u64 = 1 << 30;
+/// The default limit is the smaller of this and `1 / DEFAULT_DISK_SHARE` of the disk.
+const DEFAULT_MAX: u64 = 20 * GIB;
+const DEFAULT_DISK_SHARE: u64 = 20;
+
+/// How large Xcode lets one project's cache grow (ADR 0029). Xcode starts a new
+/// generation of the cache once the newest one passes half the limit and deletes the
+/// generation before the previous one at the start of the next build, so the cache
+/// settles near the limit instead of at Xcode's default of half the free disk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Limit {
+    /// 0 means no limit.
+    pub bytes: u64,
+    /// Where the value comes from: `[compilation_cache] limit` or the default formula.
+    pub source: String,
+}
+
+impl Limit {
+    /// `[compilation_cache] limit` if set, else the default for a disk of `disk_bytes`.
+    pub fn new(machine: &kr_config::MachineConfig, disk_bytes: u64) -> Result<Self> {
+        if let Some(text) = &machine.compilation_cache.limit {
+            let bytes = parse_size(text).with_context(|| {
+                format!(
+                    "[compilation_cache] limit = \"{text}\" in the machine config is not a size; write bytes or a number ending in K, M, G or T, e.g. \"30G\" (\"0\" for no limit)"
+                )
+            })?;
+            return Ok(Self {
+                bytes,
+                source: "[compilation_cache] limit".to_owned(),
+            });
+        }
+        Ok(Self {
+            bytes: DEFAULT_MAX.min(disk_bytes / DEFAULT_DISK_SHARE),
+            source: format!(
+                "default: min(20 GB, 5% of the {} GB disk)",
+                disk_bytes / GIB
+            ),
+        })
+    }
+}
+
+/// Size of the disk that holds `path` (its nearest existing ancestor), 0 if unknown.
+pub fn disk_bytes(path: &Path) -> u64 {
+    use std::os::unix::ffi::OsStrExt;
+    path.ancestors()
+        .find_map(|p| {
+            let c = std::ffi::CString::new(p.as_os_str().as_bytes()).ok()?;
+            let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
+            (unsafe { libc::statvfs(c.as_ptr(), &mut st) } == 0)
+                .then(|| st.f_blocks as u64 * st.f_frsize)
+        })
+        .unwrap_or(0)
+}
+
+/// `30G` → bytes. Suffixes are powers of 1024; no suffix is bytes.
+fn parse_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (digits, unit) = match text.char_indices().last()? {
+        (i, c) if c.is_ascii_alphabetic() => (&text[..i], c.to_ascii_uppercase()),
+        _ => (text, 'B'),
+    };
+    let shift = match unit {
+        'B' => 0,
+        'K' => 10,
+        'M' => 20,
+        'G' => 30,
+        'T' => 40,
+        _ => return None,
+    };
+    digits.parse::<u64>().ok()?.checked_mul(1 << shift)
+}
+
+/// Build settings that compile through the cache at `dir`, kept under `limit`. Prefix
+/// mapping makes the cache keys independent of where the worktree `root` is. The
+/// project mapping does not cover the directory a package target compiles in (the one
+/// of the `.xcodeproj`), so the whole worktree is mapped as well.
+fn settings(root: &Path, dir: &Path, limit: &Limit) -> Vec<String> {
     vec![
         "COMPILATION_CACHE_ENABLE_CACHING=YES".to_owned(),
         format!("COMPILATION_CACHE_CAS_PATH={}", dir.display()),
+        format!("COMPILATION_CACHE_LIMIT_SIZE={}", limit.bytes),
         "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES".to_owned(),
         "SWIFT_ENABLE_PREFIX_MAPPING=YES".to_owned(),
         "SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),
@@ -95,9 +169,10 @@ impl ForCommand {
                     .to_owned(),
             );
         }
+        let limit = Limit::new(&loaded.config.machine, disk_bytes(&dir))?;
         std::fs::create_dir_all(run_dir)?;
         let xcconfig = run_dir.join("compilation-cache.xcconfig");
-        let lines: String = settings(&root, &dir)
+        let lines: String = settings(&root, &dir, &limit)
             .iter()
             .filter_map(|s| s.split_once('='))
             .map(|(k, v)| format!("{k} = {v}\n"))
@@ -150,7 +225,8 @@ pub fn build(
             "enabled": true, "clean": clean, "hits": hits, "misses": misses,
         } })
     };
-    let shared = cmd.clone().args(settings(root, dir));
+    let limit = Limit::new(&steps.loaded.config.machine, disk_bytes(dir))?;
+    let shared = cmd.clone().args(settings(root, dir, &limit));
     let started = SystemTime::now();
     if steps.run_logged_with(runner, step, &shared, |_| fields(false, started))? {
         return Ok(true);
@@ -161,7 +237,7 @@ pub fn build(
     };
     let first_log = first.log.clone();
     let _ = std::fs::remove_dir_all(clean);
-    let again = cmd.clone().args(settings(root, clean));
+    let again = cmd.clone().args(settings(root, clean, &limit));
     let retry_step = format!("{step} (clean cache)");
     let started = SystemTime::now();
     let ok = steps.run_logged_with(runner, &retry_step, &again, |_| fields(true, started));
@@ -253,4 +329,126 @@ fn suspect(summary: &[String]) -> Option<String> {
         return None;
     }
     Some("the build failed without a compiler error at a source line".to_owned())
+}
+
+/// One project's shared cache on disk.
+#[derive(Debug, Serialize)]
+pub struct Usage {
+    pub project: String,
+    pub dir: PathBuf,
+    pub bytes: u64,
+    /// The newest modification time of anything in the cache.
+    pub last_used: Option<jiff::Timestamp>,
+}
+
+/// The caches under `<state>/cache/<project>/compilation`, largest first.
+pub fn usage(state_dir: &Path) -> Vec<Usage> {
+    let Ok(projects) = std::fs::read_dir(state_dir.join("cache")) else {
+        return Vec::new();
+    };
+    let mut all: Vec<Usage> = projects
+        .filter_map(|e| e.ok())
+        .map(|e| {
+            (
+                e.file_name().to_string_lossy().into_owned(),
+                e.path().join("compilation"),
+            )
+        })
+        .filter(|(_, dir)| dir.is_dir())
+        .map(|(project, dir)| {
+            let (bytes, newest) = walk(&dir);
+            Usage {
+                project,
+                dir,
+                bytes,
+                last_used: newest.and_then(|t| jiff::Timestamp::try_from(t).ok()),
+            }
+        })
+        .collect();
+    all.sort_by(|a, b| b.bytes.cmp(&a.bytes).then(a.project.cmp(&b.project)));
+    all
+}
+
+/// Allocated bytes and newest modification time of the files under `dir`.
+fn walk(dir: &Path) -> (u64, Option<SystemTime>) {
+    use std::os::unix::fs::MetadataExt;
+    let mut bytes = 0;
+    let mut newest = None;
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for entry in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let Ok(meta) = entry.metadata() else { continue };
+            if meta.is_dir() {
+                stack.push(entry.path());
+                continue;
+            }
+            bytes += meta.blocks() * 512;
+            newest = newest.max(meta.modified().ok());
+        }
+    }
+    (bytes, newest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn machine(limit: Option<&str>) -> kr_config::MachineConfig {
+        let mut m = kr_config::MachineConfig::default();
+        m.compilation_cache.limit = limit.map(str::to_owned);
+        m
+    }
+
+    #[test]
+    fn the_default_limit_is_twenty_gib_or_five_percent_of_a_small_disk() {
+        let on = |disk_gib: u64| Limit::new(&machine(None), disk_gib * GIB).unwrap().bytes;
+        assert_eq!(on(926), 20 * GIB);
+        assert_eq!(on(256), 256 * GIB / 20);
+        assert!(
+            Limit::new(&machine(None), 926 * GIB)
+                .unwrap()
+                .source
+                .contains("926 GB")
+        );
+    }
+
+    #[test]
+    fn a_configured_limit_wins_and_zero_means_none() {
+        assert_eq!(
+            Limit::new(&machine(Some("30G")), GIB).unwrap().bytes,
+            30 * GIB
+        );
+        assert_eq!(
+            Limit::new(&machine(Some("512m")), GIB).unwrap().bytes,
+            512 << 20
+        );
+        assert_eq!(Limit::new(&machine(Some("1000")), GIB).unwrap().bytes, 1000);
+        assert_eq!(Limit::new(&machine(Some("0")), GIB).unwrap().bytes, 0);
+    }
+
+    #[test]
+    fn an_unreadable_limit_names_the_key_and_an_example() {
+        for bad in ["", "G", "30GB", "-1G", "1.5G", "99999999999T"] {
+            let err = format!("{:#}", Limit::new(&machine(Some(bad)), GIB).unwrap_err());
+            assert!(
+                err.contains("[compilation_cache] limit") && err.contains("30G"),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn usage_reports_each_project_cache_and_tolerates_a_missing_directory() {
+        let state = tempfile::tempdir().unwrap();
+        assert!(usage(state.path()).is_empty());
+        let dir = state.path().join("cache/Demo/compilation/builtin/v1.1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("v9.data"), vec![1u8; 64 << 10]).unwrap();
+        std::fs::create_dir_all(state.path().join("cache/Other")).unwrap();
+        let all = usage(state.path());
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].project, "Demo");
+        assert!(all[0].bytes >= 64 << 10);
+        assert!(all[0].last_used.is_some());
+    }
 }

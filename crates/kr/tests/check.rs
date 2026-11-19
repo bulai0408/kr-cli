@@ -91,6 +91,8 @@ impl Sample {
             .env("KR_REPLAY", files.join(":"))
             .env("KR_APPLICATIONS", root().join("tests/fixtures/xcode/apps"))
             .env("KR_RESOURCES__BUILD", "1")
+            // The default cache limit depends on this Mac's disk.
+            .env("KR_COMPILATION_CACHE__LIMIT", "8G")
             .current_dir(self.home.path().join("repo"))
             .arg("check")
             .args(args)
@@ -273,6 +275,7 @@ fn cache_settings(s: &Sample, cas: &Path) -> Vec<String> {
     vec![
         "COMPILATION_CACHE_ENABLE_CACHING=YES".to_owned(),
         format!("COMPILATION_CACHE_CAS_PATH={}", cas.display()),
+        format!("COMPILATION_CACHE_LIMIT_SIZE={}", 8u64 << 30),
         "COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES".to_owned(),
         "SWIFT_ENABLE_PREFIX_MAPPING=YES".to_owned(),
         "SWIFT_ENABLE_PROJECT_PREFIX_MAPPING=YES".to_owned(),

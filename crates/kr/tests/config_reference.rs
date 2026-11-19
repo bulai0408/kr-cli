@@ -64,6 +64,7 @@ fn the_embedded_config_reference_documents_every_configuration_field() {
                 "Remote" => "remotes.<name>.",
                 "Legacy" => "legacy.",
                 "LoadCheck" => "load.",
+                "CompilationCache" => "compilation_cache.",
                 "MachineOverride" => "machines.<host>.",
                 "Resources" => "resources.",
                 "Platform" | "Destination" => continue,

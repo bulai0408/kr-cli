@@ -28,6 +28,9 @@ overrides every other setting for every target. It needs `compilation_cache = tr
 in `.kr.toml`; otherwise, and when XCODE_XCCONFIG_FILE is already set, the worktree is
 under /tmp or /var, or the command archives, kr prints why and runs without it.
 slot_released then carries compilation_cache {enabled, dir, xcconfig | ignored}.
+The xcconfig also sets COMPILATION_CACHE_LIMIT_SIZE from the machine's
+`[compilation_cache] limit` (ADR 0029); Xcode prunes the cache to it at each build.
+`kr doctor` shows each project's cache size and last use.
 Keep -derivedDataPath inside the worktree: with DerivedData elsewhere, targets that
 import Clang modules miss the cache in every worktree. Never use it for builds you
 ship: debug info gets /^worktree paths.
