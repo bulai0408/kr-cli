@@ -193,7 +193,12 @@ fn doctor_excludes_kr_owned_locks_and_explains_the_observation_limit() {
 
 #[test]
 fn doctor_shows_profile_capacity_and_pool_problems() {
-    let (code, text) = doctor(PROJECT, None, false);
+    // The default cache limit depends on this Mac's disk, so the snapshot pins one.
+    let (code, text) = doctor(
+        PROJECT,
+        Some("[compilation_cache]\nlimit = \"20G\"\n"),
+        false,
+    );
     // Krill-Verify-3 lives on iOS 27.0, so the iOS 18.6 pool misses it: a warning only.
     assert_eq!(code, Some(0), "{text}");
     insta::assert_snapshot!(text);
@@ -227,4 +232,34 @@ fn doctor_json_says_where_each_capacity_comes_from() {
     assert_eq!(json["schema_version"], 1);
     assert_eq!(json["decisions"], serde_json::json!([]));
     insta::assert_json_snapshot!(json["capacity"]);
+}
+
+#[test]
+fn doctor_shows_each_project_compilation_cache_and_the_size_limit() {
+    let home = tempfile::tempdir().unwrap();
+    let gen1 = home
+        .path()
+        .join(".local/state/kr/cache/Krill/compilation/builtin/v1.1");
+    std::fs::create_dir_all(&gen1).unwrap();
+    std::fs::write(gen1.join("v9.data"), vec![1u8; 1 << 20]).unwrap();
+    let (code, text) = doctor_at(
+        home.path(),
+        PROJECT,
+        Some("[compilation_cache]\nlimit = \"8G\"\n"),
+        true,
+    );
+    assert_eq!(code, Some(0), "{text}");
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let cache = &json["compilation_cache"];
+    assert_eq!(cache["limit_bytes"], 8u64 << 30);
+    assert_eq!(cache["limit_source"], "[compilation_cache] limit");
+    assert_eq!(cache["projects"][0]["project"], "Krill");
+    assert!(cache["projects"][0]["bytes"].as_u64().unwrap() >= 1 << 20);
+    assert!(cache["projects"][0]["last_used"].is_string());
+    let (_, text) = doctor_at(home.path(), PROJECT, None, false);
+    assert!(
+        text.contains("limit 8.0 GB per project ([compilation_cache] limit)"),
+        "{text}"
+    );
+    assert!(text.contains("Krill 0.0 GB, last used 20"), "{text}");
 }

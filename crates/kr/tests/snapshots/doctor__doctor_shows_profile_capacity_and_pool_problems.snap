@@ -1,6 +1,5 @@
 ---
 source: crates/kr/tests/doctor.rs
-assertion_line: 69
 expression: text
 ---
 doctor: OK with 1 warning(s)
@@ -16,3 +15,4 @@ capacity  build 1  suggested: clamp(min(P/5, M/16), 1, 2) with P=4, M=24 → min
           sim   2  suggested: clamp(min(P/2, (M-8)/4), 1, 6) with P=4, M=24 → min(2, 4) → 2
           light 1  suggested: clamp(P/4, 1, 4) with P=4 → 1 → 1
 pool      Krill: default: iPhone 16 Pro × 3 on iOS 18.6 · iPad: iPad Pro 13-inch (M4) (16GB) × 1 on iOS 18.6
+cache     compilation cache limit 20.0 GB per project ([compilation_cache] limit)

@@ -993,6 +993,18 @@ fn the_compilation_cache_flag_hands_the_child_an_xcconfig_with_the_cache_setting
 }
 
 #[test]
+fn the_compilation_cache_xcconfig_carries_the_machine_size_limit() {
+    let m = project_machine(true);
+    lock_with_cache(
+        &m,
+        &["sh", "-c", SHOW_XCCONFIG],
+        &[("KR_COMPILATION_CACHE__LIMIT", "5G")],
+    );
+    let expected = format!("COMPILATION_CACHE_LIMIT_SIZE = {}", 5u64 << 30);
+    assert!(m.lines().contains(&expected), "{:?}", m.lines());
+}
+
+#[test]
 fn the_compilation_cache_flag_is_ignored_when_the_project_does_not_turn_the_cache_on() {
     let m = project_machine(false);
     let err = lock_with_cache(&m, &["sh", "-c", SHOW_XCCONFIG], &[]);
